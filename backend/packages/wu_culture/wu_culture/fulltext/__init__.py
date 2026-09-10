@@ -11,6 +11,7 @@ from .service import (
     FullTextSearchResponse,
     ParsedFullTextQuery,
     build_highlighted_snippet,
+    build_keyword_retry_query,
     parse_fulltext_query,
     score_fulltext_match,
 )
@@ -26,6 +27,7 @@ __all__ = [
     "FullTextSearchResponse",
     "ParsedFullTextQuery",
     "build_highlighted_snippet",
+    "build_keyword_retry_query",
     "parse_fulltext_query",
     "score_fulltext_match",
 ]

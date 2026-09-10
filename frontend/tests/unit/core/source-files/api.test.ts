@@ -5,7 +5,7 @@ afterEach(() => {
 });
 
 test("createSourceDocument registers traceable source metadata", async () => {
-  const fetchMock = rs.fn(async (_input: RequestInfo | URL, init?: RequestInit) =>
+  const fetchMock = rs.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
     new Response(
       JSON.stringify({
         id: "source-1",
@@ -33,7 +33,7 @@ test("createSourceDocument registers traceable source metadata", async () => {
   const [url, init] = fetchMock.mock.calls[0] ?? [];
   expect(url).toBe("/api/source-documents");
   expect(init?.method).toBe("POST");
-  expect(JSON.parse(String(init?.body))).toEqual({
+  expect(JSON.parse(init?.body as string)).toEqual({
     title: "木渎镇志",
     edition: "1996 年版",
     source_institution: "苏州市吴中区地方志办公室",

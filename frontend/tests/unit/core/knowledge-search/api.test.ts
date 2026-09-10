@@ -36,7 +36,7 @@ test("structured search sends the shared nested filter schema and cursor", async
   });
 
   expect(requests[0]?.url).toBe("/api/knowledge-search/structured");
-  expect(JSON.parse(String(requests[0]?.init?.body))).toEqual({
+  expect(JSON.parse(requests[0]?.init?.body as string)).toEqual({
     query: "旧桥",
     filters: { dynasties: ["qing"], entity_types: ["bridge"] },
     cursor: "cursor-1",

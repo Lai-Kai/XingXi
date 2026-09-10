@@ -10,6 +10,14 @@ docker/.cache/
 .Trashes
 ehthumbs.db
 Thumbs.db
+Desktop.ini
+
+# Editor and temporary files
+*.swp
+*.swo
+*~
+*.orig
+*.rej
 
 # Python cache
 __pycache__/
@@ -28,11 +36,38 @@ backend/scripts/benchmark/*.jsonl
 
 # Environment variables
 .env
+.env.*
+!.env.example
+!.env.*.example
 
 # Configuration files
 config.yaml
+config.yaml.*
 mcp_config.json
 extensions_config.json
+
+# Credentials and private key material
+*.key
+*.pem
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.secret
+*.secrets
+credentials.json
+credentials.yaml
+credentials.yml
+secrets/
+.ssh/
+id_rsa
+id_rsa.*
+id_dsa
+id_dsa.*
+id_ecdsa
+id_ecdsa.*
+id_ed25519
+id_ed25519.*
 
 # IDE
 .idea/
@@ -53,7 +88,16 @@ debug.log
 
 # pnpm
 .pnpm-store
+node_modules/
 sandbox_image_cache.tar
+
+# Local databases and runtime data
+*.db
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+*.sqlite3-journal
+*.pid
 
 # ignore the legacy `web` folder
 web/

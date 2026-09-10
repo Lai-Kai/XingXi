@@ -5,7 +5,7 @@ import { mockLangGraphAPI } from "./utils/mock-api";
 test.describe("Xingxi home", () => {
   test.beforeEach(async ({ page }) => {
     mockLangGraphAPI(page);
-    await page.route("**/api/research-feed/daily", async (route) => {
+    await page.route("**/api/research-feed/daily?**", async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -21,11 +21,23 @@ test.describe("Xingxi home", () => {
               tag: "古迹考证",
               source_basis: "已发布历史文献",
               prompt: "考证木渎古桥名称沿革",
+              retrieval_query: "木渎 古桥",
               origin: "evidence_backed_fallback",
               evidence_count: 4,
               knowledge_release_id: "release-1",
               popularity_users: null,
               popularity_searches: null,
+              sources: [
+                {
+                  evidence_id: "evidence-bridge",
+                  document_id: "document-bridge",
+                  document_title: "（康熙）吴县志",
+                  chunk_id: "chunk-bridge",
+                  page_start: 12,
+                  page_end: 13,
+                  quote: "木渎桥梁原文",
+                },
+              ],
             },
           ],
         }),
@@ -100,16 +112,45 @@ test.describe("Xingxi home", () => {
     await expect(page.getByText("2026-07-29")).toBeVisible();
     await expect(page.getByText("木渎古桥名称沿革")).toBeVisible();
     await expect(page.getByText("2026-07-18")).toHaveCount(0);
+
+    const href = await page
+      .getByRole("link", { name: "开始了解" })
+      .getAttribute("href");
+    const url = new URL(href ?? "", "http://localhost");
+    expect(url.searchParams.get("topic_query")).toBe("木渎 古桥");
+    expect(url.searchParams.getAll("document_id")).toEqual(["document-bridge"]);
+    expect(url.searchParams.getAll("evidence_id")).toEqual(["evidence-bridge"]);
   });
 
-  test("prototype content is visibly identified as demo data", async ({
+  test("daily topics use source-bound local seeds when the API fails", async ({
+    page,
+  }) => {
+    await page.route("**/api/research-feed/daily?**", async (route) => {
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ detail: "feed unavailable" }),
+      });
+    });
+
+    await page.goto("/workspace");
+
+    await expect(
+      page.getByText("部分内容暂时使用本地资料", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByText("地方文献怎样记载朱买臣与吴地的联系？", { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole("link", { name: "开始了解" })).toHaveCount(6);
+    await expect(page.getByText(/资料依据：/)).toHaveCount(6);
+  });
+
+  test("the research workspace no longer labels grounded topics as demo data", async ({
     page,
   }) => {
     await page.goto("/workspace");
 
-    await expect(
-      page.getByRole("status").filter({ hasText: "演示数据" }),
-    ).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("演示数据", { exact: true })).toHaveCount(0);
 
     await page.goto("/workspace/agent");
     await expect(

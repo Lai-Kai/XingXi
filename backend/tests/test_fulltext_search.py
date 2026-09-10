@@ -97,7 +97,7 @@ async def test_tool_uses_active_internal_release_when_runtime_has_no_scope(monke
         scope = "internal"
 
     class _Repository:
-        async def get_active(self):
+        async def get_active_summary(self):
             return _Release()
 
     class _Engine:

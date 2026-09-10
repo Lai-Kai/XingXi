@@ -38,11 +38,13 @@ class _FullText:
         self.delay = delay
         self.error = error
         self.request = None
+        self.search_calls = 0
 
     async def resolve_release_id(self, release_id):
         return release_id or "release-1"
 
     async def search(self, request):
+        self.search_calls += 1
         self.request = request
         await asyncio.sleep(self.delay)
         if self.error:
@@ -56,6 +58,24 @@ class _FullText:
             page_size=request.page_size,
             hits=self.hits,
         )
+
+
+def test_hybrid_search_reuses_concurrent_and_recent_identical_requests() -> None:
+    async def exercise() -> None:
+        fulltext = _FullText(delay=0.02)
+        service = HybridSearchService(fulltext, None)
+        request = HybridSearchRequest(query="旧桥")
+
+        first, second = await asyncio.gather(
+            service.search(request),
+            service.search(request),
+        )
+        third = await service.search(request)
+
+        assert first is second is third
+        assert fulltext.search_calls == 1
+
+    asyncio.run(exercise())
 
 
 class _Vectors:
@@ -223,6 +243,45 @@ def test_search_tool_falls_back_to_direct_fulltext_after_hybrid_timeout() -> Non
         assert result["evidence_pack"]["items"][0]["evidence_id"] == "evidence-chunk-fulltext-fallback"
         assert hybrid.calls == 1
         assert fulltext.request.authorized_use.value == "internal_processing"
+
+    asyncio.run(exercise())
+
+
+def test_daily_topic_search_uses_the_verified_query_and_document_scope() -> None:
+    async def exercise() -> None:
+        fulltext = _FullText(
+            (
+                FullTextSearchHit(
+                    release_id="release-1",
+                    chunk_id="chunk-zhu",
+                    score=5.0,
+                    matched_terms=("朱买臣",),
+                    snippet="【朱买臣】",
+                    citation=_citation("chunk-zhu"),
+                ),
+            )
+        )
+        tool = build_search_sources_tool(fulltext_repository=fulltext)
+        runtime = SimpleNamespace(
+            context={
+                "knowledge_release_id": "release-1",
+                "knowledge_release_scope": "internal",
+                "daily_topic_query": "朱买臣",
+                "daily_topic_document_ids": ["document-1"],
+            },
+            config={},
+        )
+
+        result = await tool.coroutine(
+            query="朱买臣 古台 穹窿山 黄省曾 弔赋",
+            top_k=3,
+            cursor="",
+            runtime=runtime,
+        )
+
+        assert result["status"] == "supported"
+        assert fulltext.request.query == "朱买臣"
+        assert fulltext.request.filters.document_ids == ("document-1",)
 
     asyncio.run(exercise())
 

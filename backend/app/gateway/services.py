@@ -82,7 +82,8 @@ async def resolve_active_knowledge_release_metadata(repository: Any | None = Non
         from deerflow.persistence.wu_culture import SqlKnowledgeReleaseRepository
 
         repository = SqlKnowledgeReleaseRepository(session_factory)
-    active = await repository.get_active()
+    get_active_summary = getattr(repository, "get_active_summary", None)
+    active = await get_active_summary() if callable(get_active_summary) else await repository.get_active()
     if active is None:
         return {}
     return {
@@ -261,7 +262,18 @@ _SERVER_OWNED_AUTHZ_CONTEXT_KEYS: frozenset[str] = frozenset({"is_internal", "au
 #   ``disable_clarification`` — set for non-interactive channels (GitHub
 #                              webhooks) so ClarificationMiddleware proceeds
 #                              instead of dead-ending the run.
-_CONTEXT_RUNTIME_ONLY_KEYS: frozenset[str] = frozenset({"github_token", "disable_clarification"})
+_CONTEXT_RUNTIME_ONLY_KEYS: frozenset[str] = frozenset(
+    {
+        "github_token",
+        "disable_clarification",
+        # Card-bound retrieval context must reach search_sources. The browser's
+        # informational Release ID is deliberately not forwarded; run creation
+        # injects the authoritative knowledge_release_* snapshot separately.
+        "daily_topic_query",
+        "daily_topic_document_ids",
+        "daily_topic_evidence_ids",
+    }
+)
 
 
 def strip_internal_context_keys(config: dict[str, Any]) -> None:

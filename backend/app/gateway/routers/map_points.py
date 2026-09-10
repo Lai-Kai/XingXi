@@ -219,63 +219,92 @@ class MapCatalogSnapshotUnavailable(RuntimeError):
     """The active release has no valid persisted map snapshot."""
 
 
+_catalog_source: _SqlVersionedCatalogSource | None = None
+
+
 def get_versioned_catalog_source() -> VersionedCatalogSource | None:
+    global _catalog_source
     from deerflow.persistence.engine import get_session_factory
 
     session_factory = get_session_factory()
-    return _SqlVersionedCatalogSource(session_factory) if session_factory is not None else None
+    if session_factory is None:
+        return None
+    if _catalog_source is None or _catalog_source.session_factory is not session_factory:
+        _catalog_source = _SqlVersionedCatalogSource(session_factory)
+    return _catalog_source
 
 
 class _SqlVersionedCatalogSource:
     def __init__(self, session_factory) -> None:  # noqa: ANN001
         self._session_factory = session_factory
+        self._snapshot_cache: dict[str, MapCatalogOut] = {}
+        self._live_catalog_cache: dict[str, MapCatalogOut] = {}
+        self._live_catalog_inflight: dict[str, asyncio.Task[MapCatalogOut]] = {}
+
+    @property
+    def session_factory(self):  # noqa: ANN201
+        return self._session_factory
 
     async def load(self) -> MapCatalogOut | None:
         from deerflow.persistence.wu_culture import SqlKnowledgeReleaseRepository
 
-        release = await SqlKnowledgeReleaseRepository(self._session_factory).get_active()
+        release = await SqlKnowledgeReleaseRepository(self._session_factory).get_active_summary()
         if release is None:
             return None
         async with self._session_factory() as session:
             try:
                 row = (
-                    await session.execute(
-                        text(
-                            "SELECT map_manifest_json,map_manifest_sha256 "
-                            "FROM wu_asset_versions "
-                            "WHERE knowledge_release_id=:release_id"
-                        ),
-                        {"release_id": release.id},
+                    (
+                        await session.execute(
+                            text("SELECT map_manifest_json,map_manifest_sha256 FROM wu_asset_versions WHERE knowledge_release_id=:release_id"),
+                            {"release_id": release.id},
+                        )
                     )
-                ).mappings().first()
+                    .mappings()
+                    .first()
+                )
             except Exception as exc:
-                raise MapCatalogSnapshotUnavailable(
-                    f"map snapshot schema is unavailable for release {release.id!r}"
-                ) from exc
+                raise MapCatalogSnapshotUnavailable(f"map snapshot schema is unavailable for release {release.id!r}") from exc
         if row is None or not row["map_manifest_json"]:
-            raise MapCatalogSnapshotUnavailable(
-                f"active knowledge release {release.id!r} has no persisted map snapshot"
-            )
+            # Older active releases may predate release asset preparation. The
+            # records are still release-scoped and evidence-bound, so build a
+            # short-lived in-process view from them instead of hiding a usable
+            # map behind a snapshot-only 503. Invalid persisted snapshots still
+            # fail closed below because they indicate release corruption.
+            cached = self._live_catalog_cache.get(release.id)
+            if cached is not None:
+                return cached
+            task = self._live_catalog_inflight.get(release.id)
+            if task is None:
+                task = asyncio.create_task(self._build_and_cache_live_catalog(release))
+                self._live_catalog_inflight[release.id] = task
+                task.add_done_callback(lambda _task: self._live_catalog_inflight.pop(release.id, None))
+            return await asyncio.shield(task)
         try:
+            cached = self._snapshot_cache.get(f"{release.id}:{row['map_manifest_sha256']}")
+            if cached is not None:
+                return cached
             payload = json.loads(row["map_manifest_json"])
-            actual_hash = hashlib.sha256(
-                json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
-            ).hexdigest()
+            actual_hash = hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
             if actual_hash != row["map_manifest_sha256"]:
                 raise ValueError("map snapshot hash does not match its persisted body")
             catalog = MapCatalogOut.model_validate(payload)
             # Layer metadata is deployment configuration rather than release
             # content. Keep older snapshots usable after the layer feature is
             # enabled, while still preserving any explicitly published layers.
-            return catalog.model_copy(update={"layers": catalog.layers or LAYERS})
+            catalog = catalog.model_copy(update={"layers": catalog.layers or LAYERS})
+            self._snapshot_cache[f"{release.id}:{row['map_manifest_sha256']}"] = catalog
+            return catalog
         except (TypeError, ValueError, json.JSONDecodeError) as exc:
-            raise MapCatalogSnapshotUnavailable(
-                f"persisted map snapshot for release {release.id!r} is invalid"
-            ) from exc
+            raise MapCatalogSnapshotUnavailable(f"persisted map snapshot for release {release.id!r} is invalid") from exc
+
+    async def _build_and_cache_live_catalog(self, release) -> MapCatalogOut:  # noqa: ANN001
+        catalog = await self.build_live_catalog(release)
+        self._live_catalog_cache[release.id] = catalog
+        return catalog
 
     async def build_live_catalog(self, release) -> MapCatalogOut:  # noqa: ANN001
         from deerflow.persistence.wu_culture import (
-            SqlEntityRepository,
             SqlEventRepository,
             SqlEvidenceRepository,
             SqlGeoRepository,
@@ -287,19 +316,28 @@ class _SqlVersionedCatalogSource:
             limit=500,
         )
         geo_rows = [row for row in geo_rows if row.release_id == release.id and row.review_status is not ReviewStatus.REJECTED and row.evidence_ids]
-        entity_repository = SqlEntityRepository(self._session_factory)
-        evidence_repository = SqlEvidenceRepository(self._session_factory)
-        entities = {feature.entity_id: await entity_repository.get(feature.entity_id) for feature in geo_rows}
+        graph_repository = SqlKnowledgeGraphRepository(self._session_factory)
         events = await SqlEventRepository(self._session_factory).list(
             release_id=release.id,
             limit=500,
         )
         events = [event for event in events if event.release_id == release.id and event.review_status is not ReviewStatus.REJECTED and event.evidence_ids]
-        relations = await SqlKnowledgeGraphRepository(self._session_factory).list_relations(
+        relations = await graph_repository.list_relations(
             release_id=release.id,
             limit=500,
         )
         relations = [relation for relation in relations if relation.release_id == release.id and relation.review_status is not ReviewStatus.REJECTED and relation.evidence_ids]
+        graph_entity_ids = (
+            {entity_id for relation in relations for entity_id in (relation.subject_id, relation.object_id)} | {entity_id for event in events for entity_id in event.participant_entity_ids} | {feature.entity_id for feature in geo_rows}
+        )
+        entities = {
+            entity.id: entity
+            for entity in await graph_repository.get_entities(
+                tuple(graph_entity_ids),
+                release_id=release.id,
+            )
+        }
+        evidence_repository = SqlEvidenceRepository(self._session_factory)
         evidence_ids = {
             evidence_id
             for values in (
@@ -309,7 +347,7 @@ class _SqlVersionedCatalogSource:
             )
             for evidence_id in values
         }
-        evidence_records = {evidence_id: await evidence_repository.get_evidence(evidence_id) for evidence_id in evidence_ids}
+        evidence_records = {evidence.evidence.id: evidence for evidence in await evidence_repository.get_evidence_many(tuple(evidence_ids))}
 
         point_years = _place_time_bounds(events)
         points = tuple(
@@ -323,12 +361,6 @@ class _SqlVersionedCatalogSource:
             if entities.get(feature.entity_id) is not None and entities[feature.entity_id].release_id == release.id and entities[feature.entity_id].review_status is not ReviewStatus.REJECTED and feature.evidence_ids
         )
         point_ids = {point.entity_id: point.id for point in points}
-        graph_entity_ids = {entity_id for relation in relations for entity_id in (relation.subject_id, relation.object_id)} | {entity_id for event in events for entity_id in event.participant_entity_ids}
-        for entity in await SqlKnowledgeGraphRepository(self._session_factory).get_entities(
-            tuple(graph_entity_ids),
-            release_id=release.id,
-        ):
-            entities[entity.id] = entity
         timeline = tuple(
             self._event(
                 event,
@@ -449,13 +481,7 @@ def _place_time_bounds(events: tuple) -> dict[str, tuple[int | None, int | None]
         if start is None:
             continue
         previous_start, previous_end = bounds.get(event.place_entity_id, (None, None))
-        merged_end = (
-            end
-            if previous_end is None
-            else previous_end
-            if end is None
-            else max(previous_end, end)
-        )
+        merged_end = end if previous_end is None else previous_end if end is None else max(previous_end, end)
         bounds[event.place_entity_id] = (
             start if previous_start is None else min(previous_start, start),
             merged_end,
@@ -985,7 +1011,7 @@ LAYERS: tuple[MapLayerOut, ...] = (
         source_url="https://www.openstreetmap.org/copyright",
         attribution="© OpenStreetMap contributors",
         calibration_note="Web Mercator 现代底图，仅用于现状位置参照。",
-        tile_url="https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+        tile_url="https://tile.openstreetmap.de/{z}/{x}/{y}.png",
     ),
     MapLayerOut(
         id="loc-pingjiang-tu-reference",
@@ -1124,11 +1150,7 @@ ROUTES: tuple[StudyRouteOut, ...] = (
 
 CATALOG = MapCatalogOut(
     updated_at="2026-07-29",
-    data_notice=(
-        "精确点坐标仅描述当前可定位对象；非精确古地点以不确定范围或史料范围显示，"
-        "中心仅用于检索与交互，不代表历史精确坐标。范围颜色不表示统计概率。"
-        "历史属性来自公开二手条目，所有资料均应在正式发布前回查原始文献和现场测绘成果。"
-    ),
+    data_notice=("精确点坐标仅描述当前可定位对象；非精确古地点以不确定范围或史料范围显示，中心仅用于检索与交互，不代表历史精确坐标。范围颜色不表示统计概率。历史属性来自公开二手条目，所有资料均应在正式发布前回查原始文献和现场测绘成果。"),
     points=POINTS,
     layers=LAYERS,
     events=EVENTS,
@@ -1370,9 +1392,7 @@ async def fetch_osrm_route(
                 )
                 return result
             _ROUTE_REQUEST_TIMES.append(now)
-            pending = asyncio.create_task(
-                _fetch_osrm_route(body, resolved_base=resolved_base)
-            )
+            pending = asyncio.create_task(_fetch_osrm_route(body, resolved_base=resolved_base))
             _ROUTE_INFLIGHT[cache_key] = pending
             leader = True
         else:
@@ -1381,11 +1401,7 @@ async def fetch_osrm_route(
     try:
         result = await asyncio.shield(pending)
         if leader:
-            ttl_name = (
-                "XINGXI_ROUTING_CACHE_TTL_SECONDS"
-                if result.routing_status == "routed"
-                else "XINGXI_ROUTING_FAILURE_CACHE_TTL_SECONDS"
-            )
+            ttl_name = "XINGXI_ROUTING_CACHE_TTL_SECONDS" if result.routing_status == "routed" else "XINGXI_ROUTING_FAILURE_CACHE_TTL_SECONDS"
             async with _ROUTE_LOCK:
                 _ROUTE_CACHE[cache_key] = (
                     time.monotonic() + _routing_number(ttl_name, 900 if result.routing_status == "routed" else 15, minimum=1),

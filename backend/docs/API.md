@@ -244,6 +244,25 @@ via `config.configurable.thread_id` to keep conversation history.
 
 Base URL: `/api`
 
+### Knowledge graph neighborhoods
+
+`GET /api/knowledge-graph/query?entity=<name-or-id>&max_depth=2&max_nodes=200`
+returns a bounded graph around a resolved entity. Authentication is required.
+`entity` accepts a stable ID, canonical name, or reviewed alias. `max_depth`
+accepts 1–3 (default 2); `max_nodes` accepts 1–200 (default 120). Optional repeated
+`relation_types` parameters filter relation types. Optional `release_id` pins
+the query to a knowledge Release; otherwise the Gateway resolves the active
+Release before traversal.
+
+The response contains `query`, `status`, `message`, `candidates`, `nodes`,
+`edges`, `evidence`, and `truncated`, plus the resolved `release_id` and requested
+`max_depth`/`max_nodes`. Clients should reuse the returned Release when changing
+depth or exploring another node. Peripheral edges use the same directed relation
+and Evidence locator contracts as direct edges. `truncated` means traversal hit
+a bound; it is independent of any client display pagination. Empty or ambiguous
+results retain scope metadata and must not be interpreted as proof that a
+historical relationship does not exist.
+
 ### Models
 
 #### List Models
@@ -1477,7 +1496,16 @@ Persistent indexing requires `embedding.enabled=true`, an OpenAI-compatible embe
 
 The fusion algorithm is Reciprocal Rank Fusion: each channel contributes `1 / (rrf_k + rank)` and candidates are deduplicated by Chunk ID. The response exposes `algorithm`, `rrf_k`, `degraded`, per-channel status/hit count/error code, plus each hit's native full-text score, vector similarity, ranks, RRF contributions, fused score and citation. A response from another Release is rejected as `release_mismatch`.
 
-Each channel has the independent `hybrid_search.channel_timeout_seconds` deadline. `ok` and `empty` are healthy statuses. `timeout`, `error`, or `unavailable` mark the response degraded while preserving results from the other channel. If neither channel is usable, the endpoint returns `503 hybrid_search_unavailable`; it never converts an infrastructure failure into a false empty historical result. When Embedding is disabled, vector status is `unavailable` and full-text remains usable.
+Lexical retrieval uses the `hybrid_search.channel_timeout_seconds` deadline;
+semantic retrieval uses the shorter `hybrid_search.vector_timeout_seconds`
+grace period by default so a slow embedding provider does not hold back an
+otherwise usable full-text answer. `ok` and `empty` are healthy statuses.
+`timeout`, `error`, or `unavailable` mark the response degraded while
+preserving results from the other channel. Identical release-scoped requests
+share an in-flight task and a short process-local cache. If neither channel is
+usable, the endpoint returns `503 hybrid_search_unavailable`; it never converts
+an infrastructure failure into a false empty historical result. When Embedding
+is disabled, vector status is `unavailable` and full-text remains usable.
 
 RRF measures retrieval agreement only. Stage 21 does not add authority-level, review-status, temporal, or diversity weights; those belong to Stage 22. The Xingxi `search_sources` tool uses this hybrid service and returns the same channel observability with the Release ID frozen in Run metadata.
 

@@ -383,7 +383,31 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         except Exception:
             logger.exception("Failed to initialize scheduled task service")
 
+        # Prime the evidence-bound daily feed before the first browser request.
+        # The service returns its verified seed selection first and performs
+        # popularity/RAG refresh work in its own bounded background task.
+        research_feed_service = research_feed.get_research_feed_service()
+        app.state.research_feed_warm_task = asyncio.create_task(
+            research_feed_service.build_feed(research_feed._now_shanghai().date()),
+            name="research-feed-startup-warm",
+        )
+
         yield
+
+        try:
+            await asyncio.wait_for(
+                app.state.research_feed_warm_task,
+                timeout=_SHUTDOWN_HOOK_TIMEOUT_SECONDS,
+            )
+            await asyncio.wait_for(
+                research_feed_service.wait_for_refreshes(),
+                timeout=_SHUTDOWN_HOOK_TIMEOUT_SECONDS,
+            )
+        except TimeoutError:
+            app.state.research_feed_warm_task.cancel()
+            logger.warning("Research feed warm-up did not finish before shutdown")
+        except Exception:
+            logger.exception("Research feed warm-up stopped with an error")
 
         await _stop_ingestion_worker(app)
 

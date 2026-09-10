@@ -19,18 +19,18 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
-import {
-  BusinessMobileHeader,
-  BusinessStatusBadge,
-} from "@/components/workspace/business-page";
+import { BusinessMobileHeader } from "@/components/workspace/business-page";
 import {
   type DailyResearchHistory,
   type DailyResearchFeed,
   fetchDailyResearchHistory,
   fetchDailyResearchFeed,
+  readCachedDailyResearchFeed,
 } from "@/core/research-feed/api";
+import { buildLocalFallbackDailyResearchFeed } from "@/core/research-feed/fallback";
 import {
   type XingxiEntryMode,
+  type XingxiChatScope,
   XINGXI_ENTRY_MODES,
   xingxiChatHref,
 } from "@/core/threads/xingxi-entry";
@@ -60,7 +60,27 @@ type ResearchItem = {
   summary: string;
   prompt?: string;
   count?: number;
+  sourceCount?: number;
+  context?: string;
+  sources?: Array<{
+    evidence_id: string;
+    document_id: string;
+    document_title: string;
+    chunk_id: string;
+    page_start: number | null;
+    page_end: number | null;
+    quote?: string | null;
+  }>;
+  scope?: XingxiChatScope;
 };
+
+function sourcePageLabel(source: NonNullable<ResearchItem["sources"]>[number]) {
+  if (source.page_start === null) return "页码待核";
+  if (source.page_end === null || source.page_end === source.page_start) {
+    return `${source.page_start}页`;
+  }
+  return `${source.page_start}-${source.page_end}页`;
+}
 
 const researchItems: ResearchItem[] = [
   {
@@ -132,15 +152,31 @@ export default function XingxiHomePage() {
 
   useEffect(() => {
     const controller = new AbortController();
+    const cachedFeed = readCachedDailyResearchFeed();
+    const usableCachedFeed = cachedFeed?.items.length ? cachedFeed : null;
+    const localFallback = buildLocalFallbackDailyResearchFeed();
+    if (usableCachedFeed) setDailyFeed(usableCachedFeed);
     setDailyFeedLoading(true);
-    setDailyFeedError(null);
+    setDailyFeedError(usableCachedFeed ? "部分内容暂时使用本地资料" : null);
     fetchDailyResearchFeed(controller.signal)
-      .then(setDailyFeed)
+      .then((feed) => {
+        if (feed.items.length) {
+          setDailyFeed(feed);
+          setDailyFeedError(feed.notice ?? null);
+        } else {
+          setDailyFeed(usableCachedFeed ?? localFallback);
+          setDailyFeedError("部分内容暂时使用本地资料");
+        }
+      })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
-        setDailyFeed(null);
+        setDailyFeed(usableCachedFeed ?? localFallback);
         setDailyFeedError(
-          error instanceof Error ? error.message : "今日选题暂时无法加载",
+          usableCachedFeed || localFallback.items.length
+            ? "部分内容暂时使用本地资料"
+            : error instanceof Error
+              ? error.message
+              : "今日选题暂时无法加载",
         );
       })
       .finally(() => {
@@ -178,6 +214,17 @@ export default function XingxiHomePage() {
           tag: item.tag,
           summary: item.summary,
           prompt: item.prompt,
+          scope: {
+            documentIds: item.sources?.map((source) => source.document_id),
+            evidenceIds: item.sources?.map((source) => source.evidence_id),
+            releaseId: item.knowledge_release_id,
+            retrievalQuery: item.retrieval_query,
+          },
+          sourceCount: item.sources?.length ?? item.evidence_count,
+          context: [item.time_label, item.place, ...(item.people ?? [])]
+            .filter(Boolean)
+            .join(" · "),
+          sources: item.sources ?? [],
         })),
       );
     }
@@ -233,7 +280,6 @@ export default function XingxiHomePage() {
               <p className="text-xs font-medium text-[#247f8c]">
                 吴文化 · 木渎地域文史
               </p>
-              <BusinessStatusBadge status="demo" />
             </div>
             <h1 className="text-2xl font-semibold text-[#202b2e] sm:text-4xl">
               今天想查阅哪一段木渎历史？
@@ -256,7 +302,7 @@ export default function XingxiHomePage() {
                   }
                 }}
                 aria-label="研究问题"
-                placeholder="例如：检索近代方志中关于木渎香溪古桥的记载……"
+                placeholder="例如：乾隆为什么多次到木渎？"
                 className="min-h-28 w-full resize-none bg-transparent px-1 py-1 text-sm leading-6 outline-none placeholder:text-[#8b999d] sm:min-h-32 sm:text-base"
               />
               <div className="flex flex-wrap items-center gap-2">
@@ -361,34 +407,58 @@ export default function XingxiHomePage() {
           </div>
 
           <div className="space-y-4 py-5">
-            {tab === "trends" && dailyFeedLoading && (
+            {tab === "trends" &&
+              dailyFeedLoading &&
+              visibleItems.length === 0 && (
+                <div
+                  role="status"
+                  aria-label="正在加载今日选题"
+                  className="space-y-4"
+                >
+                  {[1, 2, 3, 4].map((item) => (
+                    <div
+                      key={item}
+                      className="animate-pulse rounded-md border border-[#d2dfe1] bg-white p-5"
+                    >
+                      <div className="h-3 w-40 rounded bg-[#e4ecec]" />
+                      <div className="mt-4 h-6 w-3/4 rounded bg-[#e4ecec]" />
+                      <div className="mt-3 h-4 w-full rounded bg-[#edf2f2]" />
+                      <div className="mt-2 h-4 w-2/3 rounded bg-[#edf2f2]" />
+                    </div>
+                  ))}
+                </div>
+              )}
+            {tab === "trends" && dailyFeedError && visibleItems.length > 0 && (
               <div
                 role="status"
-                className="py-10 text-center text-sm text-[#607176]"
+                className="rounded-md border border-[#e2d9b8] bg-[#fffaf0] px-3 py-2 text-sm text-[#755f26]"
               >
-                正在获取今日选题…
+                {dailyFeedError}
               </div>
             )}
-            {tab === "trends" && !dailyFeedLoading && dailyFeedError && (
-              <div role="alert" className="py-10 text-center">
-                <p className="text-sm text-[#607176]">{dailyFeedError}</p>
-                <button
-                  type="button"
-                  onClick={() => setDailyFeedAttempt((attempt) => attempt + 1)}
-                  className="mt-3 h-9 rounded border border-[#8ebbc1] px-4 text-sm text-[#176d79] hover:bg-white"
-                >
-                  重新加载
-                </button>
-              </div>
-            )}
+            {tab === "trends" &&
+              !dailyFeedLoading &&
+              dailyFeedError &&
+              visibleItems.length === 0 && (
+                <div role="alert" className="py-10 text-center">
+                  <p className="text-sm text-[#607176]">{dailyFeedError}</p>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setDailyFeedAttempt((attempt) => attempt + 1)
+                    }
+                    className="mt-3 h-9 rounded border border-[#8ebbc1] px-4 text-sm text-[#176d79] hover:bg-white"
+                  >
+                    重新加载
+                  </button>
+                </div>
+              )}
             {tab === "trends" &&
               !dailyFeedLoading &&
               !dailyFeedError &&
               visibleItems.length === 0 && (
                 <div role="status" className="py-10 text-center">
-                  <p className="text-sm text-[#607176]">
-                    当前知识版本暂无证据充足的推荐选题
-                  </p>
+                  <p className="text-sm text-[#607176]">暂无今日选题</p>
                 </div>
               )}
             {visibleItems.map((item) => (
@@ -400,15 +470,20 @@ export default function XingxiHomePage() {
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-[#66777b]">
                     <span>{item.date}</span>
                     <span>{item.source}</span>
+                    {item.context && <span>{item.context}</span>}
                     <span className="rounded-full bg-[#e0eef0] px-2.5 py-1 text-[#176d79]">
                       {item.tag}
                     </span>
+                    {item.sourceCount !== undefined && (
+                      <span>资料依据 {item.sourceCount} 条</span>
+                    )}
                   </div>
                   <Link
                     href={xingxiChatHref(
                       item.prompt ??
                         `请围绕“${item.title}”开展研究，并列出可核验的原始出处。`,
                       "ultra",
+                      item.scope,
                     )}
                     className="mt-3 block text-lg leading-7 font-semibold hover:text-[#176d79] sm:text-xl"
                   >
@@ -417,7 +492,34 @@ export default function XingxiHomePage() {
                   <p className="mt-2 max-w-4xl text-sm leading-6 text-[#4f6267] sm:text-[15px]">
                     {item.summary}
                   </p>
-                  <div className="mt-4 flex items-center gap-1">
+                  {item.sources?.length ? (
+                    <p className="mt-2 text-xs leading-5 text-[#66777b]">
+                      资料依据：
+                      {item.sources.slice(0, 2).map((source, index) => (
+                        <span key={source.evidence_id}>
+                          {index > 0 ? "；" : ""}
+                          <Link
+                            href={`/workspace/library?evidence_id=${encodeURIComponent(source.evidence_id)}`}
+                            className="underline decoration-[#9eb8bc] underline-offset-2 hover:text-[#176d79]"
+                          >
+                            {source.document_title}（{sourcePageLabel(source)}）
+                          </Link>
+                        </span>
+                      ))}
+                    </p>
+                  ) : null}
+                  <div className="mt-4 flex flex-wrap items-center gap-2">
+                    <Link
+                      href={xingxiChatHref(
+                        item.prompt ??
+                          `请介绍“${item.title}”，并引用本地资料。`,
+                        "pro",
+                        item.scope,
+                      )}
+                      className="inline-flex h-9 items-center rounded-md bg-[#1f696f] px-3 text-sm font-medium text-white hover:bg-[#18565c]"
+                    >
+                      开始了解
+                    </Link>
                     <button
                       type="button"
                       aria-label={`推荐 ${item.title}`}
@@ -464,6 +566,7 @@ export default function XingxiHomePage() {
                   href={xingxiChatHref(
                     `查找“${item.title}”对应的原始文献和页码。`,
                     "ultra",
+                    item.scope,
                   )}
                   aria-label={`查看 ${item.title} 的文献线索`}
                   className="hidden h-40 rounded-md border border-[#cbd8da] bg-[#fbfdfd] p-3 shadow-sm transition hover:border-[#70aeb7] sm:block"

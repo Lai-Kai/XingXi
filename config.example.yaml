@@ -107,6 +107,9 @@ max_recursion_limit: 1000
 # healthy channel can still return a degraded response.
 hybrid_search:
   channel_timeout_seconds: 5.0
+  # Give fast lexical retrieval a short grace period for semantic fusion;
+  # increase this only when vector latency is acceptable for interactive QA.
+  vector_timeout_seconds: 1.5
   rrf_k: 60
 
 # Ranked historical citations are packed into this prompt budget. The default

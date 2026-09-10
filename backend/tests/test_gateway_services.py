@@ -753,6 +753,28 @@ def test_merge_run_context_overrides_forwards_subagent_total_limit():
     assert config["context"]["max_total_subagents"] == 8
 
 
+def test_daily_topic_context_reaches_tools_without_overriding_server_release():
+    from app.gateway.services import build_run_config, inject_knowledge_release_context, merge_run_context_overrides
+
+    topic = {
+        "daily_topic_query": "陆玩 灵岩山",
+        "daily_topic_document_ids": ["document-1"],
+        "daily_topic_evidence_ids": ["fulltext-release-1-chunk-1"],
+    }
+    config = build_run_config("thread-1", None, None)
+    merge_run_context_overrides(
+        config,
+        {**topic, "daily_topic_release_id": "stale-release", "knowledge_release_id": "client-release", "knowledge_release_scope": "internal"},
+    )
+    inject_knowledge_release_context(config, {"knowledge_release_id": "release-1", "knowledge_release_scope": "public"})
+
+    for key, value in topic.items():
+        assert config["context"].get(key) == value
+        assert key not in config["configurable"]
+    assert config["context"]["knowledge_release_id"] == "release-1"
+    assert config["context"]["knowledge_release_scope"] == "public"
+
+
 def test_merge_run_context_overrides_noop_for_empty_context():
     from app.gateway.services import build_run_config, merge_run_context_overrides
 

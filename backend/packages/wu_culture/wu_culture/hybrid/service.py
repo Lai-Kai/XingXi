@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import time
 from enum import StrEnum
 from typing import Protocol
 
@@ -142,16 +144,32 @@ class HybridSearchService:
         timeout_seconds: float = 5.0,
         rrf_k: int = 60,
         reranker: HybridReranker | None = None,
+        vector_timeout_seconds: float | None = None,
+        cache_ttl_seconds: float = 3.0,
     ) -> None:
         if timeout_seconds <= 0:
             raise ValueError("hybrid channel timeout must be positive")
         if rrf_k < 1:
             raise ValueError("rrf_k must be at least 1")
+        if cache_ttl_seconds < 0:
+            raise ValueError("hybrid search cache TTL cannot be negative")
+        if vector_timeout_seconds is not None and vector_timeout_seconds <= 0:
+            raise ValueError("vector channel timeout must be positive")
         self._fulltext = fulltext
         self._vectors = vectors
         self._timeout_seconds = timeout_seconds
+        # Vector providers are usually the slow channel. Keep a short grace
+        # period for fusion without allowing a slow embedding call to hold up
+        # an otherwise usable lexical answer for the full request deadline.
+        self._vector_timeout_seconds = min(
+            timeout_seconds,
+            vector_timeout_seconds if vector_timeout_seconds is not None else 1.5,
+        )
         self._rrf_k = rrf_k
         self._reranker = reranker
+        self._cache_ttl_seconds = cache_ttl_seconds
+        self._response_cache: dict[str, tuple[float, HybridSearchResponse]] = {}
+        self._inflight: dict[str, asyncio.Task[HybridSearchResponse]] = {}
 
     async def search(
         self,
@@ -160,6 +178,88 @@ class HybridSearchService:
         temporal_signals: dict[str, TemporalMatch] | None = None,
     ) -> HybridSearchResponse:
         release_id = await self._fulltext.resolve_release_id(request.release_id)
+        resolved_request = request.model_copy(update={"release_id": release_id})
+        cache_key = self._cache_key(resolved_request, temporal_signals)
+        now = time.monotonic()
+        cached = self._response_cache.get(cache_key)
+        if cached is not None:
+            expires_at, response = cached
+            if expires_at > now and await self._cached_response_is_authorized(
+                response,
+                authorized_use=request.authorized_use,
+            ):
+                return response
+            self._response_cache.pop(cache_key, None)
+
+        task = self._inflight.get(cache_key)
+        if task is None:
+            task = asyncio.create_task(
+                self._run_and_cache(
+                    cache_key,
+                    resolved_request,
+                    temporal_signals=temporal_signals,
+                )
+            )
+            self._inflight[cache_key] = task
+            task.add_done_callback(lambda _task: self._inflight.pop(cache_key, None))
+        # A cancelled caller must not cancel the shared retrieval used by
+        # other concurrent callers.
+        return await asyncio.shield(task)
+
+    async def _cached_response_is_authorized(
+        self,
+        response: HybridSearchResponse,
+        *,
+        authorized_use: AuthorizedUse,
+    ) -> bool:
+        validator = getattr(self._fulltext, "validate_cached_response", None)
+        if validator is None:
+            return True
+        try:
+            return bool(
+                await validator(
+                    response,
+                    authorized_use=authorized_use,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Cached hybrid authorization validation failed: %s", type(exc).__name__)
+            return False
+
+    async def _run_and_cache(
+        self,
+        cache_key: str,
+        request: HybridSearchRequest,
+        *,
+        temporal_signals: dict[str, TemporalMatch] | None,
+    ) -> HybridSearchResponse:
+        response = await self._search_uncached(request, temporal_signals=temporal_signals)
+        if self._cache_ttl_seconds > 0:
+            self._response_cache[cache_key] = (
+                time.monotonic() + self._cache_ttl_seconds,
+                response,
+            )
+        return response
+
+    @staticmethod
+    def _cache_key(
+        request: HybridSearchRequest,
+        temporal_signals: dict[str, TemporalMatch] | None,
+    ) -> str:
+        payload = {
+            "request": request.model_dump(mode="json"),
+            "temporal_signals": sorted((temporal_signals or {}).items()),
+        }
+        return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+    async def _search_uncached(
+        self,
+        request: HybridSearchRequest,
+        *,
+        temporal_signals: dict[str, TemporalMatch] | None,
+    ) -> HybridSearchResponse:
+        release_id = request.release_id
+        assert release_id is not None
         fulltext_request = FullTextSearchRequest(
             query=request.query,
             release_id=release_id,
@@ -186,7 +286,13 @@ class HybridSearchService:
         if self._vectors is None:
             vector_task = asyncio.create_task(self._unavailable_vector())
         else:
-            vector_task = asyncio.create_task(self._call_channel(HybridChannel.VECTOR, self._vectors.search(vector_request)))
+            vector_task = asyncio.create_task(
+                self._call_channel(
+                    HybridChannel.VECTOR,
+                    self._vectors.search(vector_request),
+                    timeout_seconds=self._vector_timeout_seconds,
+                )
+            )
         (fulltext_response, fulltext_report), (vector_response, vector_report) = await asyncio.gather(
             fulltext_task,
             vector_task,
@@ -229,9 +335,18 @@ class HybridSearchService:
             evidence_pack=evidence_pack,
         )
 
-    async def _call_channel(self, channel: HybridChannel, operation):  # noqa: ANN001, ANN202
+    async def _call_channel(
+        self,
+        channel: HybridChannel,
+        operation,  # noqa: ANN001
+        *,
+        timeout_seconds: float | None = None,
+    ):  # noqa: ANN202
         try:
-            response = await asyncio.wait_for(operation, timeout=self._timeout_seconds)
+            response = await asyncio.wait_for(
+                operation,
+                timeout=timeout_seconds or self._timeout_seconds,
+            )
             hit_count = len(response.hits)
             status = HybridChannelStatus.OK if hit_count else HybridChannelStatus.EMPTY
             return response, HybridChannelReport(channel=channel, status=status, hit_count=hit_count)

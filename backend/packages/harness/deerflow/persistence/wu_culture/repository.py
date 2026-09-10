@@ -73,6 +73,7 @@ from wu_culture.releases import (
     KnowledgeReleaseNotFound,
     KnowledgeReleasePreparationError,
     KnowledgeReleaseState,
+    KnowledgeReleaseSummary,
     PublishReleaseRequest,
     ReleaseAction,
     ReleaseStatus,
@@ -1445,6 +1446,21 @@ class SqlKnowledgeReleaseRepository:
                 return None
             return await self._row_to_release(session, row)
 
+    async def get_summary(self, release_id: str) -> KnowledgeReleaseSummary | None:
+        async with self._session_factory() as session:
+            row = await session.get(KnowledgeReleaseRow, release_id)
+            return None if row is None else await self._row_to_summary(session, row)
+
+    async def get_active_summary(self) -> KnowledgeReleaseSummary | None:
+        async with self._session_factory() as session:
+            state = await session.get(KnowledgeReleaseStateRow, self._STATE_ID)
+            if state is None or state.active_release_id is None:
+                return None
+            row = await session.get(KnowledgeReleaseRow, state.active_release_id)
+            if row is None or row.status != ReleaseStatus.ACTIVE.value:
+                return None
+            return await self._row_to_summary(session, row)
+
     async def activate(self, request: ActivateReleaseRequest, *, actor_id: str, changed_at) -> KnowledgeReleaseState:
         async with self._session_factory() as session:
             state = await self._state_row(session, lock=True)
@@ -1722,6 +1738,23 @@ class SqlKnowledgeReleaseRepository:
         )
 
     @staticmethod
+    async def _row_to_summary(
+        session: AsyncSession,
+        row: KnowledgeReleaseRow,
+    ) -> KnowledgeReleaseSummary:
+        item_count = int((await session.execute(select(func.count()).select_from(KnowledgeReleaseItemRow).where(KnowledgeReleaseItemRow.release_id == row.id))).scalar_one())
+        return KnowledgeReleaseSummary(
+            id=row.id,
+            version_number=row.version_number,
+            version=f"v{row.version_number}",
+            scope=row.scope,
+            status=ReleaseStatus(row.status),
+            manifest_sha256=row.manifest_sha256,
+            item_count=item_count,
+            created_at=_with_utc(row.created_at),
+        )
+
+    @staticmethod
     def _state_to_domain(state: KnowledgeReleaseStateRow, active: KnowledgeReleaseRow | None) -> KnowledgeReleaseState:
         return KnowledgeReleaseState(
             active_release_id=(state.active_release_id if active is not None and active.status == ReleaseStatus.ACTIVE.value else None),
@@ -1847,9 +1880,14 @@ class SqlFullTextRepository:
             indexed_at=indexed_at,
         )
 
-    async def ensure_release_ready(self, session: AsyncSession, release: KnowledgeRelease) -> None:
+    async def ensure_release_ready(
+        self,
+        session: AsyncSession,
+        release: KnowledgeRelease | KnowledgeReleaseSummary,
+    ) -> None:
         state = await session.get(FullTextIndexStateRow, release.id)
-        if state is None or state.status != "ready" or state.manifest_sha256 != release.manifest_sha256 or state.document_count != len(release.items):
+        expected_count = release.item_count if isinstance(release, KnowledgeReleaseSummary) else len(release.items)
+        if state is None or state.status != "ready" or state.manifest_sha256 != release.manifest_sha256 or state.document_count != expected_count:
             raise FullTextReleaseNotIndexed(f"knowledge release {release.id!r} does not have a complete full-text index")
 
     async def search(self, request: FullTextSearchRequest) -> FullTextSearchResponse:
@@ -1911,13 +1949,9 @@ class SqlFullTextRepository:
             # empty question to an OR candidate recall. Quoted phrases remain
             # exact and never enter this fallback.
             if not rows and parsed.is_natural_language and not parsed.phrases and len(term_groups) > 1:
-                fallback_variants = tuple(
-                    dict.fromkeys(variant for variants in term_groups for variant in variants)
-                )
+                fallback_variants = tuple(dict.fromkeys(variant for variants in term_groups for variant in variants))
                 if dialect == "sqlite" and fallback_variants and all(len(variant) >= 3 for variant in fallback_variants):
-                    fallback_query = " OR ".join(
-                        f'"{variant.replace(chr(34), chr(34) * 2)}"' for variant in fallback_variants
-                    )
+                    fallback_query = " OR ".join(f'"{variant.replace(chr(34), chr(34) * 2)}"' for variant in fallback_variants)
                     ids = list(
                         (
                             await session.execute(
@@ -1930,17 +1964,7 @@ class SqlFullTextRepository:
                     )
                     rows = list((await session.execute(base_statement.where(FullTextDocumentRow.id.in_(ids)))).scalars().all()) if ids else []
                 elif fallback_variants:
-                    rows = list(
-                        (
-                            await session.execute(
-                                base_statement.where(
-                                    or_(*(FullTextDocumentRow.search_text.contains(variant, autoescape=True) for variant in fallback_variants))
-                                )
-                            )
-                        )
-                        .scalars()
-                        .all()
-                    )
+                    rows = list((await session.execute(base_statement.where(or_(*(FullTextDocumentRow.search_text.contains(variant, autoescape=True) for variant in fallback_variants))))).scalars().all())
 
         async with self._session_factory() as session:
             document_rows = {row.id: row for row in (await session.execute(select(SourceDocumentRow).where(SourceDocumentRow.id.in_(tuple({row.document_id for row in rows}))))).scalars().all()}
@@ -2030,8 +2054,26 @@ class SqlFullTextRepository:
             hits=tuple(hits[offset : offset + request.page_size]),
         )
 
+    async def validate_cached_response(
+        self,
+        response: FullTextSearchResponse,
+        *,
+        authorized_use: AuthorizedUse,
+    ) -> bool:
+        """Recheck dynamic source authorization before serving a cached result."""
+        document_ids = tuple(dict.fromkeys(hit.citation.document_id for hit in response.hits))
+        if not document_ids:
+            return True
+        async with self._session_factory() as session:
+            rows = (await session.execute(select(SourceDocumentRow).where(SourceDocumentRow.id.in_(document_ids)))).scalars().all()
+        documents = {row.id: SqlSourceDocumentRepository._row_to_document(row) for row in rows}
+        return all(document_id in documents and evaluate_source_access(documents[document_id], use=authorized_use).allowed for document_id in document_ids)
+
     @staticmethod
-    async def _resolve_release(session: AsyncSession, release_id: str | None) -> KnowledgeRelease:
+    async def _resolve_release(
+        session: AsyncSession,
+        release_id: str | None,
+    ) -> KnowledgeReleaseSummary:
         if release_id is None:
             state = await session.get(KnowledgeReleaseStateRow, SqlKnowledgeReleaseRepository._STATE_ID)
             release_id = state.active_release_id if state is not None else None
@@ -2040,7 +2082,7 @@ class SqlFullTextRepository:
         row = await session.get(KnowledgeReleaseRow, release_id)
         if row is None:
             raise FullTextReleaseNotIndexed(f"knowledge release {release_id!r} was not found")
-        return await SqlKnowledgeReleaseRepository._row_to_release(session, row)
+        return await SqlKnowledgeReleaseRepository._row_to_summary(session, row)
 
     @staticmethod
     async def _ensure_sqlite_fts(session: AsyncSession) -> None:
@@ -2938,6 +2980,28 @@ class SqlEvidenceRepository:
             return None
         evidence, chunk, document = row
         return self._rows_to_record(evidence, chunk, document)
+
+    async def get_evidence_many(self, evidence_ids: Sequence[str]) -> Sequence[EvidenceRecord]:
+        """Load a bounded evidence set with one joined query."""
+        unique_ids = tuple(dict.fromkeys(evidence_ids))
+        if not unique_ids:
+            return ()
+        statement = (
+            select(EvidenceRow, TextChunkRow, SourceDocumentRow)
+            .join(
+                TextChunkRow,
+                and_(
+                    EvidenceRow.chunk_id == TextChunkRow.id,
+                    EvidenceRow.document_id == TextChunkRow.document_id,
+                ),
+            )
+            .join(SourceDocumentRow, EvidenceRow.document_id == SourceDocumentRow.id)
+            .where(EvidenceRow.id.in_(unique_ids))
+        )
+        async with self._session_factory() as session:
+            rows = (await session.execute(statement)).all()
+        by_id = {evidence.id: self._rows_to_record(evidence, chunk, document) for evidence, chunk, document in rows}
+        return tuple(by_id[evidence_id] for evidence_id in unique_ids if evidence_id in by_id)
 
     async def list_evidence(self) -> Sequence[EvidenceRecord]:
 

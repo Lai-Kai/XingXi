@@ -83,4 +83,68 @@ describe("historical map uncertainty geometry", () => {
       confidence: "approximate",
     });
   });
+
+  it("hides all ranges by default and reveals only the requested range kind", () => {
+    const historicalArea = point({
+      id: "historical-area",
+      geometryType: "historical_area",
+      uncertaintyRadiusMeters: null,
+      areaCoordinates: [
+        [120.49, 31.24],
+        [120.51, 31.24],
+        [120.51, 31.26],
+        [120.49, 31.26],
+        [120.49, 31.24],
+      ],
+    });
+    const speculativeArea = point({ id: "speculative-area" });
+
+    const hidden = buildUncertaintyFeatureCollection(
+      [historicalArea, speculativeArea],
+      null,
+      { showHistoricalRanges: false, showSpeculativeRanges: false },
+    );
+    const historical = buildUncertaintyFeatureCollection(
+      [historicalArea, speculativeArea],
+      null,
+      { showHistoricalRanges: true, showSpeculativeRanges: false },
+    );
+    const speculative = buildUncertaintyFeatureCollection(
+      [historicalArea, speculativeArea],
+      null,
+      { showHistoricalRanges: false, showSpeculativeRanges: true },
+    );
+
+    expect(hidden.features).toHaveLength(0);
+    expect(historical.features.map((feature) => feature.properties.id)).toEqual(
+      ["historical-area"],
+    );
+    expect(
+      speculative.features.map((feature) => feature.properties.id),
+    ).toEqual(["speculative-area"]);
+  });
+
+  it("keeps a selected place extent hidden while global range layers are off", () => {
+    const collection = buildUncertaintyFeatureCollection(
+      [point({ id: "selected" }), point({ id: "hidden" })],
+      "selected",
+      { showHistoricalRanges: false, showSpeculativeRanges: false },
+    );
+
+    expect(collection.features).toHaveLength(0);
+  });
+
+  it("marks a selected extent only after its range layer is enabled", () => {
+    const collection = buildUncertaintyFeatureCollection(
+      [point({ id: "selected" }), point({ id: "other" })],
+      "selected",
+      { showHistoricalRanges: false, showSpeculativeRanges: true },
+    );
+
+    expect(collection.features).toHaveLength(2);
+    expect(collection.features[0]?.properties).toMatchObject({
+      id: "selected",
+      selected: true,
+    });
+  });
 });

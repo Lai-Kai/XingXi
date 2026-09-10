@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@rstest/core";
 
-import { GatewayApiError, throwGatewayApiError } from "@/core/api/errors";
+import { throwGatewayApiError } from "@/core/api/errors";
 
 describe("GatewayApiError", () => {
   it("preserves the machine-readable error contract", async () => {

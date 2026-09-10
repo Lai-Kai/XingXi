@@ -444,7 +444,7 @@ function TaskPanel({
                   {task.title}
                 </h3>
                 <p className="mt-1 truncate text-xs text-[#748489]">
-                  {task.filename || "未记录文件名"} · 任务 {task.id}
+                  {task.filename ?? "未记录文件名"} · 任务 {task.id}
                 </p>
               </div>
               <BusinessStatusBadge status={task.status} />
@@ -496,7 +496,7 @@ function TaskPanel({
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-[#e3bdbd] bg-[#fdf4f4] px-3 py-2.5">
                 <div className="min-w-0 text-sm text-[#843f3f]">
                   <span className="font-medium">
-                    {task.failure_step_label || "任务"}
+                    {task.failure_step_label ?? "任务"}
                   </span>
                   {task.error_code && (
                     <span className="ml-2 font-mono text-xs">

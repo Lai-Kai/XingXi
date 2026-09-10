@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -205,15 +206,44 @@ async def _exercise_repository(tmp_path) -> None:
         special = await fulltext.search(FullTextSearchRequest(query="%' OR 1=1 --"))
         assert special.total == 0
 
-        tool_result = await build_search_sources_tool(fulltext_repository=fulltext).ainvoke({"query": "香溪沿岸", "source_levels": ["A"], "top_k": 1})
+        evidence_repository = SqlEvidenceRepository(session_factory)
+        tool = build_search_sources_tool(
+            fulltext_repository=fulltext,
+            daily_topic_evidence_repository=evidence_repository,
+        )
+        tool_result = await tool.ainvoke({"query": "香溪沿岸", "source_levels": ["A"], "top_k": 1})
         assert tool_result["status"] == "supported"
         assert tool_result["release_id"] == release.id
         assert tool_result["hits"][0]["citation"]["page_start"] == 2
         evidence_id = tool_result["hits"][0]["evidence_id"]
-        evidence = await SqlEvidenceRepository(session_factory).get_evidence(evidence_id)
+        evidence = await evidence_repository.get_evidence(evidence_id)
         assert evidence is not None
         assert "香溪沿岸" in evidence.evidence.quote
         assert evidence.evidence.chunk_id == "chunk-2"
+
+        from app.gateway.services import inject_knowledge_release_context, merge_run_context_overrides
+
+        run_config = {}
+        merge_run_context_overrides(
+            run_config,
+            {
+                "daily_topic_query": "香溪沿岸",
+                "daily_topic_document_ids": ["document-1"],
+                "daily_topic_evidence_ids": [evidence_id],
+            },
+        )
+        inject_knowledge_release_context(run_config, {"knowledge_release_id": release.id, "knowledge_release_scope": "internal"})
+        daily_topic = await tool.coroutine(
+            query="一串无法同时命中的扩展词",
+            top_k=1,
+            cursor="",
+            runtime=SimpleNamespace(
+                context=run_config["context"],
+                config=run_config,
+            ),
+        )
+        assert daily_topic["attached_daily_topic_evidence"] is True
+        assert daily_topic["evidence_pack"]["items"][0]["evidence_id"] == evidence_id
 
         async with session_factory() as session:
             source = await session.get(SourceDocumentRow, "document-1")

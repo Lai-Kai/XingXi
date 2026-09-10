@@ -18,6 +18,7 @@ import {
   Layers3,
   LocateFixed,
   Map as MapIcon,
+  MapPin,
   Network,
   Pause,
   Play,
@@ -43,12 +44,19 @@ import {
 } from "@/components/workspace/business-page";
 import { GlbViewerSlot } from "@/components/workspace/map/glb-viewer-slot";
 import { MapLibreCanvas } from "@/components/workspace/map/maplibre-canvas";
-import { fetchMapCatalog, planMapRoute } from "@/core/map/api";
+import {
+  fetchMapCatalog,
+  planMapRoute,
+  readCachedMapCatalog,
+} from "@/core/map/api";
 import {
   defaultMapLayerOpacity,
   getRenderableMapLayers,
 } from "@/core/map/layers";
-import { buildTimelineLayout } from "@/core/map/timeline";
+import {
+  buildTimelineLayout,
+  type TimelineEventGroup,
+} from "@/core/map/timeline";
 import {
   buildStudyRoute,
   filterMapPoints,
@@ -132,7 +140,10 @@ function mapRecordScope(record: {
 }
 
 type MapMode = "explore" | "route";
+type MapDisplayMode = "modern" | "comparison";
 type MapToolPanel = "filters" | "layers" | "route";
+const TIMELINE_ITEM_WIDTH = 136;
+const TIMELINE_LANE_HEIGHT = 104;
 
 const relationLabels: Record<string, string> = {
   located_in: "位于",
@@ -189,6 +200,35 @@ function relationSentence(relation: MapRelation) {
 
 function evidenceDateLabel(source: MapEvidence) {
   return `${source.publisher} · 读取于 ${source.retrievedAt}`;
+}
+
+const dynastyPeriodLabels: Record<DynastyLayer, string> = {
+  spring_autumn: "春秋时期",
+  jin: "晋朝",
+  liang: "南梁",
+  tang: "唐朝",
+  song: "宋朝",
+  ming: "明朝",
+  qing: "清朝",
+  modern: "近现代",
+};
+
+function eventDynastyLabel(event: TimelineEvent, point: MapPoint | null) {
+  const fromTimeLabel = Object.entries(dynastyLabels).find(([, label]) =>
+    event.timeLabel.includes(label),
+  )?.[0] as DynastyLayer | undefined;
+  const dynasty =
+    fromTimeLabel ??
+    (point?.dynasties.length === 1 ? point.dynasties[0] : null);
+  return dynasty ? dynastyPeriodLabels[dynasty] : "历史时期";
+}
+
+function eventYearLabel(event: TimelineEvent) {
+  if (event.yearStart === null) return "年代待考";
+  if (event.yearEnd !== null && event.yearEnd !== event.yearStart) {
+    return `${event.yearStart}—${event.yearEnd}年`;
+  }
+  return `${event.yearStart}年`;
 }
 
 function EvidenceTrail({
@@ -254,6 +294,179 @@ function EvidenceTrail({
         </p>
       )}
     </div>
+  );
+}
+
+function HistoricalEventDetails({
+  event,
+  point,
+  dataNotice,
+  onViewPlace,
+}: {
+  event: TimelineEvent;
+  point: MapPoint | null;
+  dataNotice: string;
+  onViewPlace: () => void;
+}) {
+  const participants = event.participants ?? [];
+
+  return (
+    <section
+      aria-label="历史事件详情"
+      className="flex min-h-0 flex-1 flex-col bg-white"
+    >
+      <header className="border-b px-5 py-5 pr-14">
+        <p className="text-xs font-medium tracking-[0.08em] text-[#8a5b45]">
+          历史事件详情
+        </p>
+        <h2 className="mt-2 text-lg leading-7 font-semibold text-[#253f42]">
+          {event.title}
+        </h2>
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+          <span className="rounded-full bg-[#e5f0ee] px-2.5 py-1 font-medium text-[#276b75]">
+            {eventDynastyLabel(event, point)}
+          </span>
+          <span className="rounded-full border border-[#d8e2e0] px-2.5 py-1 text-[#5b6d70]">
+            {eventYearLabel(event)}
+          </span>
+          {event.precision !== "exact" && (
+            <span className="text-[#8a6a5b]">{event.timeLabel}</span>
+          )}
+        </div>
+      </header>
+
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+        <dl className="grid grid-cols-[76px_1fr] gap-x-3 gap-y-4 text-sm">
+          <dt className="text-muted-foreground">朝代</dt>
+          <dd className="font-medium text-[#276b75]">
+            {eventDynastyLabel(event, point)}
+          </dd>
+
+          <dt className="text-muted-foreground">年份</dt>
+          <dd>
+            {eventYearLabel(event)} · {event.timeLabel}
+          </dd>
+
+          <dt className="text-muted-foreground">发生地点</dt>
+          <dd>
+            {point ? (
+              <>
+                <span className="block font-medium">{point.name}</span>
+                <span className="text-muted-foreground mt-1 block text-xs leading-5">
+                  {point.address}
+                </span>
+              </>
+            ) : (
+              "暂无地点资料"
+            )}
+          </dd>
+
+          <dt className="text-muted-foreground">相关人物</dt>
+          <dd>
+            {participants.length ? (
+              <div className="flex flex-wrap gap-1.5">
+                {participants.map((participant) => (
+                  <span
+                    key={participant.id}
+                    className="rounded bg-[#f5eee8] px-2 py-1 text-xs text-[#72564a]"
+                  >
+                    {participant.name}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <span className="text-muted-foreground">暂无登记相关人物</span>
+            )}
+          </dd>
+        </dl>
+
+        <section className="mt-6 border-t pt-4" aria-label="事件描述">
+          <h3 className="mb-2 flex items-center gap-2 text-sm font-medium text-[#253f42]">
+            <Info className="size-4 text-[#276b75]" /> 事件描述
+          </h3>
+          <p className="text-muted-foreground text-sm leading-6">
+            {event.summary}
+          </p>
+        </section>
+
+        <section className="mt-6 border-t pt-4" aria-label="资料出处">
+          <h3 className="mb-3 flex items-center gap-2 text-sm font-medium text-[#253f42]">
+            <BookOpen className="size-4 text-[#276b75]" /> 资料出处
+          </h3>
+          <EvidenceTrail sources={event.evidence} />
+        </section>
+
+        <p className="text-muted-foreground mt-5 border-t pt-3 text-xs leading-5">
+          {dataNotice}
+        </p>
+      </div>
+
+      <footer className="border-t px-5 py-3">
+        <button
+          type="button"
+          disabled={!point}
+          onClick={onViewPlace}
+          className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-[#b8d1cd] bg-[#f1f7f5] px-3 text-sm font-medium text-[#276b75] hover:bg-[#e5f0ee] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <MapPin className="size-4" /> 查看地点资料
+        </button>
+      </footer>
+    </section>
+  );
+}
+
+function HistoricalYearDetails({
+  year,
+  events,
+  points,
+  onSelectEvent,
+}: {
+  year: number;
+  events: TimelineEvent[];
+  points: MapPoint[];
+  onSelectEvent: (event: TimelineEvent) => void;
+}) {
+  return (
+    <section
+      aria-label={`${year}年历史事件`}
+      className="flex min-h-0 flex-1 flex-col bg-white"
+    >
+      <header className="border-b px-5 py-5">
+        <p className="text-xs font-medium tracking-[0.08em] text-[#8a5b45]">
+          同年事件
+        </p>
+        <h2 className="mt-2 text-lg font-semibold text-[#253f42]">
+          {year} 年 · {events.length} 件事件
+        </h2>
+        <p className="text-muted-foreground mt-2 text-xs leading-5">
+          选择其中一项查看地点、人物、描述与资料出处。
+        </p>
+      </header>
+      <ol className="min-h-0 flex-1 space-y-2 overflow-y-auto px-5 py-4">
+        {events.map((event) => {
+          const point = points.find((item) => item.id === event.pointId);
+          return (
+            <li key={event.id}>
+              <button
+                type="button"
+                onClick={() => onSelectEvent(event)}
+                className="w-full rounded-md border border-[#d8e2e0] px-3 py-3 text-left hover:border-[#8ebbc1] hover:bg-[#f4f9f8]"
+              >
+                <span className="block text-xs text-[#718286]">
+                  {event.timeLabel}
+                </span>
+                <span className="mt-1 block text-sm font-medium text-[#253f42]">
+                  {event.title}
+                </span>
+                <span className="mt-1 block text-xs leading-5 text-[#66777b]">
+                  {point?.name ?? "地点待考"} · {event.evidence.length} 条资料
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+    </section>
   );
 }
 
@@ -530,10 +743,16 @@ function downloadRoute(name: string, stops: MapPoint[], disclaimer: string) {
 }
 
 export default function MapPage() {
-  const [catalog, setCatalog] = useState<MapCatalog | null>(null);
+  const [catalog, setCatalog] = useState<MapCatalog | null>(
+    readCachedMapCatalog,
+  );
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [mapMode, setMapMode] = useState<MapMode>("explore");
+  const [mapDisplayMode, setMapDisplayMode] =
+    useState<MapDisplayMode>("modern");
+  const [showHistoricalRanges, setShowHistoricalRanges] = useState(false);
+  const [showSpeculativeRanges, setShowSpeculativeRanges] = useState(false);
   const [toolPanel, setToolPanel] = useState<MapToolPanel | null>(null);
   const [detailSheetOpen, setDetailSheetOpen] = useState(false);
   const [compactLayout, setCompactLayout] = useState(false);
@@ -554,7 +773,7 @@ export default function MapPage() {
   const [appliedRecordScope, setAppliedRecordScope] = useState<
     "all" | MapRecordScope
   >("all");
-  const [year, setYear] = useState(317);
+  const [year, setYear] = useState<number | null>(null);
   const [includeUnknownTime, setIncludeUnknownTime] = useState(true);
   const [appliedIncludeUnknownTime, setAppliedIncludeUnknownTime] =
     useState(true);
@@ -569,9 +788,15 @@ export default function MapPage() {
   >(null);
   const [playing, setPlaying] = useState(false);
   const [activeEventId, setActiveEventId] = useState<string | null>(null);
-  const [storyCardOpen, setStoryCardOpen] = useState(true);
+  const [detailView, setDetailView] = useState<"event" | "point" | "year">(
+    "point",
+  );
+  const [eventDetailSheetOpen, setEventDetailSheetOpen] = useState(false);
   const timelineScrollRef = useRef<HTMLDivElement | null>(null);
   const timelineEventRefs = useRef(new Map<string, HTMLButtonElement>());
+  const [activeTimelineYear, setActiveTimelineYear] = useState<number | null>(
+    null,
+  );
   const [userLocation, setUserLocation] = useState<UserMapLocation | null>(
     null,
   );
@@ -589,6 +814,8 @@ export default function MapPage() {
   const selectPoint = useCallback(
     (pointId: string) => {
       setSelectedId(pointId);
+      setDetailView("point");
+      setEventDetailSheetOpen(false);
       setToolPanel(null);
       if (compactLayout) setDetailSheetOpen(true);
       const point = catalog?.points.find((item) => item.id === pointId);
@@ -611,7 +838,10 @@ export default function MapPage() {
   }, []);
 
   useEffect(() => {
-    if (!compactLayout) setDetailSheetOpen(false);
+    if (!compactLayout) {
+      setDetailSheetOpen(false);
+      setEventDetailSheetOpen(false);
+    }
   }, [compactLayout]);
 
   useEffect(
@@ -626,7 +856,7 @@ export default function MapPage() {
   useEffect(() => {
     const controller = new AbortController();
     setError(null);
-    fetchMapCatalog(controller.signal)
+    fetchMapCatalog(controller.signal, { force: reloadKey > 0 })
       .then((nextCatalog) => {
         setCatalog(nextCatalog);
         const firstRoute = nextCatalog.routes[0];
@@ -638,7 +868,14 @@ export default function MapPage() {
           (current) => current ?? nextCatalog.trajectories[0]?.id ?? null,
         );
         const renderableLayers = getRenderableMapLayers(nextCatalog.layers);
-        setVisibleLayerIds(renderableLayers.map((layer) => layer.id));
+        setMapDisplayMode("modern");
+        setShowHistoricalRanges(false);
+        setShowSpeculativeRanges(false);
+        setVisibleLayerIds(
+          renderableLayers
+            .filter((layer) => layer.kind === "base")
+            .map((layer) => layer.id),
+        );
         setLayerOpacity(
           Object.fromEntries(
             renderableLayers.map((layer) => [
@@ -663,7 +900,7 @@ export default function MapPage() {
         minConfidence: appliedMinConfidence,
         entityTypes:
           appliedEntityType === "all" ? undefined : [appliedEntityType],
-        year,
+        year: year ?? undefined,
         includeUnknownTime: appliedIncludeUnknownTime,
         recordScopes:
           appliedRecordScope === "all" ? undefined : [appliedRecordScope],
@@ -679,7 +916,8 @@ export default function MapPage() {
       year,
     ],
   );
-  const selected = points.find((point) => point.id === selectedId) ?? null;
+  const selected =
+    catalog?.points.find((point) => point.id === selectedId) ?? null;
   const activeRoute =
     catalog?.routes.find((route) => route.id === activeRouteId) ?? null;
   const routeStops = useMemo(
@@ -698,17 +936,29 @@ export default function MapPage() {
       .filter(
         (point) =>
           visiblePointIds.has(point.pointId) &&
-          (point.yearStart === null || point.yearStart <= year),
+          (year === null ||
+            point.yearStart === null ||
+            point.yearStart <= year),
       )
       .map((point) => byId.get(point.pointId))
       .filter((point): point is MapPoint => Boolean(point));
   }, [catalog, points, showTrajectory, trajectory, year]);
-  const enabledMapLayerIds = useMemo(
-    () =>
-      visibleLayerIds ??
-      getRenderableMapLayers(catalog?.layers ?? []).map((layer) => layer.id),
-    [catalog?.layers, visibleLayerIds],
+  const renderableMapLayers = useMemo(
+    () => getRenderableMapLayers(catalog?.layers ?? []),
+    [catalog?.layers],
   );
+  const historicalComparisonLayers = useMemo(
+    () => renderableMapLayers.filter((layer) => layer.kind === "historical"),
+    [renderableMapLayers],
+  );
+  const modernMapLayerIds = useMemo(
+    () =>
+      renderableMapLayers
+        .filter((layer) => layer.kind === "base")
+        .map((layer) => layer.id),
+    [renderableMapLayers],
+  );
+  const enabledMapLayerIds = visibleLayerIds ?? modernMapLayerIds;
   const timelineEvents = useMemo(() => {
     const rows = (catalog?.events ?? []).filter(
       (event) =>
@@ -725,7 +975,14 @@ export default function MapPage() {
     });
   }, [appliedRecordScope, catalog]);
   const timelineLayout = useMemo(
-    () => buildTimelineLayout(timelineEvents),
+    () =>
+      buildTimelineLayout(timelineEvents, {
+        minWidth: 1120,
+        pixelsPerYear: 0.9,
+        itemWidth: TIMELINE_ITEM_WIDTH,
+        laneGap: 24,
+        laneHeight: TIMELINE_LANE_HEIGHT,
+      }),
     [timelineEvents],
   );
   const undatedTimelineEvents = useMemo(
@@ -738,32 +995,50 @@ export default function MapPage() {
     ? (catalog?.points.find((point) => point.id === activeEvent.pointId) ??
       null)
     : null;
-  const activePointEvents = activePoint
-    ? timelineEvents.filter((event) => event.pointId === activePoint.id)
-    : [];
-  const activePointRelations = activePoint
-    ? (catalog?.relations.filter(
-        (relation) =>
-          relation.subjectId === activePoint.entityId ||
-          relation.objectId === activePoint.entityId,
-      ) ?? [])
-    : [];
-
-  const activateTimelineEvent = useCallback((event: TimelineEvent) => {
-    setActiveEventId(event.id);
-    setStoryCardOpen(true);
-    if (event.yearStart !== null) setYear(event.yearStart);
-  }, []);
+  const activeYearEvents = useMemo(
+    () =>
+      activeTimelineYear === null
+        ? []
+        : timelineEvents.filter(
+            (event) => event.yearStart === activeTimelineYear,
+          ),
+    [activeTimelineYear, timelineEvents],
+  );
+  const activateTimelineEvent = useCallback(
+    (event: TimelineEvent, openDetails = true) => {
+      setActiveEventId(event.id);
+      setActiveTimelineYear(event.yearStart);
+      setDetailView("event");
+      setDetailSheetOpen(false);
+      if (compactLayout && openDetails) setEventDetailSheetOpen(true);
+      setYear(event.yearStart);
+    },
+    [compactLayout],
+  );
+  const activateTimelineGroup = useCallback(
+    (group: TimelineEventGroup<TimelineEvent>) => {
+      setPlaying(false);
+      if (group.events.length === 1) {
+        activateTimelineEvent(group.events[0]!);
+        return;
+      }
+      setActiveEventId(null);
+      setActiveTimelineYear(group.year);
+      setDetailView("year");
+      setDetailSheetOpen(false);
+      setYear(group.year);
+      if (compactLayout) setEventDetailSheetOpen(true);
+    },
+    [activateTimelineEvent, compactLayout],
+  );
 
   useEffect(() => {
     if (!timelineEvents.length) {
       setActiveEventId(null);
+      setActiveTimelineYear(null);
       setPlaying(false);
-      return;
     }
-    if (timelineEvents.some((event) => event.id === activeEventId)) return;
-    activateTimelineEvent(timelineEvents[0]!);
-  }, [activateTimelineEvent, activeEventId, timelineEvents]);
+  }, [timelineEvents]);
 
   useEffect(() => {
     if (!playing || !timelineEvents.length) return;
@@ -777,12 +1052,17 @@ export default function MapPage() {
 
   useEffect(() => {
     if (!timelineExpanded || !activeEventId) return;
-    timelineEventRefs.current.get(activeEventId)?.scrollIntoView({
+    const groupId =
+      activeEvent?.yearStart === null || activeEvent?.yearStart === undefined
+        ? null
+        : `timeline-year-${activeEvent.yearStart}`;
+    if (!groupId) return;
+    timelineEventRefs.current.get(groupId)?.scrollIntoView({
       behavior: "smooth",
       block: "nearest",
       inline: "center",
     });
-  }, [activeEventId, timelineExpanded]);
+  }, [activeEvent, activeEventId, timelineExpanded]);
   const entityTypes = useMemo(
     () => [
       ...new Set((catalog?.points ?? []).map((point) => point.entityType)),
@@ -795,13 +1075,6 @@ export default function MapPage() {
     ],
     [catalog],
   );
-
-  useEffect(() => {
-    if (selectedId && !points.some((point) => point.id === selectedId)) {
-      setSelectedId(null);
-      setDetailSheetOpen(false);
-    }
-  }, [points, selectedId]);
 
   const selectRoute = useCallback(
     (routeId: string) => {
@@ -817,6 +1090,19 @@ export default function MapPage() {
     setMapMode(mode);
     setDetailSheetOpen(false);
     setToolPanel(mode === "route" ? "route" : null);
+  };
+
+  const selectMapDisplayMode = (mode: MapDisplayMode) => {
+    if (mode === "comparison" && historicalComparisonLayers.length === 0) {
+      return;
+    }
+    setMapDisplayMode(mode);
+    setVisibleLayerIds([
+      ...modernMapLayerIds,
+      ...(mode === "comparison"
+        ? historicalComparisonLayers.map((layer) => layer.id)
+        : []),
+    ]);
   };
 
   const openToolPanel = (panel: MapToolPanel) => {
@@ -837,6 +1123,7 @@ export default function MapPage() {
     setAppliedMinConfidence("speculative");
     setAppliedIncludeUnknownTime(true);
     setAppliedRecordScope("all");
+    setYear(null);
   };
 
   const applyFilters = () => {
@@ -854,7 +1141,7 @@ export default function MapPage() {
       dynasties: dynasty === "all" ? undefined : [dynasty],
       minConfidence,
       entityTypes: entityType === "all" ? undefined : [entityType],
-      year,
+      year: year ?? undefined,
       includeUnknownTime,
       recordScopes: recordScope === "all" ? undefined : [recordScope],
     });
@@ -1127,80 +1414,151 @@ export default function MapPage() {
       </SheetHeader>
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
         <section aria-label="地图图层">
-          <p className="text-muted-foreground mb-4 text-xs leading-5">
-            纸张底色与低对比度现代底图只承担定位；历史地图仅在完成校准后叠加。
-            史料范围由资料本身提供，不等同于现代边界。
+          <h3 className="text-sm font-medium text-[#253f42]">底图模式</h3>
+          <div
+            role="group"
+            aria-label="底图显示模式"
+            className="mt-2 grid grid-cols-2 gap-1 rounded-md bg-[#edf3f2] p-1"
+          >
+            <button
+              type="button"
+              aria-pressed={mapDisplayMode === "modern"}
+              onClick={() => selectMapDisplayMode("modern")}
+              className={cn(
+                "min-h-9 rounded px-2 text-xs font-medium",
+                mapDisplayMode === "modern"
+                  ? "bg-white text-[#174f53] shadow-sm"
+                  : "text-[#52686c] hover:text-[#174f53]",
+              )}
+            >
+              现代地图
+            </button>
+            <button
+              type="button"
+              aria-pressed={mapDisplayMode === "comparison"}
+              disabled={historicalComparisonLayers.length === 0}
+              title={
+                historicalComparisonLayers.length === 0
+                  ? "暂无已校准的古地图叠加层"
+                  : "在现代地图上叠加已校准古地图"
+              }
+              onClick={() => selectMapDisplayMode("comparison")}
+              className={cn(
+                "min-h-9 rounded px-2 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-45",
+                mapDisplayMode === "comparison"
+                  ? "bg-white text-[#174f53] shadow-sm"
+                  : "text-[#52686c] hover:text-[#174f53]",
+              )}
+            >
+              古今对照
+            </button>
+          </div>
+          <p className="text-muted-foreground mt-2 text-xs leading-5">
+            现代地图始终以完整色彩显示。古今对照仅叠加已完成空间校准的历史地图。
           </p>
+
+          <h3 className="mt-5 text-sm font-medium text-[#253f42]">范围图层</h3>
+          <div className="mt-2 divide-y rounded-md border bg-white">
+            <label className="flex min-h-12 items-center justify-between gap-3 px-3 text-sm">
+              <span>
+                <span className="block font-medium">历史范围</span>
+                <span className="text-muted-foreground block text-xs">
+                  仅显示资料或历史地图给出的边界
+                </span>
+              </span>
+              <input
+                type="checkbox"
+                aria-label="显示历史范围"
+                checked={showHistoricalRanges}
+                onChange={(event) =>
+                  setShowHistoricalRanges(event.target.checked)
+                }
+              />
+            </label>
+            <label className="flex min-h-12 items-center justify-between gap-3 px-3 text-sm">
+              <span>
+                <span className="block font-medium">推测范围</span>
+                <span className="text-muted-foreground block text-xs">
+                  显示近似定位与待考地点的范围
+                </span>
+              </span>
+              <input
+                type="checkbox"
+                aria-label="显示推测范围"
+                checked={showSpeculativeRanges}
+                onChange={(event) =>
+                  setShowSpeculativeRanges(event.target.checked)
+                }
+              />
+            </label>
+          </div>
+
+          <h3 className="mt-5 border-t pt-4 text-sm font-medium text-[#253f42]">
+            地图资料源
+          </h3>
           {catalog.layers.map((layer) => (
             <div
               key={layer.id}
-              className="mb-5 border-b border-dashed pb-4 text-xs leading-5 last:border-b-0"
+              className="mt-3 border-b border-dashed pb-3 text-xs leading-5 last:border-b-0"
               data-map-layer-id={layer.id}
             >
               <div className="flex items-start justify-between gap-2">
-                <label className="flex min-h-8 min-w-0 items-center gap-2">
-                  <input
-                    type="checkbox"
-                    aria-label={`显示${layer.name}`}
-                    checked={enabledMapLayerIds.includes(layer.id)}
-                    disabled={!layer.available || !layer.tileUrl}
-                    onChange={(event) => {
-                      setVisibleLayerIds((current) => {
-                        const next = new Set(current ?? enabledMapLayerIds);
-                        if (event.target.checked) next.add(layer.id);
-                        else next.delete(layer.id);
-                        return [...next];
-                      });
-                    }}
-                  />
-                  <span className="truncate font-medium">{layer.name}</span>
-                </label>
+                <span className="min-w-0 truncate font-medium">
+                  {layer.name}
+                </span>
                 <span
                   className={cn(
                     "shrink-0 rounded px-1.5 py-0.5",
-                    layer.available && layer.tileUrl
-                      ? enabledMapLayerIds.includes(layer.id)
-                        ? "bg-emerald-50 text-emerald-700"
-                        : "bg-slate-100 text-slate-600"
-                      : "bg-amber-50 text-amber-800",
+                    layer.kind === "base"
+                      ? "bg-emerald-50 text-emerald-700"
+                      : layer.available && layer.tileUrl
+                        ? mapDisplayMode === "comparison"
+                          ? "bg-emerald-50 text-emerald-700"
+                          : "bg-slate-100 text-slate-600"
+                        : "bg-amber-50 text-amber-800",
                   )}
                 >
-                  {!layer.available || !layer.tileUrl
-                    ? "待校准"
-                    : enabledMapLayerIds.includes(layer.id)
-                      ? "显示中"
-                      : "已隐藏"}
+                  {layer.kind === "base"
+                    ? "完整显示"
+                    : !layer.available || !layer.tileUrl
+                      ? "待校准"
+                      : mapDisplayMode === "comparison"
+                        ? "显示中"
+                        : "已隐藏"}
                 </span>
               </div>
-              {layer.available && layer.tileUrl && (
-                <label className="text-muted-foreground mt-2 flex items-center gap-2">
-                  <span className="w-10 shrink-0">透明度</span>
-                  <input
-                    type="range"
-                    min="0.1"
-                    max="0.8"
-                    step="0.02"
-                    aria-label={`${layer.name}透明度`}
-                    value={
-                      layerOpacity[layer.id] ?? defaultMapLayerOpacity(layer)
-                    }
-                    onChange={(event) =>
-                      setLayerOpacity((current) => ({
-                        ...current,
-                        [layer.id]: Number(event.target.value),
-                      }))
-                    }
-                    className="min-w-0 flex-1 accent-[#2b6467]"
-                  />
-                  <output className="w-9 text-right tabular-nums">
-                    {Math.round(
-                      (layerOpacity[layer.id] ??
-                        defaultMapLayerOpacity(layer)) * 100,
-                    )}
-                    %
-                  </output>
-                </label>
-              )}
+              {layer.kind === "historical" &&
+                layer.available &&
+                layer.tileUrl &&
+                mapDisplayMode === "comparison" && (
+                  <label className="text-muted-foreground mt-2 flex items-center gap-2">
+                    <span className="w-10 shrink-0">透明度</span>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.02"
+                      aria-label={`${layer.name}叠加透明度`}
+                      value={
+                        layerOpacity[layer.id] ?? defaultMapLayerOpacity(layer)
+                      }
+                      onChange={(event) =>
+                        setLayerOpacity((current) => ({
+                          ...current,
+                          [layer.id]: Number(event.target.value),
+                        }))
+                      }
+                      className="min-w-0 flex-1 accent-[#2b6467]"
+                    />
+                    <output className="w-9 text-right tabular-nums">
+                      {Math.round(
+                        (layerOpacity[layer.id] ??
+                          defaultMapLayerOpacity(layer)) * 100,
+                      )}
+                      %
+                    </output>
+                  </label>
+                )}
               <p className="text-muted-foreground mt-1">
                 {layer.calibrationNote}
               </p>
@@ -1454,13 +1812,19 @@ export default function MapPage() {
       </header>
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <main className="flex min-w-0 flex-1 flex-col bg-[#edf2ef]">
+        <main
+          className="flex min-w-0 flex-1 flex-col bg-[#edf2ef]"
+          data-map-display-mode={mapDisplayMode}
+        >
           <section className="relative min-h-0 flex-1">
             <MapLibreCanvas
+              key={reloadKey}
               points={points}
               layers={catalog.layers}
               visibleLayerIds={enabledMapLayerIds}
               layerOpacity={layerOpacity}
+              showHistoricalRanges={showHistoricalRanges}
+              showSpeculativeRanges={showSpeculativeRanges}
               routePoints={mapMode === "route" ? routeStops : []}
               trajectoryPoints={trajectoryPoints}
               plannedRoute={mapMode === "route" ? plannedRoute : null}
@@ -1471,142 +1835,10 @@ export default function MapPage() {
               activeEventId={activeEventId}
               selectedId={selectedId}
               onSelect={(point) => selectPoint(point.id)}
-              onSelectEvent={(event) => {
-                setPlaying(false);
-                activateTimelineEvent(event);
-                selectPoint(event.pointId);
-              }}
+              onReload={() => setReloadKey((value) => value + 1)}
             />
 
-            {activeEvent && storyCardOpen && (
-              <article
-                aria-label="历史故事镜头"
-                data-map-story-card="true"
-                className="absolute top-20 right-3 z-10 w-[min(21rem,calc(100%-1.5rem))] rounded-md border border-[#cba995] bg-[#fffdf8]/95 p-4 text-[#372b27] shadow-[0_12px_34px_rgba(48,37,31,0.2)] backdrop-blur"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-[11px] font-medium tracking-[0.08em] text-[#8a5b45]">
-                      历史镜头 · {activeEvent.timeLabel}
-                    </p>
-                    <h2 className="mt-1 text-base leading-6 font-semibold">
-                      {activeEvent.title}
-                    </h2>
-                  </div>
-                  <button
-                    type="button"
-                    aria-label="关闭历史故事镜头"
-                    title="关闭历史故事镜头"
-                    onClick={() => setStoryCardOpen(false)}
-                    className="grid size-7 shrink-0 place-items-center rounded hover:bg-[#f4e8df]"
-                  >
-                    <X className="size-4" />
-                  </button>
-                </div>
-                <p className="mt-2 text-xs leading-5 text-[#5e4b43]">
-                  史料记载：{activeEvent.summary}
-                </p>
-                {(activeEvent.participants?.length ?? 0) > 0 && (
-                  <p className="mt-2 text-xs leading-5 text-[#6f5143]">
-                    相关人物：
-                    {activeEvent.participants
-                      ?.map((participant) => participant.name)
-                      .join("、")}
-                  </p>
-                )}
-                {activePointEvents.length > 1 && (
-                  <section className="mt-3 border-t border-[#ead8cd] pt-2">
-                    <p className="flex items-center gap-1 text-[11px] font-medium text-[#80533f]">
-                      <CalendarRange className="size-3.5" /> 同地点沿革
-                    </p>
-                    <p className="mt-1 text-[10px] leading-4 text-[#9a7767]">
-                      按资料时间排序；相邻不等同于因果关系。
-                    </p>
-                    <div className="mt-1.5 flex gap-1.5 overflow-x-auto pb-1">
-                      {activePointEvents.map((event) => (
-                        <button
-                          key={event.id}
-                          type="button"
-                          onClick={() => activateTimelineEvent(event)}
-                          className={cn(
-                            "min-w-28 rounded border px-2 py-1.5 text-left text-[10px] leading-4",
-                            event.id === activeEvent.id
-                              ? "border-[#b67a5e] bg-[#f8eee8] text-[#5e3526]"
-                              : "border-[#ead8cd] bg-white/70 text-[#765f54] hover:bg-[#f8eee8]",
-                          )}
-                        >
-                          <span className="block font-medium">
-                            {event.timeLabel}
-                          </span>
-                          <span className="mt-0.5 line-clamp-2 block">
-                            {event.title}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  </section>
-                )}
-                {activePointRelations.length > 0 && (
-                  <section className="mt-3 border-t border-[#ead8cd] pt-2">
-                    <p className="flex items-center gap-1 text-[11px] font-medium text-[#80533f]">
-                      <Network className="size-3.5" /> 资料关联
-                    </p>
-                    <ul className="mt-1.5 space-y-1 text-[10px] leading-4 text-[#6f5143]">
-                      {activePointRelations.slice(0, 6).map((relation) => (
-                        <li key={relation.id}>{relationSentence(relation)}</li>
-                      ))}
-                    </ul>
-                  </section>
-                )}
-                <div className="mt-3 border-t border-[#ead8cd] pt-2 text-[11px] leading-5 text-[#80533f]">
-                  <span className="font-medium">依据：</span>
-                  {activeEvent.evidence.length ? (
-                    activeEvent.evidence.map((source) => (
-                      <a
-                        key={source.id}
-                        href={source.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="ml-1 inline underline decoration-[#cba995] underline-offset-2 hover:text-[#5e3526]"
-                      >
-                        {source.title}
-                      </a>
-                    ))
-                  ) : (
-                    <span className="ml-1">当前事件暂无来源链接</span>
-                  )}
-                  {activeEvent.evidence.some((source) => source.quote) && (
-                    <div className="mt-2 space-y-1 border-t border-[#ead8cd] pt-2">
-                      {activeEvent.evidence.map(
-                        (source) =>
-                          source.quote && (
-                            <blockquote
-                              key={`${source.id}-quote`}
-                              className="border-l-2 border-[#cba995] pl-2 text-[#72564a]"
-                            >
-                              <Quote className="mr-1 inline size-3" />“
-                              {source.quote}”
-                            </blockquote>
-                          ),
-                      )}
-                    </div>
-                  )}
-                  {!activeEvent.evidence.some(
-                    (source) => (source.media?.length ?? 0) > 0,
-                  ) && (
-                    <p className="mt-2 flex items-center gap-1.5 border-t border-dashed border-[#ead8cd] pt-2 text-[10px] leading-4 text-[#8b7467]">
-                      <ImageOff className="size-3 shrink-0" />
-                      暂无授权影像、碑刻拓本或三维模型
-                    </p>
-                  )}
-                </div>
-                <p className="mt-2 text-[10px] leading-4 text-[#9a7767]">
-                  镜头方向仅用于阅读聚焦，不表示史料中的真实行进路线。
-                </p>
-              </article>
-            )}
-
-            <div className="absolute top-3 left-3 z-10 flex max-w-[calc(100%-5rem)] items-center gap-1 rounded-md border border-[#cfdddc] bg-white/95 p-1 shadow-sm backdrop-blur">
+            <div className="absolute top-3 left-3 z-10 flex max-w-[calc(100%-5rem)] items-center gap-1 rounded-md border border-[#cfdddc] bg-white p-1 shadow-sm">
               <div
                 role="tablist"
                 aria-label="地图模式"
@@ -1697,7 +1929,7 @@ export default function MapPage() {
             </div>
 
             {(locationTracking || locationError) && (
-              <div className="absolute right-3 bottom-12 z-10 flex max-w-[min(80vw,360px)] items-center gap-2 rounded-md border border-[#cfdddc] bg-white/95 px-2.5 py-2 text-xs shadow-sm backdrop-blur">
+              <div className="absolute right-3 bottom-12 z-10 flex max-w-[min(80vw,360px)] items-center gap-2 rounded-md border border-[#cfdddc] bg-white px-2.5 py-2 text-xs shadow-sm">
                 {locationTracking ? (
                   <>
                     <span className="relative flex size-2.5 shrink-0">
@@ -1736,16 +1968,23 @@ export default function MapPage() {
 
             <div
               data-map-legend="true"
-              className="pointer-events-none absolute bottom-3 left-3 flex max-w-[calc(100%-5rem)] flex-wrap gap-x-2 gap-y-0.5 rounded bg-white/92 px-2 py-1 text-[11px] shadow-sm"
+              className="pointer-events-none absolute bottom-10 left-3 flex max-w-[calc(100%-5rem)] flex-wrap gap-x-2 gap-y-0.5 rounded bg-white px-2 py-1 text-[10px] shadow-sm sm:text-[11px]"
             >
               <span className="font-medium text-[#6f594c]">
-                古今对照 · 现代底图已弱化
+                {mapDisplayMode === "comparison"
+                  ? "OpenStreetMap · 古今对照"
+                  : "OpenStreetMap 现代地图"}
               </span>
-              <span className="text-[#275e57]">▧ 史料范围</span>
               <span className="text-teal-800">● 精确点</span>
-              <span className="text-amber-700">▧ 近似范围</span>
-              <span className="text-rose-700">▧ 推测范围</span>
-              <span className="text-[#52686c]">范围颜色不表示统计概率</span>
+              {showHistoricalRanges && (
+                <span className="text-[#275e57]">▧ 历史范围</span>
+              )}
+              {showSpeculativeRanges && (
+                <span className="text-amber-700">▧ 推测范围</span>
+              )}
+              {(showHistoricalRanges || showSpeculativeRanges) && (
+                <span className="text-[#52686c]">范围颜色不表示统计概率</span>
+              )}
               <span className="text-amber-900">◈ 虚边为待复核语料草稿</span>
               {mapMode === "route" && (
                 <span className="text-[#52686c]">实线为研学站点顺序</span>
@@ -1779,7 +2018,12 @@ export default function MapPage() {
                 历史时间轴
               </span>
               <strong className="max-w-[45vw] truncate text-sm sm:max-w-none">
-                {activeEvent?.timeLabel ?? "暂无精选事件"}
+                {activeEvent?.timeLabel ??
+                  (activeTimelineYear !== null
+                    ? `${activeTimelineYear}年 · ${activeYearEvents.length}件事件`
+                    : timelineLayout.scale
+                      ? `${timelineLayout.scale.startYear}—${timelineLayout.scale.endYear}年 · 全部年代`
+                      : "全部年代")}
               </strong>
               <button
                 type="button"
@@ -1805,75 +2049,133 @@ export default function MapPage() {
                   data-timeline-scale-end={timelineLayout.scale?.endYear}
                   className="overflow-x-auto pb-1"
                 >
-                  {timelineEvents.length ? (
+                  {timelineLayout.scale && timelineLayout.groups.length ? (
                     <div
                       className="relative"
                       style={{
                         width: timelineLayout.widthPx,
-                        minHeight: timelineLayout.heightPx + 30,
+                        minHeight: timelineLayout.heightPx,
                       }}
                     >
-                      <div className="absolute top-6 right-0 left-0 h-px bg-[#c8d9d7]" />
+                      <div className="absolute top-7 right-0 left-0 h-px bg-[#9bb7b6]" />
                       {timelineLayout.ticks.map((tick) => (
                         <span
                           key={tick.year}
-                          className="absolute top-0 -translate-x-1/2 text-[10px] text-[#718286]"
+                          className="absolute top-0 bottom-0 -translate-x-1/2 text-[10px] text-[#718286]"
                           style={{ left: tick.leftPx }}
                         >
-                          {tick.year}
+                          <span className="block -translate-x-0.5 text-center">
+                            {tick.year}
+                          </span>
+                          <span className="absolute top-7 bottom-0 left-1/2 w-px bg-[#e2eae8]" />
                         </span>
                       ))}
-                      {timelineLayout.items.map(
-                        ({ event, leftPx, lane }, index) => (
+                      {timelineLayout.dynastyBands.map((band) => (
+                        <div
+                          key={band.id}
+                          data-dynasty-band={band.id}
+                          className="absolute h-5 border-x border-[#c8d8d4] bg-[#eef4f1] text-center text-[11px] leading-5 font-medium text-[#58716d]"
+                          style={{
+                            top: 40 + band.track * 22,
+                            left: band.leftPx,
+                            width: band.widthPx,
+                          }}
+                          title={`${band.label}（${band.startYear}—${band.endYear}）`}
+                        >
+                          <span className="block truncate px-1">
+                            {band.label}
+                          </span>
+                        </div>
+                      ))}
+                      {timelineLayout.groups.map((group) => {
+                        const event = group.events[0]!;
+                        const point =
+                          catalog.points.find(
+                            (item) => item.id === event.pointId,
+                          ) ?? null;
+                        const active =
+                          group.events.some(
+                            (item) => item.id === activeEventId,
+                          ) ||
+                          (detailView === "year" &&
+                            group.year === activeTimelineYear);
+                        const label =
+                          group.events.length > 1
+                            ? `${group.year} · ${group.events.length}件事件`
+                            : event.title;
+                        return (
                           <button
                             type="button"
-                            key={event.id}
+                            key={group.id}
+                            data-timeline-year={group.year}
+                            data-timeline-group-size={group.events.length}
                             ref={(element) => {
                               if (element)
                                 timelineEventRefs.current.set(
-                                  event.id,
+                                  group.id,
                                   element,
                                 );
-                              else timelineEventRefs.current.delete(event.id);
+                              else timelineEventRefs.current.delete(group.id);
                             }}
-                            onClick={() => {
-                              setPlaying(false);
-                              activateTimelineEvent(event);
-                            }}
-                            aria-current={
-                              event.id === activeEventId ? "step" : undefined
-                            }
-                            aria-label={`查看历史事件：${event.title}`}
+                            onClick={() => activateTimelineGroup(group)}
+                            aria-current={active ? "step" : undefined}
+                            aria-label={`查看历史事件：${label}`}
                             className={cn(
-                              "absolute z-[1] flex w-[156px] -translate-x-1/2 flex-col items-center gap-1 bg-white px-1 text-center text-xs",
-                              event.id === activeEventId
+                              "absolute z-[1] flex w-[136px] -translate-x-1/2 flex-col items-center gap-1 px-1 text-center text-xs",
+                              active
                                 ? "font-medium text-[#174f53]"
                                 : "text-[#5b6d70] hover:text-[#174f53]",
                             )}
-                            style={{ top: 28 + lane * 68, left: leftPx }}
+                            style={{
+                              top:
+                                timelineLayout.eventTopPx +
+                                group.lane * TIMELINE_LANE_HEIGHT,
+                              left: group.leftPx,
+                            }}
                           >
                             <span
                               className={cn(
-                                "grid size-3.5 place-items-center rounded-full border-2 bg-white",
-                                event.id === activeEventId
+                                "grid size-4 place-items-center rounded-full border-2 bg-white shadow-sm",
+                                active
                                   ? "border-[#1d6267] ring-4 ring-[#d6e9e5]"
                                   : event.importance === "landmark"
                                     ? "border-[#4d8588]"
                                     : "border-[#9bb7b6]",
                               )}
                             />
-                            <span className="block text-[10px] leading-4 text-[#8a6a5b]">
-                              {event.timeLabel}
+                            <span className="rounded-full bg-[#edf3f2] px-2 py-0.5 text-[10px] leading-4 text-[#276b75]">
+                              {eventDynastyLabel(event, point)}
                             </span>
-                            <span className="line-clamp-2 min-h-8 leading-4">
-                              {event.title}
-                            </span>
+                            {group.events.length > 1 ? (
+                              <span
+                                className="line-clamp-2 min-h-8 leading-4 font-medium"
+                                title={group.events
+                                  .map((item) => item.title)
+                                  .join("；")}
+                              >
+                                {label}
+                              </span>
+                            ) : (
+                              <>
+                                <span className="block text-[10px] leading-4 text-[#718286]">
+                                  {eventYearLabel(event)}
+                                </span>
+                                <span
+                                  className="line-clamp-2 min-h-8 leading-4 font-medium"
+                                  title={event.title}
+                                >
+                                  {event.title}
+                                </span>
+                              </>
+                            )}
                             <span className="sr-only">
-                              第 {index + 1} 个事件，{event.timeLabel}
+                              {group.events.length > 1
+                                ? `包含：${group.events.map((item) => item.title).join("、")}`
+                                : event.timeLabel}
                             </span>
                           </button>
-                        ),
-                      )}
+                        );
+                      })}
                     </div>
                   ) : (
                     <span className="text-muted-foreground text-xs">
@@ -1912,7 +2214,27 @@ export default function MapPage() {
           </section>
         </main>
 
-        {selected && (
+        {detailView === "event" && activeEvent ? (
+          <aside className="hidden w-[390px] shrink-0 border-l bg-white xl:flex xl:min-h-0">
+            <HistoricalEventDetails
+              event={activeEvent}
+              point={activePoint}
+              dataNotice={catalog.dataNotice}
+              onViewPlace={() => {
+                if (activePoint) selectPoint(activePoint.id);
+              }}
+            />
+          </aside>
+        ) : detailView === "year" && activeTimelineYear !== null ? (
+          <aside className="hidden w-[390px] shrink-0 border-l bg-white xl:flex xl:min-h-0">
+            <HistoricalYearDetails
+              year={activeTimelineYear}
+              events={activeYearEvents}
+              points={catalog.points}
+              onSelectEvent={activateTimelineEvent}
+            />
+          </aside>
+        ) : selected ? (
           <aside className="hidden w-[390px] shrink-0 border-l bg-white xl:flex xl:min-h-0">
             <PointDetails
               point={selected}
@@ -1922,7 +2244,7 @@ export default function MapPage() {
               onClose={() => setSelectedId(null)}
             />
           </aside>
-        )}
+        ) : null}
       </div>
 
       <Sheet
@@ -1939,6 +2261,51 @@ export default function MapPage() {
           {toolPanel === "layers" && layersPanel}
           {toolPanel === "route" && routePanel}
         </SheetContent>
+      </Sheet>
+
+      <Sheet
+        open={
+          compactLayout &&
+          eventDetailSheetOpen &&
+          ((detailView === "event" && activeEvent !== null) ||
+            (detailView === "year" && activeTimelineYear !== null))
+        }
+        onOpenChange={setEventDetailSheetOpen}
+      >
+        {detailView === "event" && activeEvent && (
+          <SheetContent
+            side="bottom"
+            className="max-h-[84dvh] gap-0 rounded-t-md p-0 xl:hidden"
+          >
+            <SheetHeader className="sr-only">
+              <SheetTitle>{activeEvent.title}</SheetTitle>
+            </SheetHeader>
+            <HistoricalEventDetails
+              event={activeEvent}
+              point={activePoint}
+              dataNotice={catalog.dataNotice}
+              onViewPlace={() => {
+                if (activePoint) selectPoint(activePoint.id);
+              }}
+            />
+          </SheetContent>
+        )}
+        {detailView === "year" && activeTimelineYear !== null && (
+          <SheetContent
+            side="bottom"
+            className="max-h-[84dvh] gap-0 rounded-t-md p-0 xl:hidden"
+          >
+            <SheetHeader className="sr-only">
+              <SheetTitle>{activeTimelineYear}年历史事件</SheetTitle>
+            </SheetHeader>
+            <HistoricalYearDetails
+              year={activeTimelineYear}
+              events={activeYearEvents}
+              points={catalog.points}
+              onSelectEvent={activateTimelineEvent}
+            />
+          </SheetContent>
+        )}
       </Sheet>
 
       <Sheet

@@ -39,14 +39,14 @@ import {
   addDocumentToResearchProject,
   listResearchProjects,
 } from "@/core/projects/api";
-import { createLatestRequestTracker } from "@/core/source-files/latest-request";
 import {
+  type IngestionJobStatus,
   pageSourceDocumentLibrary,
   type SourceDocumentStatus,
   type SourceDocumentSummary,
-  type IngestionJobStatus,
   type SourceUploadResult,
 } from "@/core/source-files/api";
+import { createLatestRequestTracker } from "@/core/source-files/latest-request";
 
 type LibraryDocument = {
   id: string;
@@ -175,10 +175,11 @@ export default function LibraryPage() {
       setProjectOptions([]);
       return;
     }
+    const tracker = loadTracker.current;
     const timer = window.setTimeout(() => void loadDocuments(), 250);
     return () => {
       window.clearTimeout(timer);
-      loadTracker.current.cancel();
+      tracker.cancel();
     };
     // loadDocuments is intentionally recreated from the current paging filters.
     // eslint-disable-next-line react-hooks/exhaustive-deps

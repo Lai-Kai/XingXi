@@ -41,11 +41,12 @@ import {
   createEvent,
   createRelation,
   extractTextKnowledge,
-  listEntities,
+  fetchGraphCatalog,
+  invalidateGraphCatalogCache,
   listEvents,
   listGeoFeatures,
-  listRelations,
   queryGraph,
+  readCachedGraphCatalog,
   reviewEvent,
   reviewRelation,
   upsertGeoFeature,
@@ -124,8 +125,10 @@ const reverseRelationLabels: Record<GraphRelation["relation_type"], string> = {
   documented_in: "收录内容",
 };
 const LOCAL_GRAPH_MAX_NODES = 200;
-const LOCAL_GRAPH_RELATION_LIMIT = 2000;
 const VISIBLE_GRAPH_RELATION_LIMIT = 18;
+const VISIBLE_NETWORK_RELATION_LIMIT = 80;
+type GraphDepth = 1 | 2 | 3;
+const DEFAULT_GRAPH_DEPTH: GraphDepth = 2;
 const reviewLabels = {
   pending: "待复核",
   reviewed: "已复核",
@@ -201,58 +204,55 @@ function selectVisibleGraphRelations(
   return ordered.slice(start, start + limit);
 }
 
-async function hydrateFocusedGraphResult(
-  result: GraphQueryResult,
+function buildLocalFocusedGraphResult(
   centerId: string,
-  availableEntities: GraphEntity[],
-  signal?: AbortSignal,
-): Promise<GraphQueryResult> {
-  if (result.status !== "supported") return result;
-  let localRelations: GraphRelation[];
-  try {
-    localRelations = await listRelations({
-      entityId: centerId,
-      limit: LOCAL_GRAPH_RELATION_LIMIT,
-      signal,
-    });
-  } catch (reason) {
-    if (signal?.aborted) throw reason;
-    return result;
-  }
-
-  const groundedRelations = localRelations.filter(
-    (relation) => relation.evidence_ids.length > 0 || relation.is_inferred,
+  entities: GraphEntity[],
+  relations: GraphRelation[],
+): GraphQueryResult | null {
+  const center = entities.find((entity) => entity.id === centerId);
+  if (!center) return null;
+  const groundedRelations = relations.filter(
+    (relation) =>
+      (relation.evidence_ids.length > 0 || relation.is_inferred) &&
+      (relation.subject_id === centerId || relation.object_id === centerId),
   );
-  const nodesById = new Map(result.nodes.map((entity) => [entity.id, entity]));
-  const entitiesById = new Map(
-    availableEntities.map((entity) => [entity.id, entity]),
-  );
+  const entityById = new Map(entities.map((entity) => [entity.id, entity]));
+  const nodeIds = new Set<string>([centerId]);
   for (const relation of groundedRelations) {
-    for (const endpointId of [relation.subject_id, relation.object_id]) {
-      const entity = entitiesById.get(endpointId);
-      if (entity?.evidence_ids.length) nodesById.set(entity.id, entity);
-    }
+    nodeIds.add(relation.subject_id);
+    nodeIds.add(relation.object_id);
   }
   return {
-    ...result,
-    nodes: [...nodesById.values()],
-    edges: groundedRelations.length ? groundedRelations : result.edges,
-    truncated:
-      result.truncated || localRelations.length >= LOCAL_GRAPH_RELATION_LIMIT,
+    query: center.canonical_name,
+    status: "supported",
+    message: "已预览载入的直接关系，正在查询所选范围的关系网。",
+    candidates: [center],
+    nodes: [...nodeIds]
+      .map((entityId) => entityById.get(entityId))
+      .filter((entity): entity is GraphEntity => Boolean(entity)),
+    edges: groundedRelations,
+    evidence: [],
+    truncated: false,
+    max_depth: 1,
   };
 }
 
 export default function KnowledgeGraphPage() {
   const { user } = useAuth();
   const isAdmin = user?.system_role === "admin";
+  const [initialGraphCatalog] = useState(readCachedGraphCatalog);
   const [view, setView] = useState<View>("graph");
-  const [entities, setEntities] = useState<GraphEntity[]>([]);
-  const [relations, setRelations] = useState<GraphRelation[]>([]);
+  const [entities, setEntities] = useState<GraphEntity[]>(
+    initialGraphCatalog?.entities ?? [],
+  );
+  const [relations, setRelations] = useState<GraphRelation[]>(
+    initialGraphCatalog?.relations ?? [],
+  );
   const [events, setEvents] = useState<HistoricalEvent[]>([]);
   const [geo, setGeo] = useState<GeoFeature[]>([]);
   const [result, setResult] = useState<GraphQueryResult | null>(null);
   const [query, setQuery] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(initialGraphCatalog === null);
   const [queryLoading, setQueryLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -272,6 +272,8 @@ export default function KnowledgeGraphPage() {
     null,
   );
   const [graphScope, setGraphScope] = useState<GraphScope>("all");
+  const [graphDepth, setGraphDepth] = useState<GraphDepth>(DEFAULT_GRAPH_DEPTH);
+  const graphDepthRef = useRef<GraphDepth>(DEFAULT_GRAPH_DEPTH);
   const [graphRelationPage, setGraphRelationPage] = useState(0);
   const [reviewFilter, setReviewFilter] = useState<
     "all" | "reviewed" | "draft"
@@ -312,98 +314,127 @@ export default function KnowledgeGraphPage() {
   const [extractionText, setExtractionText] = useState("");
   const [extraction, setExtraction] = useState<ExtractionResponse | null>(null);
 
-  const load = useCallback(async () => {
-    const request = supportDataTracker.current.start();
-    setLoading(true);
-    setError(null);
-    try {
-      if (view === "graph") {
-        const [nextEntities, nextRelations] = await Promise.all([
-          listEntities({ limit: 1000, signal: request.signal }),
-          listRelations({ limit: 2000, signal: request.signal }),
-        ]);
-        if (!supportDataTracker.current.isCurrent(request.sequence)) return;
-        setEntities(nextEntities);
-        setRelations(nextRelations);
-        setResult(null);
-        const degreeByEntity = new Map<string, number>();
-        for (const relation of nextRelations) {
-          if (relation.relation_type === "documented_in") continue;
-          degreeByEntity.set(
-            relation.subject_id,
-            (degreeByEntity.get(relation.subject_id) ?? 0) + 1,
-          );
-          degreeByEntity.set(
-            relation.object_id,
-            (degreeByEntity.get(relation.object_id) ?? 0) + 1,
-          );
-        }
-        const defaultFocus = [...nextEntities]
-          .filter((entity) => (degreeByEntity.get(entity.id) ?? 0) > 0)
-          .sort(
-            (left, right) =>
-              (degreeByEntity.get(right.id) ?? 0) -
-                (degreeByEntity.get(left.id) ?? 0) ||
-              Number(right.entity_type === "person") -
-                Number(left.entity_type === "person") ||
-              left.canonical_name.localeCompare(right.canonical_name),
-          )[0];
-        let initialResult: GraphQueryResult | null = null;
-        if (defaultFocus) {
-          try {
-            initialResult = await queryGraph(defaultFocus.id, 1, {
-              maxNodes: LOCAL_GRAPH_MAX_NODES,
-              signal: request.signal,
-            });
-            initialResult = await hydrateFocusedGraphResult(
-              initialResult,
-              defaultFocus.id,
-              nextEntities,
-              request.signal,
+  const load = useCallback(
+    async (force = false) => {
+      const request = supportDataTracker.current.start();
+      setLoading(true);
+      setError(null);
+      try {
+        if (view === "graph") {
+          const { entities: nextEntities, relations: nextRelations } =
+            await fetchGraphCatalog({ force, signal: request.signal });
+          if (!supportDataTracker.current.isCurrent(request.sequence)) return;
+          setEntities(nextEntities);
+          setRelations(nextRelations);
+          const degreeByEntity = new Map<string, number>();
+          for (const relation of nextRelations) {
+            if (relation.relation_type === "documented_in") continue;
+            degreeByEntity.set(
+              relation.subject_id,
+              (degreeByEntity.get(relation.subject_id) ?? 0) + 1,
             );
-          } catch (reason) {
-            if (request.signal.aborted) throw reason;
-            // The catalog is still useful when a just-created center has no
-            // queryable neighborhood yet.
+            degreeByEntity.set(
+              relation.object_id,
+              (degreeByEntity.get(relation.object_id) ?? 0) + 1,
+            );
           }
+          const defaultFocus = [...nextEntities]
+            .filter((entity) => (degreeByEntity.get(entity.id) ?? 0) > 0)
+            .sort(
+              (left, right) =>
+                (degreeByEntity.get(right.id) ?? 0) -
+                  (degreeByEntity.get(left.id) ?? 0) ||
+                Number(right.entity_type === "person") -
+                  Number(left.entity_type === "person") ||
+                left.canonical_name.localeCompare(right.canonical_name),
+            )[0];
+          setFocusedEntityId(defaultFocus?.id ?? null);
+          setFocusHistory([]);
+          setQuery((current) =>
+            current.trim() ? current : (defaultFocus?.canonical_name ?? ""),
+          );
+          if (defaultFocus) {
+            setResult(
+              buildLocalFocusedGraphResult(
+                defaultFocus.id,
+                nextEntities,
+                nextRelations,
+              ),
+            );
+            const detailRequest = focusTracker.current.start();
+            const resultSequence = ++resultRequestSequence.current;
+            setFocusLoading(true);
+            void (async () => {
+              try {
+                const initialResult = await queryGraph(
+                  defaultFocus.id,
+                  graphDepthRef.current,
+                  {
+                    maxNodes: LOCAL_GRAPH_MAX_NODES,
+                    signal: detailRequest.signal,
+                  },
+                );
+                if (
+                  focusTracker.current.isCurrent(detailRequest.sequence) &&
+                  resultRequestSequence.current === resultSequence
+                ) {
+                  setResult(initialResult);
+                  if (initialResult.status !== "supported")
+                    setFocusedEntityId(null);
+                }
+              } catch (reason) {
+                if (
+                  focusTracker.current.isCurrent(detailRequest.sequence) &&
+                  resultRequestSequence.current === resultSequence
+                ) {
+                  setError(
+                    reason instanceof Error
+                      ? reason.message
+                      : "关系网加载失败，当前保留已载入的直接关系",
+                  );
+                }
+              } finally {
+                if (
+                  focusTracker.current.isCurrent(detailRequest.sequence) &&
+                  resultRequestSequence.current === resultSequence
+                )
+                  setFocusLoading(false);
+                focusTracker.current.finish(detailRequest.sequence);
+              }
+            })();
+          }
+        } else if (view === "events") {
+          const nextEvents = await listEvents({
+            limit: 100,
+            signal: request.signal,
+          });
+          if (!supportDataTracker.current.isCurrent(request.sequence)) return;
+          setEvents(nextEvents);
+        } else if (view === "geo") {
+          const nextGeo = await listGeoFeatures({
+            limit: 200,
+            signal: request.signal,
+          });
+          if (!supportDataTracker.current.isCurrent(request.sequence)) return;
+          setGeo(nextGeo);
         }
-        if (!supportDataTracker.current.isCurrent(request.sequence)) return;
-        setFocusedEntityId(defaultFocus?.id ?? null);
-        setFocusHistory([]);
-        setQuery((current) =>
-          current.trim() ? current : (defaultFocus?.canonical_name ?? ""),
-        );
-        setResult(initialResult?.status === "supported" ? initialResult : null);
-      } else if (view === "events") {
-        const nextEvents = await listEvents({
-          limit: 100,
-          signal: request.signal,
-        });
-        if (!supportDataTracker.current.isCurrent(request.sequence)) return;
-        setEvents(nextEvents);
-      } else if (view === "geo") {
-        const nextGeo = await listGeoFeatures({
-          limit: 200,
-          signal: request.signal,
-        });
-        if (!supportDataTracker.current.isCurrent(request.sequence)) return;
-        setGeo(nextGeo);
+      } catch (reason) {
+        if (
+          request.signal.aborted ||
+          !supportDataTracker.current.isCurrent(request.sequence)
+        ) {
+          return;
+        }
+        setError(reason instanceof Error ? reason.message : "无法读取知识图谱");
+      } finally {
+        if (supportDataTracker.current.isCurrent(request.sequence)) {
+          setLoading(false);
+          supportDataTracker.current.finish(request.sequence);
+        }
       }
-    } catch (reason) {
-      if (
-        request.signal.aborted ||
-        !supportDataTracker.current.isCurrent(request.sequence)
-      ) {
-        return;
-      }
-      setError(reason instanceof Error ? reason.message : "无法读取知识图谱");
-    } finally {
-      if (supportDataTracker.current.isCurrent(request.sequence)) {
-        setLoading(false);
-        supportDataTracker.current.finish(request.sequence);
-      }
-    }
-  }, [view]);
+    },
+    [view],
+  );
   useEffect(() => {
     const supportTracker = supportDataTracker.current;
     const queryRequestTracker = queryTracker.current;
@@ -482,9 +513,8 @@ export default function KnowledgeGraphPage() {
   const displayedRelations = filterRelationsForScope(
     baseDisplayedRelations.filter(
       (relation) =>
-        // A local view must never leak edges between second-hop nodes into the
-        // canvas, even if an API response contains them.
-        (!focusedEntityId ||
+        (graphDepth > 1 ||
+          !focusedEntityId ||
           relation.subject_id === focusedEntityId ||
           relation.object_id === focusedEntityId) &&
         relationPassesReview(relation),
@@ -492,9 +522,13 @@ export default function KnowledgeGraphPage() {
     graphScope,
     graphEntitiesForScope,
   );
+  const visibleRelationLimit =
+    graphDepth === 1
+      ? VISIBLE_GRAPH_RELATION_LIMIT
+      : VISIBLE_NETWORK_RELATION_LIMIT;
   const graphRelationPageCount = Math.max(
     1,
-    Math.ceil(displayedRelations.length / VISIBLE_GRAPH_RELATION_LIMIT),
+    Math.ceil(displayedRelations.length / visibleRelationLimit),
   );
   const safeGraphRelationPage = Math.min(
     graphRelationPage,
@@ -502,7 +536,7 @@ export default function KnowledgeGraphPage() {
   );
   useEffect(() => {
     setGraphRelationPage(0);
-  }, [focusedEntityId, graphScope, reviewFilter, result?.query]);
+  }, [focusedEntityId, graphScope, graphDepth, reviewFilter, result?.query]);
   useEffect(() => {
     if (graphRelationPage !== safeGraphRelationPage) {
       setGraphRelationPage(safeGraphRelationPage);
@@ -512,10 +546,10 @@ export default function KnowledgeGraphPage() {
     () =>
       selectVisibleGraphRelations(
         displayedRelations,
-        VISIBLE_GRAPH_RELATION_LIMIT,
+        visibleRelationLimit,
         safeGraphRelationPage,
       ),
-    [displayedRelations, safeGraphRelationPage],
+    [displayedRelations, safeGraphRelationPage, visibleRelationLimit],
   );
   const visibleGraphEntityIds = new Set(
     visibleGraphRelations.flatMap((relation) => [
@@ -556,6 +590,8 @@ export default function KnowledgeGraphPage() {
         : [],
     [displayedRelations, focusedEntityId],
   );
+  const panelRelations =
+    graphDepth === 1 ? focusedRelations : displayedRelations;
   const evidenceById = useMemo(
     () =>
       new Map(
@@ -638,9 +674,7 @@ export default function KnowledgeGraphPage() {
         id: relation.id,
         source: relation.subject_id,
         target: relation.object_id,
-        label: focusedEntityId
-          ? relationLabelForCenter(relation, focusedEntityId)
-          : relationLabels[relation.relation_type],
+        label: relationLabels[relation.relation_type],
         markerEnd: { type: MarkerType.ArrowClosed },
         animated: relation.is_inferred,
         style: { stroke: relation.is_inferred ? "#b7791f" : "#39737a" },
@@ -683,11 +717,20 @@ export default function KnowledgeGraphPage() {
 
   useEffect(() => {
     if (!focusedEntityId) return;
-    const frame = window.requestAnimationFrame(() =>
-      centerGraphOn(focusedEntityId),
-    );
+    const frame = window.requestAnimationFrame(() => {
+      if (graphDepth > 1) {
+        void flowInstance.current?.fitView({
+          padding: 0.18,
+          minZoom: 0.12,
+          maxZoom: 0.82,
+          duration: 250,
+        });
+      } else {
+        centerGraphOn(focusedEntityId);
+      }
+    });
     return () => window.cancelAnimationFrame(frame);
-  }, [centerGraphOn, focusedEntityId, graphShapeKey]);
+  }, [centerGraphOn, focusedEntityId, graphShapeKey, graphDepth]);
 
   async function runQuery() {
     const normalizedQuery = query.trim();
@@ -698,19 +741,29 @@ export default function KnowledgeGraphPage() {
     const resultSequence = ++resultRequestSequence.current;
     setQueryLoading(true);
     setError(null);
+    const localEntity = entities.find(
+      (entity) =>
+        entity.id === normalizedQuery ||
+        entity.canonical_name.localeCompare(normalizedQuery, "zh-CN", {
+          sensitivity: "base",
+        }) === 0,
+    );
+    if (localEntity) {
+      setFocusedEntityId(localEntity.id);
+      setResult(
+        buildLocalFocusedGraphResult(localEntity.id, entities, relations),
+      );
+      centerGraphOn(localEntity.id);
+    }
     try {
-      let nextResult = await queryGraph(normalizedQuery, 1, {
-        maxNodes: LOCAL_GRAPH_MAX_NODES,
-        signal: request.signal,
-      });
-      if (nextResult.status === "supported" && nextResult.candidates[0]) {
-        nextResult = await hydrateFocusedGraphResult(
-          nextResult,
-          nextResult.candidates[0].id,
-          entities,
-          request.signal,
-        );
-      }
+      const nextResult = await queryGraph(
+        normalizedQuery,
+        graphDepthRef.current,
+        {
+          maxNodes: LOCAL_GRAPH_MAX_NODES,
+          signal: request.signal,
+        },
+      );
       if (
         !queryTracker.current.isCurrent(request.sequence) ||
         resultRequestSequence.current !== resultSequence
@@ -750,12 +803,17 @@ export default function KnowledgeGraphPage() {
 
   async function focusEntity(
     entityId: string,
-    options: { addToHistory?: boolean } = {},
+    options: { addToHistory?: boolean; depth?: GraphDepth } = {},
   ) {
+    if (focusLoading || queryLoading) return;
     const entity = entityById.get(entityId);
-    if (!entity || focusLoading) return;
-    if (entityId === focusedEntityId) return;
-    if (options.addToHistory !== false && focusedEntityId) {
+    if (!entity) return;
+    if (entityId === focusedEntityId && options.depth === undefined) return;
+    if (
+      options.addToHistory !== false &&
+      focusedEntityId &&
+      entityId !== focusedEntityId
+    ) {
       setFocusHistory((current) => [...current, focusedEntityId].slice(-40));
     }
     queryTracker.current.cancel();
@@ -764,20 +822,35 @@ export default function KnowledgeGraphPage() {
     const resultSequence = ++resultRequestSequence.current;
     setFocusedEntityId(entityId);
     setQuery(entity.canonical_name);
+    if (entityId !== focusedEntityId) {
+      const preview = buildLocalFocusedGraphResult(
+        entityId,
+        result?.status === "supported" ? result.nodes : entities,
+        result?.status === "supported" ? result.edges : relations,
+      );
+      setResult(
+        preview
+          ? {
+              ...preview,
+              release_id: result?.release_id,
+              evidence: result?.evidence ?? [],
+            }
+          : null,
+      );
+    }
     setSelectedRelationId(null);
     centerGraphOn(entityId);
     setFocusLoading(true);
     setError(null);
     try {
-      let nextResult = await queryGraph(entityId, 1, {
-        maxNodes: LOCAL_GRAPH_MAX_NODES,
-        signal: request.signal,
-      });
-      nextResult = await hydrateFocusedGraphResult(
-        nextResult,
+      const nextResult = await queryGraph(
         entityId,
-        entities,
-        request.signal,
+        options.depth ?? graphDepthRef.current,
+        {
+          maxNodes: LOCAL_GRAPH_MAX_NODES,
+          releaseId: result?.release_id ?? undefined,
+          signal: request.signal,
+        },
       );
       if (
         !focusTracker.current.isCurrent(request.sequence) ||
@@ -794,6 +867,10 @@ export default function KnowledgeGraphPage() {
       ) {
         return;
       }
+      if (options.depth !== undefined) {
+        graphDepthRef.current = graphDepth;
+        setGraphDepth(graphDepth);
+      }
       setError(reason instanceof Error ? reason.message : "关系加载失败");
     } finally {
       if (
@@ -804,6 +881,14 @@ export default function KnowledgeGraphPage() {
         focusTracker.current.finish(request.sequence);
       }
     }
+  }
+
+  function changeGraphDepth(depth: GraphDepth) {
+    if (depth === graphDepth || focusLoading || queryLoading) return;
+    graphDepthRef.current = depth;
+    setGraphDepth(depth);
+    if (focusedEntityId)
+      void focusEntity(focusedEntityId, { addToHistory: false, depth });
   }
 
   function goBackToPreviousEntity() {
@@ -818,8 +903,9 @@ export default function KnowledgeGraphPage() {
     setError(null);
     try {
       await action();
+      invalidateGraphCatalogCache();
       toast.success(message);
-      await load();
+      await load(true);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "保存失败");
     } finally {
@@ -846,7 +932,7 @@ export default function KnowledgeGraphPage() {
     return <BusinessLoadingState label="正在读取知识图谱…" />;
   if (error && !entities.length)
     return (
-      <BusinessErrorState description={error} onRetry={() => void load()} />
+      <BusinessErrorState description={error} onRetry={() => void load(true)} />
     );
 
   return (
@@ -855,7 +941,7 @@ export default function KnowledgeGraphPage() {
       <div className="mx-auto max-w-7xl px-4 py-7 sm:px-8 lg:px-10 lg:py-9">
         <BusinessPageHeader
           title="知识图谱"
-          description="以当前主体为中心查看一跳关系，并回查每条边的资料出处"
+          description="从主体出发探索一至三层关系网，并回查人物、地点及外围联系的文献出处"
           icon={Share2}
         />
 
@@ -895,9 +981,12 @@ export default function KnowledgeGraphPage() {
           (result.truncated ||
             displayedRelations.length > visibleGraphRelations.length) && (
             <p className="mt-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-              当前主体的一跳关系共 {displayedRelations.length} 条，地图先显示{" "}
-              {visibleGraphRelations.length}{" "}
-              条；可使用下方分页查看其他关系，右侧保留当前主体已加载的关系列表，点击其他主体可继续展开。
+              已载入 {displayedRelations.length} 条关系，当前图中显示{" "}
+              {visibleGraphRelations.length} 条。右侧保留已载入的关系列表。
+              {displayedRelations.length > visibleGraphRelations.length &&
+                "可使用下方分页查看其他关系。"}
+              {result.truncated &&
+                "本次查询已达到范围上限，结果并非完整关系网；可点击其他主体继续探索。"}
             </p>
           )}
 
@@ -939,6 +1028,30 @@ export default function KnowledgeGraphPage() {
                 )}
                 <div
                   className="flex rounded-md bg-[#eaf1ef] p-1"
+                  role="group"
+                  aria-label="关系层数"
+                >
+                  {(
+                    [
+                      [1, "直接关系"],
+                      [2, "两层关系网"],
+                      [3, "三层关系网"],
+                    ] as const
+                  ).map(([depth, label]) => (
+                    <button
+                      key={depth}
+                      type="button"
+                      aria-pressed={graphDepth === depth}
+                      disabled={loading || focusLoading || queryLoading}
+                      onClick={() => changeGraphDepth(depth)}
+                      className={`h-8 rounded px-3 text-xs disabled:cursor-wait disabled:opacity-60 ${graphDepth === depth ? "bg-white font-medium text-[#225b5f] shadow-sm" : "text-[#68797a]"}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div
+                  className="flex rounded-md bg-[#eaf1ef] p-1"
                   aria-label="关系范围"
                 >
                   {(
@@ -969,11 +1082,12 @@ export default function KnowledgeGraphPage() {
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-[#dbe5e2] pb-3 text-xs text-[#68797a]">
               <span>
                 {focusedEntity
-                  ? `以“${focusedEntity.canonical_name}”为中心的局部关系`
+                  ? `以“${focusedEntity.canonical_name}”为中心 · 已载入 ${result?.max_depth ?? 1} 层关系`
                   : "从搜索或图中节点开始探索"}
+                {(focusLoading || queryLoading) && " · 正在加载关系网…"}
               </span>
               <span>
-                地图显示 {visibleGraphEntities.length} 个主体 · 当前主体{" "}
+                图中显示 {visibleGraphEntities.length} 个主体 · 已载入{" "}
                 {displayedRelations.length} 条关系
               </span>
             </div>
@@ -1024,7 +1138,7 @@ export default function KnowledgeGraphPage() {
                   <ReactFlow
                     nodes={flow.nodes}
                     edges={flow.edges}
-                    minZoom={0.35}
+                    minZoom={0.12}
                     maxZoom={1.6}
                     onInit={(instance) => {
                       flowInstance.current = instance;
@@ -1038,9 +1152,19 @@ export default function KnowledgeGraphPage() {
                     panOnDrag
                     zoomOnScroll
                     onNodeClick={(_, node) => {
-                      if (!focusLoading && node.id !== focusedEntityId) {
+                      if (
+                        !focusLoading &&
+                        !queryLoading &&
+                        node.id !== focusedEntityId
+                      ) {
                         void focusEntity(node.id);
                       }
+                    }}
+                    onEdgeClick={(_, edge) => {
+                      setSelectedRelationId(edge.id);
+                      document
+                        .getElementById(`graph-relation-${edge.id}`)
+                        ?.scrollIntoView({ block: "nearest" });
                     }}
                   >
                     <Background color="#dbe5e2" gap={32} />
@@ -1074,19 +1198,27 @@ export default function KnowledgeGraphPage() {
                     </div>
                     <div className="mt-3 flex items-center justify-between gap-2">
                       <h3 className="text-sm font-semibold">
-                        关联主体（{focusedRelations.length}）
+                        {graphDepth === 1 ? "关联主体" : "关系记录"}（
+                        {panelRelations.length}）
                       </h3>
                       {focusLoading && (
                         <span className="text-xs text-[#718082]">加载中…</span>
                       )}
                     </div>
                     <p className="mt-1 text-xs leading-5 text-[#718082]">
-                      地图只显示当前主体的一跳关系。右侧保留当前主体已加载的关系列表；点击任意主体，切换到它的关系视角。
+                      {graphDepth === 1
+                        ? "当前显示主体的直接关系；切换到两层或三层关系网，可查看关联主体之间及更外围的联系。"
+                        : "关系网包含当前主体及外围主体的联系。点击连线查看出处，点击主体可继续以它为中心探索。"}
                     </p>
                     <ul className="mt-3 space-y-3">
-                      {focusedRelations.map((relation) => {
+                      {panelRelations.map((relation) => {
+                        const relationCenterId =
+                          relation.subject_id === focusedEntity.id ||
+                          relation.object_id === focusedEntity.id
+                            ? focusedEntity.id
+                            : relation.subject_id;
                         const otherId =
-                          relation.subject_id === focusedEntity.id
+                          relation.subject_id === relationCenterId
                             ? relation.object_id
                             : relation.subject_id;
                         const other = entityById.get(otherId);
@@ -1100,16 +1232,18 @@ export default function KnowledgeGraphPage() {
                         return (
                           <li
                             key={relation.id}
+                            id={`graph-relation-${relation.id}`}
                             className="border-b border-[#e4ebea] pb-3 text-xs leading-5"
                           >
                             <div className="flex items-center gap-2">
                               <span className="min-w-0 flex-1 truncate font-medium">
-                                {focusedEntity.canonical_name}
+                                {entityById.get(relationCenterId)
+                                  ?.canonical_name ?? relationCenterId}
                               </span>
                               <ArrowRight className="size-3.5 shrink-0 text-[#7b9293]" />
                               <button
                                 type="button"
-                                disabled={focusLoading}
+                                disabled={focusLoading || queryLoading}
                                 onClick={() => void focusEntity(otherId)}
                                 className="inline-flex min-w-0 items-center gap-1 truncate font-semibold text-[#24676c] hover:underline disabled:cursor-not-allowed disabled:opacity-50"
                               >
@@ -1121,7 +1255,7 @@ export default function KnowledgeGraphPage() {
                             <p className="mt-1 text-[#315f64]">
                               {relationLabelForCenter(
                                 relation,
-                                focusedEntity.id,
+                                relationCenterId,
                               )}
                               {relation.start_time || relation.end_time
                                 ? ` · ${relation.start_time ?? ""}${relation.end_time ? `—${relation.end_time}` : ""}`
@@ -1244,9 +1378,9 @@ export default function KnowledgeGraphPage() {
                           </li>
                         );
                       })}
-                      {!focusedRelations.length && (
+                      {!panelRelations.length && (
                         <li className="text-sm text-[#718082]">
-                          当前主体还没有可展示的关系。
+                          当前范围还没有可展示的关系。
                         </li>
                       )}
                     </ul>

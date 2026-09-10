@@ -78,6 +78,19 @@ class KnowledgeRelease(_ReleaseModel):
     created_at: datetime
 
 
+class KnowledgeReleaseSummary(_ReleaseModel):
+    """Release metadata for request paths that do not consume the manifest."""
+
+    id: str = Field(min_length=1, max_length=255)
+    version_number: int = Field(ge=1)
+    version: str = Field(pattern=r"^v[1-9][0-9]*$")
+    scope: Literal["public", "internal"] = "public"
+    status: ReleaseStatus
+    manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    item_count: int = Field(ge=1)
+    created_at: datetime
+
+
 class KnowledgeReleaseState(_ReleaseModel):
     active_release_id: str | None = None
     active_version: str | None = None
@@ -138,6 +151,10 @@ class KnowledgeReleaseRepository(Protocol):
     async def get_state(self) -> KnowledgeReleaseState: ...
 
     async def get_active(self) -> KnowledgeRelease | None: ...
+
+    async def get_summary(self, release_id: str) -> KnowledgeReleaseSummary | None: ...
+
+    async def get_active_summary(self) -> KnowledgeReleaseSummary | None: ...
 
     async def activate(self, request: ActivateReleaseRequest, *, actor_id: str, changed_at: datetime) -> KnowledgeReleaseState: ...
 

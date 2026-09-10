@@ -74,6 +74,7 @@ def get_hybrid_service():  # noqa: ANN201
         get_fulltext_repository(),
         vectors,
         timeout_seconds=config.hybrid_search.channel_timeout_seconds,
+        vector_timeout_seconds=config.hybrid_search.vector_timeout_seconds,
         rrf_k=config.hybrid_search.rrf_k,
         reranker=TrustReranker(config.trust_rerank),
     )
@@ -104,7 +105,7 @@ async def _authorized_use_for_release(release_id: str | None) -> AuthorizedUse:
     from deerflow.persistence.wu_culture import SqlKnowledgeReleaseRepository
 
     repository = SqlKnowledgeReleaseRepository(session_factory)
-    release = await repository.get(release_id) if release_id else await repository.get_active()
+    release = await repository.get_summary(release_id) if release_id else await repository.get_active_summary()
     return AuthorizedUse.INTERNAL_PROCESSING if release is not None and release.scope == "internal" else AuthorizedUse.PUBLIC_QUOTE
 
 
@@ -115,11 +116,7 @@ async def _authorized_use_for_evidence(evidence_id: str) -> AuthorizedUse:
     from deerflow.persistence.wu_culture import FullTextDocumentRow, KnowledgeReleaseRow
 
     async with session_factory() as session:
-        scope = await session.scalar(
-            select(KnowledgeReleaseRow.scope)
-            .join(FullTextDocumentRow, FullTextDocumentRow.release_id == KnowledgeReleaseRow.id)
-            .where(FullTextDocumentRow.external_id == evidence_id)
-        )
+        scope = await session.scalar(select(KnowledgeReleaseRow.scope).join(FullTextDocumentRow, FullTextDocumentRow.release_id == KnowledgeReleaseRow.id).where(FullTextDocumentRow.external_id == evidence_id))
     return AuthorizedUse.INTERNAL_PROCESSING if scope == "internal" else AuthorizedUse.PUBLIC_QUOTE
 
 

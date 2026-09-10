@@ -116,7 +116,7 @@ async def _resolve_active_release_id(release_id: str | None) -> str | None:
         return None
     from deerflow.persistence.wu_culture import SqlKnowledgeReleaseRepository
 
-    release = await SqlKnowledgeReleaseRepository(session_factory).get_active()
+    release = await SqlKnowledgeReleaseRepository(session_factory).get_active_summary()
     return release.id if release is not None else None
 
 
@@ -250,13 +250,14 @@ async def query_graph(
 ) -> dict:
     await get_current_user_from_request(request)
     release_id = await _resolve_active_release_id(release_id)
-    return await PersistentGraphQueryService(repository).query(
+    result = await PersistentGraphQueryService(repository).query(
         entity=entity,
         max_depth=max_depth,
         max_nodes=max_nodes,
         relation_types=relation_types,
         release_id=release_id,
     )
+    return {**result, "release_id": release_id, "max_depth": max_depth, "max_nodes": max_nodes}
 
 
 @router.get("/relations", response_model=list[RelationRecord])

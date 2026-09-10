@@ -211,3 +211,154 @@ test("explores one-hop relationships from a clicked subject", async ({
   await page.getByRole("button", { name: "查看资料出处" }).first().click();
   await expect(page.getByText("木渎人物谱")).toBeVisible();
 });
+
+test("loads peripheral relationships and evidence beyond the local catalog", async ({
+  page,
+}) => {
+  mockLangGraphAPI(page);
+  const outerPlace = {
+    ...entities[2]!,
+    id: "place-outer",
+    canonical_name: "越地",
+    evidence_ids: ["ev-outer"],
+  };
+  const networkEntities = [...entities, outerPlace];
+  const networkRelations = [
+    ...relations,
+    {
+      ...relations[1]!,
+      id: "rel-outer",
+      subject_id: "place-mudu",
+      object_id: "person-far",
+      relation_type: "related_to",
+      evidence_ids: ["ev-outer"],
+    },
+    {
+      ...relations[1]!,
+      id: "rel-third",
+      subject_id: "person-far",
+      object_id: "place-outer",
+      evidence_ids: ["ev-outer"],
+    },
+  ];
+  const requests: URL[] = [];
+  let failDepthChange = true;
+  await page.route("**/api/entities*", (route) =>
+    route.fulfill({ json: entities.slice(0, 3) }),
+  );
+  await page.route("**/api/knowledge-graph/relations*", (route) =>
+    route.fulfill({ json: relations.slice(0, 2) }),
+  );
+  await page.route("**/api/knowledge-graph/query*", (route) => {
+    const url = new URL(route.request().url());
+    requests.push(url);
+    const subject = url.searchParams.get("entity");
+    const center = networkEntities.find(
+      (entity) => entity.id === subject || entity.canonical_name === subject,
+    )!;
+    const depth = Number(url.searchParams.get("max_depth"));
+    if (depth === 3 && failDepthChange) {
+      return route.fulfill({
+        status: 503,
+        json: { detail: "关系网暂时不可用" },
+      });
+    }
+    const ids = new Set([center.id]);
+    const edges = new Map<string, (typeof networkRelations)[number]>();
+    for (let layer = 0; layer < depth; layer++) {
+      const frontier = new Set(ids);
+      for (const relation of networkRelations) {
+        if (
+          !frontier.has(relation.subject_id) &&
+          !frontier.has(relation.object_id)
+        )
+          continue;
+        edges.set(relation.id, relation);
+        ids.add(relation.subject_id);
+        ids.add(relation.object_id);
+      }
+    }
+    return route.fulfill({
+      json: {
+        query: subject,
+        status: "supported",
+        message: "",
+        candidates: [center],
+        nodes: networkEntities.filter((entity) => ids.has(entity.id)),
+        edges: [...edges.values()],
+        evidence: [
+          ...evidence,
+          {
+            ...evidence[0],
+            evidence_id: "ev-outer",
+            document_title: "外围关系文献",
+          },
+        ],
+        truncated: false,
+        max_depth: depth,
+        max_nodes: 200,
+        release_id: "release-1",
+      },
+    });
+  });
+
+  await page.goto("/workspace/knowledge-graph");
+  await expect(
+    page.getByRole("button", { name: "两层关系网", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page.locator('.react-flow__node[data-id="person-far"]'),
+  ).toBeVisible();
+  await expect(
+    page.locator('.react-flow__node[data-id="place-outer"]'),
+  ).toHaveCount(0);
+  const peripheral = page.locator("#graph-relation-rel-outer");
+  await peripheral.getByRole("button", { name: "查看资料出处" }).click();
+  await expect(
+    peripheral.getByText("外围关系文献", { exact: false }),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "三层关系网", exact: true }).click();
+  await expect(
+    page.getByText("关系网暂时不可用", { exact: false }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "两层关系网", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page.locator('.react-flow__node[data-id="person-far"]'),
+  ).toBeVisible();
+  failDepthChange = false;
+  await page.getByRole("button", { name: "三层关系网", exact: true }).click();
+  await expect(
+    page.locator('.react-flow__node[data-id="place-outer"]'),
+  ).toBeVisible();
+  expect(
+    requests.some(
+      (url) =>
+        url.searchParams.get("max_depth") === "3" &&
+        url.searchParams.get("release_id") === "release-1",
+    ),
+  ).toBe(true);
+
+  await page.getByRole("button", { name: "直接关系", exact: true }).click();
+  await expect(
+    page.locator('.react-flow__node[data-id="person-far"]'),
+  ).toHaveCount(0);
+  await expect(page.locator("#graph-relation-rel-outer")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "两层关系网", exact: true }).click();
+  await peripheral.getByRole("button", { name: "顾况", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "顾况" })).toBeVisible();
+  await expect(
+    page.locator('.react-flow__node[data-id="place-outer"]'),
+  ).toBeVisible();
+  expect(
+    requests.some(
+      (url) =>
+        url.searchParams.get("entity") === "person-far" &&
+        url.searchParams.get("max_depth") === "2" &&
+        url.searchParams.get("release_id") === "release-1",
+    ),
+  ).toBe(true);
+});

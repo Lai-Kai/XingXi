@@ -102,6 +102,9 @@ export interface GraphQueryResult {
   edges: GraphRelation[];
   evidence: Array<Record<string, unknown>>;
   truncated: boolean;
+  release_id?: string | null;
+  max_depth?: number;
+  max_nodes?: number;
 }
 
 export interface KnowledgeExtraction {

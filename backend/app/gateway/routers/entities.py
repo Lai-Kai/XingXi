@@ -32,7 +32,7 @@ async def _resolve_active_release_id(release_id: str | None) -> str | None:
         return release_id
     from deerflow.persistence.wu_culture import SqlKnowledgeReleaseRepository
 
-    release = await SqlKnowledgeReleaseRepository(get_session_factory()).get_active()
+    release = await SqlKnowledgeReleaseRepository(get_session_factory()).get_active_summary()
     return release.id if release is not None else None
 
 

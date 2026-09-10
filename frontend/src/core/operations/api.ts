@@ -1,6 +1,6 @@
-import { getBackendBaseURL } from "@/core/config";
-import { fetch } from "@/core/api/fetcher";
 import { throwGatewayApiError } from "@/core/api/errors";
+import { fetch } from "@/core/api/fetcher";
+import { getBackendBaseURL } from "@/core/config";
 
 import type {
   AssetVersion,
@@ -70,7 +70,7 @@ export function createEvaluationRun(
 ) {
   return request<EvaluationRun>("/api/operations/evaluations/runs", {
     method: "POST",
-    body: JSON.stringify({ release_id: releaseId || null, observations }),
+    body: JSON.stringify({ release_id: releaseId ?? null, observations }),
   });
 }
 
@@ -84,7 +84,7 @@ export function createCorrection(input: {
 }) {
   return request<CorrectionRecord>("/api/operations/corrections", {
     method: "POST",
-    body: JSON.stringify({ ...input, release_id: input.release_id || null }),
+    body: JSON.stringify({ ...input, release_id: input.release_id ?? null }),
   });
 }
 

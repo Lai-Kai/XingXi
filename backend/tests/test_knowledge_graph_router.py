@@ -4,9 +4,11 @@ from dataclasses import dataclass
 
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
+from wu_culture.entities import EntityRecord
 from wu_culture.events import EventRecord
 from wu_culture.geo import GeoFeature
-from wu_culture.models import ReviewStatus
+from wu_culture.graph import InMemoryKnowledgeGraphRepository
+from wu_culture.models import EntityType, ReviewStatus
 from wu_culture.relations import RelationRecord
 
 from app.gateway.routers import knowledge_graph
@@ -120,6 +122,32 @@ def test_reads_require_authentication(monkeypatch) -> None:
     assert client.get("/api/knowledge-graph/events").status_code == 401
     assert client.get("/api/knowledge-graph/geo").status_code == 401
     assert client.post("/api/knowledge-graph/gloss", json={"text": "香溪有桥。"}).status_code == 401
+
+
+def test_graph_query_exposes_requested_network_and_release_scope(monkeypatch) -> None:
+    client, *_ = _client(monkeypatch, role="user")
+    repository = InMemoryKnowledgeGraphRepository(
+        entities=[EntityRecord(id=node_id, canonical_name=node_id, entity_type=EntityType.PLACE) for node_id in ("a", "b", "c", "d")],
+        relations=[RelationRecord(id=f"edge-{index}", subject_id=left, object_id=right, relation_type="related_to", evidence_ids=(f"ev-{index}",), confidence=0.8) for index, (left, right) in enumerate((("a", "b"), ("b", "c"), ("c", "d")))],
+        evidence=[{"evidence_id": f"ev-{index}", "document_title": "测试方志", "page_start": index + 1} for index in range(3)],
+    )
+    client.app.dependency_overrides[knowledge_graph.get_graph_repository] = lambda: repository
+
+    async def release_id(requested):
+        return requested or "release-active"
+
+    monkeypatch.setattr(knowledge_graph, "_resolve_active_release_id", release_id)
+    for depth in (1, 2, 3):
+        response = client.get(f"/api/knowledge-graph/query?entity=a&max_depth={depth}&max_nodes=10&release_id=release-frozen")
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["release_id"] == "release-frozen"
+        assert payload["max_depth"] == depth
+        assert payload["max_nodes"] == 10
+        assert len(payload["nodes"]) == depth + 1
+        assert len(payload["edges"]) == depth
+        assert len(payload["evidence"]) == depth
+    assert client.get("/api/knowledge-graph/query?entity=a&max_depth=4").status_code == 422
 
 
 def test_ordinary_user_can_read_but_cannot_write(monkeypatch) -> None:

@@ -224,7 +224,7 @@ function UserRoleManagement() {
           headers: { "Content-Type": "application/json", ...getCsrfHeaders() },
           body: JSON.stringify({
             business_role: target.business_role,
-            organization_name: target.organization_name || null,
+            organization_name: target.organization_name ?? null,
           }),
         },
       );

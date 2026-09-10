@@ -6,13 +6,18 @@ from typing import Annotated, Literal
 from langchain_core.tools import BaseTool, StructuredTool
 from pydantic import Field
 from wu_culture import (
+    AsyncEvidenceRepository,
     AsyncEvidenceSearchService,
     AuthorizedUse,
+    Citation,
     EvidenceSearchService,
     InMemoryEvidenceRepository,
+    ReviewStatus,
     SearchFilters,
+    SearchHit,
     SearchRequest,
     SourceLevel,
+    evaluate_source_access,
 )
 from wu_culture.aliases import EvidenceLookup, NameAuthorityRequest, NameAuthorityService, NameVariantInput
 from wu_culture.compare import CompareSourcesRequest
@@ -20,7 +25,7 @@ from wu_culture.compare import compare_sources as compare_sources_domain
 from wu_culture.conflicts import detect_conflicts
 from wu_culture.evidence_pack import EvidencePackAssembler, EvidencePackConfig
 from wu_culture.filters import StructuredSearchFilters
-from wu_culture.fulltext import FullTextReleaseNotIndexed, FullTextRepository, FullTextSearchRequest
+from wu_culture.fulltext import FullTextReleaseNotIndexed, FullTextRepository, FullTextSearchRequest, build_keyword_retry_query
 from wu_culture.geo import SpatialConfidence
 from wu_culture.gloss import gloss_passage
 from wu_culture.graph import InMemoryKnowledgeGraphRepository, KnowledgeGraphRepository, PersistentGraphQueryService
@@ -34,6 +39,45 @@ from deerflow.tools.types import Runtime
 from deerflow.utils.token_counting import count_text_tokens
 
 _EMPTY_SEARCH_SERVICE = EvidenceSearchService(InMemoryEvidenceRepository())
+_DEFAULT_HYBRID_SERVICES: dict[tuple[object, ...], HybridSearchService] = {}
+
+
+def _cached_default_hybrid_service(
+    session_factory,
+    *,
+    fulltext_repository: FullTextRepository,
+    config,
+    vectors,
+) -> HybridSearchService:  # noqa: ANN001
+    embedding = config.embedding
+    key = (
+        id(session_factory),
+        config.hybrid_search.channel_timeout_seconds,
+        config.hybrid_search.vector_timeout_seconds,
+        config.hybrid_search.rrf_k,
+        embedding.enabled,
+        embedding.model,
+        embedding.version,
+        embedding.dimensions,
+        config.trust_rerank.policy_version,
+        config.trust_rerank.relevance_weight,
+        config.trust_rerank.authority_weight,
+        config.trust_rerank.review_weight,
+        config.trust_rerank.temporal_weight,
+        config.trust_rerank.document_repeat_penalty,
+    )
+    service = _DEFAULT_HYBRID_SERVICES.get(key)
+    if service is None:
+        service = HybridSearchService(
+            fulltext_repository,
+            vectors,
+            timeout_seconds=config.hybrid_search.channel_timeout_seconds,
+            vector_timeout_seconds=config.hybrid_search.vector_timeout_seconds,
+            rrf_k=config.hybrid_search.rrf_k,
+            reranker=TrustReranker(config.trust_rerank),
+        )
+        _DEFAULT_HYBRID_SERVICES[key] = service
+    return service
 
 
 def build_search_sources_tool(
@@ -45,6 +89,7 @@ def build_search_sources_tool(
     structured_search_service: StructuredSearchService | None = None,
     evidence_pack_assembler: EvidencePackAssembler | None = None,
     evidence_pack_config: EvidencePackConfig | None = None,
+    daily_topic_evidence_repository: AsyncEvidenceRepository | None = None,
 ) -> BaseTool:
     sync_service = search_service or _EMPTY_SEARCH_SERVICE
     resolved_pack_config = evidence_pack_config or EvidencePackConfig()
@@ -53,10 +98,12 @@ def build_search_sources_tool(
 
         session_factory = persistence_engine.get_session_factory()
         if session_factory is not None:
+            sql_evidence_repository = SqlEvidenceRepository(session_factory)
             async_search_service = AsyncEvidenceSearchService(
-                SqlEvidenceRepository(session_factory),
+                sql_evidence_repository,
                 authorized_use=AuthorizedUse.PUBLIC_QUOTE,
             )
+            daily_topic_evidence_repository = daily_topic_evidence_repository or sql_evidence_repository
             fulltext_repository = fulltext_repository or SqlFullTextRepository(session_factory)
             if hybrid_search_service is None:
                 from deerflow.config import get_app_config
@@ -81,12 +128,11 @@ def build_search_sources_tool(
                 if config.embedding.enabled:
                     vector_repository = SqlVectorRepository(session_factory)
                     vectors = VectorIndexService(vector_repository, EmbeddingService(config.embedding))
-                hybrid_search_service = HybridSearchService(
-                    fulltext_repository,
-                    vectors,
-                    timeout_seconds=config.hybrid_search.channel_timeout_seconds,
-                    rrf_k=config.hybrid_search.rrf_k,
-                    reranker=TrustReranker(config.trust_rerank),
+                hybrid_search_service = _cached_default_hybrid_service(
+                    session_factory,
+                    fulltext_repository=fulltext_repository,
+                    config=config,
+                    vectors=vectors,
                 )
     if hybrid_search_service is None and fulltext_repository is not None:
         hybrid_search_service = HybridSearchService(fulltext_repository, None)
@@ -137,6 +183,8 @@ def build_search_sources_tool(
         source text is returned in the evidence pack.
         Treat an insufficient response as "暂无明确方志记载" rather than evidence
         that an event or object never existed.
+        When a response supplies resolved_query and next_cursor, use that
+        resolved_query for the next page.
 
         Args:
             query: Historical person, place, event, object, or source passage to find.
@@ -184,7 +232,7 @@ def build_search_sources_tool(
             "release_id": "unversioned",
         }
 
-    async def search_sources_async(
+    async def search_sources_once(
         query: str,
         source_levels: list[Literal["A", "B", "C", "D", "E", "U"]] | None = None,
         document_ids: list[str] | None = None,
@@ -192,13 +240,17 @@ def build_search_sources_tool(
         top_k: int = 5,
         cursor: str | None = None,
         runtime: Runtime = None,
+        *,
+        query_override: str | None = None,
+        release_override: str | None = None,
     ) -> dict:
         cursor = cursor.strip() or None if isinstance(cursor, str) else cursor
         if document_ids and filters is not None and filters.document_ids:
             raise ValueError("document_ids must be supplied either directly or in filters, not both")
         requested_document_ids = document_ids or (list(filters.document_ids) if filters is not None and filters.document_ids else None)
-        effective_document_ids = _project_scoped_document_ids(runtime, requested_document_ids)
-        if _project_document_ids_from_runtime(runtime) is not None and not effective_document_ids:
+        effective_document_ids = _runtime_scoped_document_ids(runtime, requested_document_ids)
+        scoped_query = query_override or _daily_topic_query_from_runtime(runtime) or query
+        if _has_runtime_document_scope(runtime) and not effective_document_ids:
             return {
                 "query": query,
                 "status": "insufficient",
@@ -207,19 +259,50 @@ def build_search_sources_tool(
                 "release_id": _release_id_from_runtime(runtime) or "unknown",
             }
         request = SearchRequest(
-            query=query,
+            query=scoped_query,
             filters=SearchFilters(
                 document_ids=effective_document_ids,
                 source_levels=[SourceLevel(level) for level in source_levels] if source_levels else None,
             ),
             top_k=top_k,
         )
-        release_id = _release_id_from_runtime(runtime)
+        release_id = release_override or _release_id_from_runtime(runtime)
         runtime_scope = _release_scope_from_runtime(runtime)
         database_release_id, database_scope = await _active_release_context(release_id)
         if release_id is None:
             release_id = database_release_id
         authorized_use = AuthorizedUse.INTERNAL_PROCESSING if runtime_scope == "internal" or database_scope == "internal" else AuthorizedUse.PUBLIC_QUOTE
+        attached_hits = await _daily_topic_attached_hits(
+            runtime,
+            release_id=release_id,
+            authorized_use=authorized_use,
+            repository=daily_topic_evidence_repository,
+        )
+        if attached_hits:
+            evidence_pack, retrieval_trace, conflict_report = pack_hits(
+                attached_hits,
+                release_id or "unversioned",
+            )
+            if any(hit.citation.review_status is ReviewStatus.DISPUTED for hit in attached_hits):
+                status = "conflicting"
+                message = "已载入卡片绑定的争议资料，请并列说明不同记载"
+            elif all(hit.citation.source_level in {SourceLevel.D, SourceLevel.E, SourceLevel.U} for hit in attached_hits):
+                status = "inferred"
+                message = "已载入卡片绑定的本地资料，来源等级或审核状态需保留说明"
+            else:
+                status = "supported"
+                message = "已载入卡片绑定的可引用资料"
+            return {
+                "query": query,
+                "resolved_query": scoped_query,
+                "status": status,
+                "hits": retrieval_trace,
+                "evidence_pack": evidence_pack,
+                "conflict_report": conflict_report,
+                "message": message,
+                "release_id": release_id or "unversioned",
+                "attached_daily_topic_evidence": True,
+            }
         structured_attempted = structured_search_service is not None
         if structured_search_service is not None:
             effective_filters = filters or StructuredSearchFilters()
@@ -235,7 +318,7 @@ def build_search_sources_tool(
             try:
                 structured = await structured_search_service.search(
                     StructuredSearchRequest(
-                        query=query,
+                        query=scoped_query,
                         release_id=release_id,
                         authorized_use=authorized_use,
                         filters=effective_filters,
@@ -267,7 +350,7 @@ def build_search_sources_tool(
             try:
                 hybrid = await hybrid_search_service.search(
                     HybridSearchRequest(
-                        query=query,
+                        query=scoped_query,
                         release_id=release_id,
                         authorized_use=authorized_use,
                         document_ids=tuple(effective_document_ids) if effective_document_ids else None,
@@ -316,11 +399,12 @@ def build_search_sources_tool(
             try:
                 fulltext = await fulltext_repository.search(
                     FullTextSearchRequest(
-                        query=query,
+                        query=scoped_query,
                         release_id=release_id,
                         authorized_use=authorized_use,
                         document_ids=tuple(effective_document_ids) if effective_document_ids else None,
                         source_levels=tuple(SourceLevel(level) for level in source_levels) if source_levels else None,
+                        filters=filters or StructuredSearchFilters(),
                         page_size=top_k,
                     )
                 )
@@ -371,6 +455,31 @@ def build_search_sources_tool(
             "release_id": release_id or "unversioned",
         }
 
+    async def search_sources_async(
+        query: str,
+        source_levels: list[Literal["A", "B", "C", "D", "E", "U"]] | None = None,
+        document_ids: list[str] | None = None,
+        filters: StructuredSearchFilters | None = None,
+        top_k: int = 5,
+        cursor: str | None = None,
+        runtime: Runtime = None,
+    ) -> dict:
+        arguments = dict(query=query, source_levels=source_levels, document_ids=document_ids, filters=filters, top_k=top_k, cursor=cursor, runtime=runtime)
+        result = await search_sources_once(**arguments)
+        pack = result.get("evidence_pack") or {}
+        retry_query = build_keyword_retry_query(query)
+        if not retry_query or (isinstance(cursor, str) and cursor.strip()) or _daily_topic_query_from_runtime(runtime) or result.get("alias_expansion") or pack.get("status") != "empty" or pack.get("input_count") != 0:
+            return result
+        release_id = result.get("release_id")
+        retried = await search_sources_once(
+            **arguments,
+            query_override=retry_query,
+            release_override=release_id if release_id != "unversioned" else None,
+        )
+        retried["resolved_query"] = retry_query
+        retried["retrieval_attempts"] = [query, retry_query]
+        return retried
+
     return StructuredTool.from_function(
         func=search_sources,
         coroutine=search_sources_async,
@@ -419,7 +528,7 @@ async def _active_release_context(release_id: str | None) -> tuple[str | None, s
     from deerflow.persistence.wu_culture import SqlKnowledgeReleaseRepository
 
     repository = SqlKnowledgeReleaseRepository(session_factory)
-    release = await repository.get(release_id) if release_id else await repository.get_active()
+    release = await repository.get_summary(release_id) if release_id else await repository.get_active_summary()
     if release is None:
         return release_id, None
     return release.id, release.scope
@@ -438,6 +547,123 @@ def _project_document_ids_from_runtime(runtime: Runtime | None) -> list[str] | N
     if not isinstance(values, (list, tuple)):
         return []
     return list(dict.fromkeys(str(value) for value in values if value))
+
+
+def _daily_topic_query_from_runtime(runtime: Runtime | None) -> str | None:
+    context = _runtime_context(runtime)
+    value = context.get("daily_topic_query") if context is not None else None
+    if not isinstance(value, str):
+        return None
+    normalized = " ".join(value.split()).strip()
+    return normalized or None
+
+
+def _daily_topic_document_ids_from_runtime(
+    runtime: Runtime | None,
+) -> list[str] | None:
+    context = _runtime_context(runtime)
+    if context is None or "daily_topic_document_ids" not in context:
+        return None
+    values = context.get("daily_topic_document_ids")
+    if not isinstance(values, (list, tuple)):
+        return []
+    return list(dict.fromkeys(str(value) for value in values if value))
+
+
+def _daily_topic_evidence_ids_from_runtime(
+    runtime: Runtime | None,
+) -> list[str]:
+    context = _runtime_context(runtime)
+    values = context.get("daily_topic_evidence_ids") if context is not None else None
+    if not isinstance(values, (list, tuple)):
+        return []
+    return list(dict.fromkeys(str(value) for value in values if value))
+
+
+async def _daily_topic_attached_hits(
+    runtime: Runtime | None,
+    *,
+    release_id: str | None,
+    authorized_use: AuthorizedUse,
+    repository: AsyncEvidenceRepository | None,
+) -> tuple[SearchHit, ...]:
+    evidence_ids = _daily_topic_evidence_ids_from_runtime(runtime)
+    document_ids = set(_daily_topic_document_ids_from_runtime(runtime) or ())
+    if release_id is None or repository is None or not evidence_ids or not document_ids:
+        return ()
+    release_prefix = f"fulltext-{release_id}-chunk-"
+    hits: list[SearchHit] = []
+    for evidence_id in evidence_ids:
+        if not evidence_id.startswith(release_prefix):
+            continue
+        record = await repository.get_evidence(evidence_id)
+        if (
+            record is None
+            or record.document.id not in document_ids
+            or not evaluate_source_access(
+                record.document,
+                use=authorized_use,
+            ).allowed
+        ):
+            continue
+        hits.append(
+            SearchHit(
+                chunk_id=record.chunk.id,
+                score=1.0,
+                matched_terms=[],
+                citation=Citation(
+                    evidence_id=record.evidence.id,
+                    document_id=record.document.id,
+                    document_title=record.document.title,
+                    edition=record.document.edition,
+                    volume=record.chunk.volume,
+                    section=record.chunk.section,
+                    page_start=record.chunk.page_start,
+                    page_end=record.chunk.page_end,
+                    quote=record.evidence.quote,
+                    source_level=record.evidence.source_level,
+                    review_status=record.evidence.review_status,
+                ),
+            )
+        )
+    return tuple(hits)
+
+
+def _runtime_context(runtime: Runtime | None) -> dict | None:
+    if runtime is None:
+        return None
+    context = getattr(runtime, "context", None)
+    if isinstance(context, dict):
+        return context
+    config = getattr(runtime, "config", None) or {}
+    context = config.get("context") if isinstance(config, dict) else None
+    return context if isinstance(context, dict) else None
+
+
+def _has_runtime_document_scope(runtime: Runtime | None) -> bool:
+    return _project_document_ids_from_runtime(runtime) is not None or _daily_topic_document_ids_from_runtime(runtime) is not None
+
+
+def _runtime_scoped_document_ids(
+    runtime: Runtime | None,
+    requested_document_ids: list[str] | None,
+) -> list[str] | None:
+    """Intersect model-requested IDs with project and daily-topic scopes."""
+    scopes = [
+        scope
+        for scope in (
+            _project_document_ids_from_runtime(runtime),
+            _daily_topic_document_ids_from_runtime(runtime),
+        )
+        if scope is not None
+    ]
+    if not scopes:
+        return requested_document_ids
+    effective = list(requested_document_ids) if requested_document_ids is not None else list(scopes[0])
+    for scope in scopes:
+        allowed = set(scope)
+        effective = [document_id for document_id in effective if document_id in allowed]
+    return list(dict.fromkeys(effective))
 
 
 def _project_scoped_document_ids(

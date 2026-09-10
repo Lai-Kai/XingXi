@@ -159,6 +159,40 @@ type RawCatalog = {
   routes: RawRoute[];
 };
 
+const MAP_CATALOG_CACHE_TTL_MS = 5 * 60 * 1000;
+let mapCatalogCache: {
+  expiresAt: number;
+  value: MapCatalog;
+} | null = null;
+let mapCatalogInFlight: Promise<MapCatalog> | null = null;
+
+function awaitWithAbort<T>(
+  promise: Promise<T>,
+  signal?: AbortSignal,
+): Promise<T> {
+  if (!signal) return promise;
+  if (signal.aborted) return Promise.reject(new Error("请求已取消"));
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(new Error("请求已取消"));
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(resolve, reject).finally(() => {
+      signal.removeEventListener("abort", onAbort);
+    });
+  });
+}
+
+export function readCachedMapCatalog(): MapCatalog | null {
+  if (!mapCatalogCache || mapCatalogCache.expiresAt <= Date.now()) {
+    mapCatalogCache = null;
+    return null;
+  }
+  return mapCatalogCache.value;
+}
+
+export function invalidateMapCatalogCache() {
+  mapCatalogCache = null;
+}
+
 function evidence(raw: RawEvidence): MapEvidence {
   return {
     ...raw,
@@ -219,99 +253,111 @@ function point(raw: RawPoint): MapPoint {
 
 export async function fetchMapCatalog(
   signal?: AbortSignal,
+  options: { force?: boolean } = {},
 ): Promise<MapCatalog> {
-  const response = await fetch(`${getBackendBaseURL()}/api/map/catalog`, {
-    signal,
-    cache: "no-store",
+  const cached = readCachedMapCatalog();
+  if (cached && !options.force) return cached;
+  mapCatalogInFlight ??= (async () => {
+    const response = await fetch(`${getBackendBaseURL()}/api/map/catalog`, {
+      cache: "no-store",
+    });
+    if (!response.ok) throw new Error("无法读取古舆地图资料");
+    const raw = (await response.json()) as RawCatalog;
+    const catalog: MapCatalog = {
+      updatedAt: raw.updated_at,
+      dataNotice: raw.data_notice,
+      points: raw.points.map(point),
+      layers: raw.layers.map((layer) => ({
+        id: layer.id,
+        name: layer.name,
+        kind: layer.kind,
+        available: layer.available,
+        sourceUrl: layer.source_url,
+        attribution: layer.attribution,
+        calibrationNote: layer.calibration_note,
+        tileUrl: layer.tile_url,
+      })),
+      events: raw.events.map((eventItem) => ({
+        id: eventItem.id,
+        title: eventItem.title,
+        yearStart: eventItem.year_start,
+        yearEnd: eventItem.year_end,
+        timeLabel: eventItem.time_label,
+        precision: eventItem.precision,
+        pointId: eventItem.point_id,
+        summary: eventItem.summary,
+        evidence: eventItem.evidence.map(evidence),
+        reviewStatus: eventItem.review_status ?? null,
+        releaseId: eventItem.release_id ?? null,
+        recordKind: eventItem.record_kind ?? "reference",
+        featured: eventItem.featured ?? false,
+        importance: eventItem.importance ?? "context",
+        participants: (eventItem.participants ?? []).map((participant) => ({
+          id: participant.id,
+          name: participant.name,
+          entityType: participant.entity_type,
+        })),
+      })),
+      relations: (raw.relations ?? []).map((relation) => ({
+        id: relation.id,
+        subjectId: relation.subject_id,
+        subjectName: relation.subject_name,
+        subjectType: relation.subject_type,
+        relationType: relation.relation_type,
+        objectId: relation.object_id,
+        objectName: relation.object_name,
+        objectType: relation.object_type,
+        startTime: relation.start_time,
+        endTime: relation.end_time,
+        confidence: relation.confidence,
+        evidence: relation.evidence.map(evidence),
+        reviewStatus: relation.review_status ?? null,
+        releaseId: relation.release_id ?? null,
+        recordKind: relation.record_kind ?? "reference",
+      })),
+      trajectories: raw.trajectories.map((trajectory) => ({
+        id: trajectory.id,
+        personId: trajectory.person_id,
+        personName: trajectory.person_name,
+        summary: trajectory.summary,
+        hasUncertainSegments: trajectory.has_uncertain_segments,
+        disclaimer: trajectory.disclaimer,
+        reviewStatus: trajectory.review_status ?? null,
+        releaseId: trajectory.release_id ?? null,
+        recordKind: trajectory.record_kind ?? "reference",
+        points: trajectory.points.map((trajectoryPoint) => ({
+          id: trajectoryPoint.id,
+          pointId: trajectoryPoint.point_id,
+          yearStart: trajectoryPoint.year_start,
+          yearEnd: trajectoryPoint.year_end,
+          timeLabel: trajectoryPoint.time_label,
+          label: trajectoryPoint.label,
+          confidence: trajectoryPoint.confidence,
+          evidence: trajectoryPoint.evidence.map(evidence),
+          reviewStatus: trajectoryPoint.review_status ?? null,
+          sourceRecordId: trajectoryPoint.source_record_id ?? null,
+        })),
+      })),
+      routes: raw.routes.map((route) => ({
+        id: route.id,
+        name: route.name,
+        duration: route.duration,
+        audience: route.audience,
+        summary: route.summary,
+        stopIds: route.stop_ids,
+        disclaimer: route.disclaimer,
+        evidence: route.evidence.map(evidence),
+      })),
+    };
+    mapCatalogCache = {
+      expiresAt: Date.now() + MAP_CATALOG_CACHE_TTL_MS,
+      value: catalog,
+    };
+    return catalog;
+  })().finally(() => {
+    mapCatalogInFlight = null;
   });
-  if (!response.ok) throw new Error("无法读取古舆地图资料");
-  const raw = (await response.json()) as RawCatalog;
-  return {
-    updatedAt: raw.updated_at,
-    dataNotice: raw.data_notice,
-    points: raw.points.map(point),
-    layers: raw.layers.map((layer) => ({
-      id: layer.id,
-      name: layer.name,
-      kind: layer.kind,
-      available: layer.available,
-      sourceUrl: layer.source_url,
-      attribution: layer.attribution,
-      calibrationNote: layer.calibration_note,
-      tileUrl: layer.tile_url,
-    })),
-    events: raw.events.map((eventItem) => ({
-      id: eventItem.id,
-      title: eventItem.title,
-      yearStart: eventItem.year_start,
-      yearEnd: eventItem.year_end,
-      timeLabel: eventItem.time_label,
-      precision: eventItem.precision,
-      pointId: eventItem.point_id,
-      summary: eventItem.summary,
-      evidence: eventItem.evidence.map(evidence),
-      reviewStatus: eventItem.review_status ?? null,
-      releaseId: eventItem.release_id ?? null,
-      recordKind: eventItem.record_kind ?? "reference",
-      featured: eventItem.featured ?? false,
-      importance: eventItem.importance ?? "context",
-      participants: (eventItem.participants ?? []).map((participant) => ({
-        id: participant.id,
-        name: participant.name,
-        entityType: participant.entity_type,
-      })),
-    })),
-    relations: (raw.relations ?? []).map((relation) => ({
-      id: relation.id,
-      subjectId: relation.subject_id,
-      subjectName: relation.subject_name,
-      subjectType: relation.subject_type,
-      relationType: relation.relation_type,
-      objectId: relation.object_id,
-      objectName: relation.object_name,
-      objectType: relation.object_type,
-      startTime: relation.start_time,
-      endTime: relation.end_time,
-      confidence: relation.confidence,
-      evidence: relation.evidence.map(evidence),
-      reviewStatus: relation.review_status ?? null,
-      releaseId: relation.release_id ?? null,
-      recordKind: relation.record_kind ?? "reference",
-    })),
-    trajectories: raw.trajectories.map((trajectory) => ({
-      id: trajectory.id,
-      personId: trajectory.person_id,
-      personName: trajectory.person_name,
-      summary: trajectory.summary,
-      hasUncertainSegments: trajectory.has_uncertain_segments,
-      disclaimer: trajectory.disclaimer,
-      reviewStatus: trajectory.review_status ?? null,
-      releaseId: trajectory.release_id ?? null,
-      recordKind: trajectory.record_kind ?? "reference",
-      points: trajectory.points.map((trajectoryPoint) => ({
-        id: trajectoryPoint.id,
-        pointId: trajectoryPoint.point_id,
-        yearStart: trajectoryPoint.year_start,
-        yearEnd: trajectoryPoint.year_end,
-        timeLabel: trajectoryPoint.time_label,
-        label: trajectoryPoint.label,
-        confidence: trajectoryPoint.confidence,
-        evidence: trajectoryPoint.evidence.map(evidence),
-        reviewStatus: trajectoryPoint.review_status ?? null,
-        sourceRecordId: trajectoryPoint.source_record_id ?? null,
-      })),
-    })),
-    routes: raw.routes.map((route) => ({
-      id: route.id,
-      name: route.name,
-      duration: route.duration,
-      audience: route.audience,
-      summary: route.summary,
-      stopIds: route.stop_ids,
-      disclaimer: route.disclaimer,
-      evidence: route.evidence.map(evidence),
-    })),
-  };
+  return await awaitWithAbort(mapCatalogInFlight, signal);
 }
 
 export async function planMapRoute(

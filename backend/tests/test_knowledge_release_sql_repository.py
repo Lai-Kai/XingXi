@@ -57,6 +57,78 @@ def test_preparation_failure_rolls_back_index_and_asset_rows_before_retry(tmp_pa
     asyncio.run(_exercise_preparation_rollback(tmp_path))
 
 
+def test_active_release_summary_does_not_hydrate_manifest_items(tmp_path, monkeypatch) -> None:
+    async def exercise() -> None:
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'release-summary.db'}")
+        async with engine.begin() as connection:
+            await connection.run_sync(
+                lambda sync_connection: Base.metadata.create_all(
+                    sync_connection,
+                    tables=[
+                        KnowledgeReleaseRow.__table__,
+                        KnowledgeReleaseItemRow.__table__,
+                        KnowledgeReleaseStateRow.__table__,
+                    ],
+                )
+            )
+        session_factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with session_factory() as session:
+            session.add(
+                KnowledgeReleaseRow(
+                    id="release-large",
+                    version_number=7,
+                    release_notes="large active release",
+                    scope="internal",
+                    status="active",
+                    manifest_sha256="a" * 64,
+                    created_by="admin-1",
+                    created_at=NOW,
+                )
+            )
+            session.add(
+                KnowledgeReleaseItemRow(
+                    release_id="release-large",
+                    ordinal=0,
+                    document_id="document-1",
+                    source_file_id="file-1",
+                    chunk_set_id="chunk-set-1",
+                    chunk_id="chunk-1",
+                    content_sha256="b" * 64,
+                    cleaned_page_ids_json='["page-1"]',
+                )
+            )
+            session.add(
+                KnowledgeReleaseStateRow(
+                    id="active",
+                    active_release_id="release-large",
+                    state_version=1,
+                )
+            )
+            await session.commit()
+
+        async def fail_if_manifest_is_loaded(*_args, **_kwargs):
+            raise AssertionError("hot-path release lookup hydrated manifest items")
+
+        monkeypatch.setattr(
+            SqlKnowledgeReleaseRepository,
+            "_row_to_release",
+            fail_if_manifest_is_loaded,
+        )
+        try:
+            repository = SqlKnowledgeReleaseRepository(session_factory)
+            summary = await repository.get_active_summary()
+            assert summary is not None
+            assert summary.id == "release-large"
+            assert summary.version == "v7"
+            assert summary.scope == "internal"
+            assert summary.item_count == 1
+            assert await SqlFullTextRepository(session_factory).resolve_release_id(None) == "release-large"
+        finally:
+            await engine.dispose()
+
+    asyncio.run(exercise())
+
+
 async def _exercise_repository(tmp_path) -> None:
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'releases.db'}")
     tables = [
@@ -312,10 +384,7 @@ async def _exercise_preparation_rollback(tmp_path) -> None:
             counts = {
                 table: (
                     await connection.execute(
-                        text(
-                            f"SELECT COUNT(*) FROM {table} WHERE "
-                            f"{column}=:release_id"
-                        ),
+                        text(f"SELECT COUNT(*) FROM {table} WHERE {column}=:release_id"),
                         {"release_id": failed.id},
                     )
                 ).scalar_one()
@@ -326,9 +395,7 @@ async def _exercise_preparation_rollback(tmp_path) -> None:
                     ("wu_asset_versions", "knowledge_release_id"),
                 )
             }
-            counts["wu_evidence"] = (
-                await connection.execute(text("SELECT COUNT(*) FROM wu_evidence"))
-            ).scalar_one()
+            counts["wu_evidence"] = (await connection.execute(text("SELECT COUNT(*) FROM wu_evidence"))).scalar_one()
         assert counts == {
             "wu_fulltext_documents": 0,
             "wu_fulltext_index_states": 0,
@@ -354,19 +421,13 @@ async def _exercise_preparation_rollback(tmp_path) -> None:
         async with engine.connect() as connection:
             assert (
                 await connection.execute(
-                    text(
-                        "SELECT COUNT(*) FROM wu_asset_versions "
-                        "WHERE knowledge_release_id=:release_id"
-                    ),
+                    text("SELECT COUNT(*) FROM wu_asset_versions WHERE knowledge_release_id=:release_id"),
                     {"release_id": active.id},
                 )
             ).scalar_one() == 1
             assert (
                 await connection.execute(
-                    text(
-                        "SELECT COUNT(*) FROM wu_fulltext_index_states "
-                        "WHERE release_id=:release_id AND status='ready'"
-                    ),
+                    text("SELECT COUNT(*) FROM wu_fulltext_index_states WHERE release_id=:release_id AND status='ready'"),
                     {"release_id": active.id},
                 )
             ).scalar_one() == 1

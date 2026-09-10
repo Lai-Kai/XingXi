@@ -43,10 +43,10 @@ describe("historical timeline scale", () => {
   it("positions events by their year rather than their array index", () => {
     const scale = buildTimelineScale(events);
 
-    expect(scale.startYear).toBe(317);
-    expect(scale.endYear).toBe(1689);
+    expect(scale.startYear).toBeLessThan(317);
+    expect(scale.endYear).toBeGreaterThan(1689);
     expect(timelinePosition(1497, scale)).toBeCloseTo(
-      (1497 - 317) / (1689 - 317),
+      (1497 - scale.startYear) / scale.span,
       5,
     );
     expect(timelinePosition(1497, scale)).toBeGreaterThan(
@@ -54,19 +54,19 @@ describe("historical timeline scale", () => {
     );
   });
 
-  it("assigns same-year events to separate lanes", () => {
+  it("groups same-year events into one compact timeline node", () => {
     const layout = buildTimelineLayout(events, {
       minWidth: 960,
       itemWidth: 156,
       laneGap: 12,
     });
-    const sameYear = layout.items.filter(
-      (item) => item.event.yearStart === 1689,
+    const sameYear = layout.groups.filter(
+      (item) => item.year === 1689,
     );
 
-    expect(sameYear).toHaveLength(2);
-    expect(sameYear[0]?.lane).not.toBe(sameYear[1]?.lane);
-    expect(layout.laneCount).toBeGreaterThanOrEqual(2);
+    expect(sameYear).toHaveLength(1);
+    expect(sameYear[0]?.events).toHaveLength(2);
+    expect(layout.heightPx).toBeLessThanOrEqual(340);
     expect(layout.widthPx).toBeGreaterThanOrEqual(960);
   });
 
@@ -74,10 +74,33 @@ describe("historical timeline scale", () => {
     const layout = buildTimelineLayout(events);
     const years = layout.ticks.map((tick) => tick.year);
 
-    expect(years[0]).toBeGreaterThanOrEqual(317);
-    expect(years.at(-1)).toBeLessThanOrEqual(1689);
+    expect(years[0]).toBeLessThanOrEqual(317);
+    expect(years.at(-1)).toBeGreaterThanOrEqual(1689);
     expect(
       new Set(years.slice(1).map((year, index) => year - years[index]!)).size,
     ).toBe(1);
+  });
+
+  it("uses the same coordinate system for ticks and dynasty bands", () => {
+    const layout = buildTimelineLayout(events);
+    const song = layout.dynastyBands.find((band) => band.id === "song");
+    const songTick = layout.ticks.find((tick) => tick.year === 1000);
+
+    expect(song).toBeDefined();
+    expect(songTick).toBeDefined();
+    expect(song!.leftPx).toBeLessThan(songTick!.leftPx);
+    expect(song!.leftPx + song!.widthPx).toBeGreaterThan(songTick!.leftPx);
+    expect(song!.widthPx).toBeGreaterThan(0);
+  });
+
+  it("keeps overlapping dynasty ranges on separate compact bands", () => {
+    const layout = buildTimelineLayout(events);
+    const song = layout.dynastyBands.find((band) => band.id === "song");
+    const yuan = layout.dynastyBands.find((band) => band.id === "yuan");
+
+    expect(song).toBeDefined();
+    expect(yuan).toBeDefined();
+    expect(song!.track).not.toBe(yuan!.track);
+    expect(layout.eventTopPx).toBeGreaterThan(80);
   });
 });

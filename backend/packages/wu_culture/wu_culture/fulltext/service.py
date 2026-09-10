@@ -175,6 +175,22 @@ def _normalize(value: str) -> str:
     return unicodedata.normalize("NFKC", value).casefold().strip()
 
 
+def build_keyword_retry_query(query: str) -> str | None:
+    """Suggest a core-subject query after an empty agent search.
+
+    Only remove standalone question wording, retaining at least two subject
+    terms. Literal quotations and the exact full-text API remain unchanged.
+    """
+    if any(quote in query for quote in ('"', "'", "“", "”", "‘", "’")):
+        return None
+    wording = {"历史联系", "歷史聯繫", "历史关系", "歷史關係", "相关记载", "相關記載"}
+    terms = query.split()
+    subjects = [term for term in terms if term not in wording]
+    if len(subjects) < 2 or len(subjects) == len(terms):
+        return None
+    return " ".join(subjects)
+
+
 def parse_fulltext_query(query: str) -> ParsedFullTextQuery:
     normalized = unicodedata.normalize("NFKC", query).strip()
     phrases = tuple(dict.fromkeys(_normalize(match) for match in _QUOTED.findall(normalized) if _normalize(match)))
@@ -186,21 +202,11 @@ def parse_fulltext_query(query: str) -> ParsedFullTextQuery:
         for stopword in _QUESTION_STOPWORDS:
             cleaned_remainder = cleaned_remainder.replace(stopword, " ")
         terms = tuple(
-            dict.fromkeys(
-                fragment
-                for match in _TERM.finditer(cleaned_remainder)
-                for run in _CJK_RUN.findall(_normalize(match.group(0)))
-                for fragment in (run[index : index + 2] for index in range(max(1, len(run) - 1)))
-                if fragment
-            )
+            dict.fromkeys(fragment for match in _TERM.finditer(cleaned_remainder) for run in _CJK_RUN.findall(_normalize(match.group(0))) for fragment in (run[index : index + 2] for index in range(max(1, len(run) - 1))) if fragment)
         )
         # Preserve Latin and digit tokens, which do not benefit from CJK
         # bigrams and are still useful in mixed-language source queries.
-        terms = tuple(
-            dict.fromkeys(
-                (*terms, *(term for term in raw_terms if not _CJK_RUN.fullmatch(term)))
-            )
-        )
+        terms = tuple(dict.fromkeys((*terms, *(term for term in raw_terms if not _CJK_RUN.fullmatch(term)))))
     else:
         terms = raw_terms
     if not phrases and not natural_language and len(terms) == 1 and _normalize(normalized) == terms[0]:

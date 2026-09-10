@@ -2,9 +2,9 @@ import type { StyleSpecification } from "maplibre-gl";
 
 import type { MapLayer } from "./types";
 
-export const MAP_BACKGROUND_COLOR = "#ebe6d8";
+export const MAP_BACKGROUND_COLOR = "#dfe7e8";
 export const MAP_BASE_LAYER_ID = "xingxi-modern-base";
-const FALLBACK_OSM_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+const FALLBACK_OSM_TILE_URL = "https://tile.openstreetmap.de/{z}/{x}/{y}.png";
 
 function safeLayerKey(id: string) {
   return id.replace(/[^a-zA-Z0-9_-]/g, "-");
@@ -25,7 +25,7 @@ export function getRenderableMapLayers(layers: MapLayer[]) {
 }
 
 export function defaultMapLayerOpacity(layer: Pick<MapLayer, "kind">) {
-  return layer.kind === "base" ? 0.26 : 0.46;
+  return layer.kind === "base" ? 1 : 0.46;
 }
 
 function rasterSource(layer: MapLayer) {
@@ -46,7 +46,7 @@ export function buildMapStyle(layers: MapLayer[]): StyleSpecification {
   const sources: StyleSpecification["sources"] = {};
   const styleLayers: StyleSpecification["layers"] = [
     {
-      id: "xingxi-history-paper",
+      id: "xingxi-map-background",
       type: "background",
       paint: { "background-color": MAP_BACKGROUND_COLOR },
     },
@@ -59,11 +59,7 @@ export function buildMapStyle(layers: MapLayer[]): StyleSpecification {
       type: "raster",
       source: mapLayerSourceId(baseLayer),
       paint: {
-        "raster-opacity": defaultMapLayerOpacity(baseLayer),
-        "raster-saturation": -1,
-        "raster-contrast": -0.12,
-        "raster-brightness-min": 0.58,
-        "raster-brightness-max": 0.96,
+        "raster-opacity": 1,
         "raster-fade-duration": 0,
       },
     });
@@ -79,11 +75,7 @@ export function buildMapStyle(layers: MapLayer[]): StyleSpecification {
       type: "raster",
       source: "xingxi-fallback-osm",
       paint: {
-        "raster-opacity": 0.26,
-        "raster-saturation": -1,
-        "raster-contrast": -0.12,
-        "raster-brightness-min": 0.58,
-        "raster-brightness-max": 0.96,
+        "raster-opacity": 1,
         "raster-fade-duration": 0,
       },
     });
@@ -95,9 +87,9 @@ export function buildMapStyle(layers: MapLayer[]): StyleSpecification {
       id: mapLayerStyleId(layer),
       type: "raster",
       source: mapLayerSourceId(layer),
+      layout: { visibility: "none" },
       paint: {
         "raster-opacity": defaultMapLayerOpacity(layer),
-        "raster-saturation": -0.18,
         "raster-fade-duration": 0,
       },
     });

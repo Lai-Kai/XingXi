@@ -4,7 +4,6 @@ from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-
 from test_text_review_sql_repository import _seed_review_targets
 
 from app.gateway.routers.research_feed import SqlResearchFeedCandidateRepository
@@ -17,6 +16,9 @@ from deerflow.persistence.wu_culture.model import (
     KnowledgeReleaseRow,
     WuEntityEvidenceRow,
     WuEntityRow,
+    WuEventEvidenceRow,
+    WuEventParticipantRow,
+    WuHistoricalEventRow,
 )
 
 
@@ -87,6 +89,25 @@ async def test_topic_seeds_include_evidence_bound_entities_with_no_release_id(tm
                 evidence_id="evidence-mudu",
             )
         )
+        session.add(
+            WuHistoricalEventRow(
+                id="event-mudu",
+                title="木渎文献所载事件",
+                event_type="local_memory",
+                start_time="1689",
+                end_time=None,
+                time_certainty="approximate",
+                place_entity_id="entity-mudu",
+                summary="测试事件摘要",
+                is_inferred=False,
+                review_status="pending",
+                release_id="release-current",
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        session.add(WuEventEvidenceRow(event_id="event-mudu", evidence_id="evidence-mudu"))
+        session.add(WuEventParticipantRow(event_id="event-mudu", entity_id="entity-mudu"))
         await session.commit()
 
     try:
@@ -96,5 +117,9 @@ async def test_topic_seeds_include_evidence_bound_entities_with_no_release_id(tm
         )
 
         assert any(seed.subject == "木渎" and seed.subject_type == "place" for seed in seeds)
+        event_seed = next(seed for seed in seeds if seed.subject == "木渎文献所载事件")
+        assert event_seed.time_label == "约1689年"
+        assert {entity["id"] for entity in event_seed.entities} >= {"event-mudu", "entity-mudu"}
+        assert event_seed.sources[0]["chunk_id"] == "chunk-1"
     finally:
         await engine.dispose()

@@ -57,8 +57,10 @@ import {
 import { threadTokenUsageToTokenUsage } from "@/core/threads/token-usage";
 import { textOfMessage } from "@/core/threads/utils";
 import {
+  dailyTopicContextForEntry,
   modeContextForEntry,
   parseEntryMode,
+  parseXingxiChatScope,
 } from "@/core/threads/xingxi-entry";
 import { env } from "@/env";
 import { cn } from "@/lib/utils";
@@ -86,6 +88,13 @@ export default function ChatPage() {
       : undefined;
     return entryMode ? modeContextForEntry(entryMode) : null;
   }, [isNewThread, searchParams]);
+  const entryTopicContext = useMemo(
+    () =>
+      isNewThread
+        ? dailyTopicContextForEntry(parseXingxiChatScope(searchParams))
+        : {},
+    [isNewThread, searchParams],
+  );
   const [projectScope, setProjectScope] = useState<{
     id: string;
     name: string;
@@ -129,6 +138,7 @@ export default function ChatPage() {
     () => ({
       ...settings.context,
       ...(entryModeContext ?? {}),
+      ...entryTopicContext,
       ...(projectScope
         ? {
             research_project_id: projectScope.id,
@@ -137,7 +147,7 @@ export default function ChatPage() {
           }
         : {}),
     }),
-    [entryModeContext, projectScope, settings.context],
+    [entryModeContext, entryTopicContext, projectScope, settings.context],
   );
   const [localSettings, setLocalSettings] = useLocalSettings();
   const { models, tokenUsageEnabled, isLoading: modelsLoading } = useModels();
@@ -215,19 +225,26 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (
-      (!entryModeContext && !projectScope) ||
+      (!entryModeContext &&
+        !projectScope &&
+        !entryTopicContext.daily_topic_query) ||
       (settings.context.mode === entryModeContext?.mode &&
         settings.context.reasoning_effort ===
           entryModeContext?.reasoning_effort &&
         settings.context.research_project_id === projectScope?.id &&
         JSON.stringify(settings.context.research_project_document_ids ?? []) ===
-          JSON.stringify(projectScope?.documentIds ?? []))
+          JSON.stringify(projectScope?.documentIds ?? []) &&
+        settings.context.daily_topic_query ===
+          entryTopicContext.daily_topic_query &&
+        JSON.stringify(settings.context.daily_topic_document_ids ?? []) ===
+          JSON.stringify(entryTopicContext.daily_topic_document_ids ?? []))
     ) {
       return;
     }
     setSettings("context", runtimeContext);
   }, [
     entryModeContext,
+    entryTopicContext,
     projectScope,
     runtimeContext,
     setSettings,

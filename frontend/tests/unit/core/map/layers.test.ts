@@ -16,12 +16,12 @@ const layer = (overrides: Partial<MapLayer> = {}): MapLayer => ({
   sourceUrl: "https://www.openstreetmap.org/copyright",
   attribution: "© OpenStreetMap contributors",
   calibrationNote: "仅用于现状定位。",
-  tileUrl: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+  tileUrl: "https://tile.openstreetmap.de/{z}/{x}/{y}.png",
   ...overrides,
 });
 
 describe("古今对照地图图层", () => {
-  it("弱化现代底图，并把可用历史图层作为半透明叠加层", () => {
+  it("保留现代在线底图，并把可用历史图层作为半透明叠加层", () => {
     const historical = layer({
       id: "song-water-system",
       name: "宋代水系校准图",
@@ -37,13 +37,18 @@ describe("古今对照地图图层", () => {
     expect(base).toMatchObject({
       type: "raster",
       paint: {
-        "raster-opacity": 0.26,
-        "raster-saturation": -1,
+        "raster-opacity": 1,
+        "raster-fade-duration": 0,
       },
     });
+    expect(base?.paint).not.toHaveProperty("raster-saturation");
+    expect(base?.paint).not.toHaveProperty("raster-contrast");
+    expect(base?.paint).not.toHaveProperty("raster-brightness-min");
+    expect(base?.paint).not.toHaveProperty("raster-brightness-max");
     expect(historicalLayer).toMatchObject({
       type: "raster",
       source: mapLayerSourceId(historical),
+      layout: { visibility: "none" },
       paint: { "raster-opacity": 0.46 },
     });
     expect(style.sources).toHaveProperty(mapLayerSourceId(historical));

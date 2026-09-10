@@ -73,10 +73,22 @@ export function spatialExtentCoordinates(
 export function buildUncertaintyFeatureCollection(
   points: MapPoint[],
   selectedId: string | null | undefined,
+  visibility: {
+    showHistoricalRanges: boolean;
+    showSpeculativeRanges: boolean;
+  } = {
+    showHistoricalRanges: true,
+    showSpeculativeRanges: true,
+  },
 ) {
   return {
     type: "FeatureCollection" as const,
     features: points.flatMap((point) => {
+      const visible =
+        point.geometryType === "historical_area"
+          ? visibility.showHistoricalRanges
+          : visibility.showSpeculativeRanges;
+      if (!visible) return [];
       const coordinates = spatialExtentCoordinates(point);
       if (coordinates.length < 4) return [];
       return [

@@ -4,10 +4,7 @@ import maplibregl, { type Map, type Marker } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useRef, useState } from "react";
 
-import {
-  buildUncertaintyFeatureCollection,
-  spatialExtentCoordinates,
-} from "@/core/map/geometry";
+import { buildUncertaintyFeatureCollection } from "@/core/map/geometry";
 import {
   buildMapStyle,
   defaultMapLayerOpacity,
@@ -26,11 +23,14 @@ import { cn } from "@/lib/utils";
 const UNCERTAINTY_SOURCE_ID = "xingxi-historical-uncertainty";
 const UNCERTAINTY_FILL_LAYER_ID = `${UNCERTAINTY_SOURCE_ID}-fill`;
 const UNCERTAINTY_LINE_LAYER_ID = `${UNCERTAINTY_SOURCE_ID}-line`;
+const MAP_LOAD_TIMEOUT_MS = 6_000;
 
 function syncUncertaintyAreas(
   map: Map,
   points: MapPoint[],
   selectedId: string | null | undefined,
+  showHistoricalRanges: boolean,
+  showSpeculativeRanges: boolean,
 ) {
   if (map.getLayer(UNCERTAINTY_LINE_LAYER_ID))
     map.removeLayer(UNCERTAINTY_LINE_LAYER_ID);
@@ -38,7 +38,10 @@ function syncUncertaintyAreas(
     map.removeLayer(UNCERTAINTY_FILL_LAYER_ID);
   if (map.getSource(UNCERTAINTY_SOURCE_ID))
     map.removeSource(UNCERTAINTY_SOURCE_ID);
-  const data = buildUncertaintyFeatureCollection(points, selectedId);
+  const data = buildUncertaintyFeatureCollection(points, selectedId, {
+    showHistoricalRanges,
+    showSpeculativeRanges,
+  });
   if (data.features.length === 0) return;
   map.addSource(UNCERTAINTY_SOURCE_ID, { type: "geojson", data });
   map.addLayer({
@@ -56,8 +59,8 @@ function syncUncertaintyAreas(
       "fill-opacity": [
         "case",
         ["boolean", ["get", "selected"], false],
-        0.24,
         0.12,
+        0.09,
       ],
     },
   });
@@ -91,16 +94,8 @@ function syncMapLayerControls(
     (layer) => layer.kind === "base" && layer.available && layer.tileUrl,
   );
   if (baseLayer && map.getLayer(MAP_BASE_LAYER_ID)) {
-    map.setLayoutProperty(
-      MAP_BASE_LAYER_ID,
-      "visibility",
-      visible.has(baseLayer.id) ? "visible" : "none",
-    );
-    map.setPaintProperty(
-      MAP_BASE_LAYER_ID,
-      "raster-opacity",
-      layerOpacity[baseLayer.id] ?? defaultMapLayerOpacity(baseLayer),
-    );
+    map.setLayoutProperty(MAP_BASE_LAYER_ID, "visibility", "visible");
+    map.setPaintProperty(MAP_BASE_LAYER_ID, "raster-opacity", 1);
   }
 
   layers
@@ -240,14 +235,21 @@ function getSelectedPointCamera(
 }
 
 function focusMapPoint(map: Map, point: MapPoint, duration = 600) {
-  const extent = spatialExtentCoordinates(point);
-  if (extent.length >= 4) {
-    const bounds = new maplibregl.LngLatBounds();
-    extent.forEach((coordinate) => bounds.extend(coordinate));
-    map.fitBounds(bounds, { duration, maxZoom: 15, padding: 72 });
-    return;
-  }
-  map.easeTo(getSelectedPointCamera(point, map.getZoom()));
+  map.easeTo({
+    ...getSelectedPointCamera(point, map.getZoom()),
+    duration,
+  });
+}
+
+function initialMuduPoints(points: MapPoint[]) {
+  const local = points.filter(
+    (point) =>
+      point.lon >= 120.46 &&
+      point.lon <= 120.55 &&
+      point.lat >= 31.23 &&
+      point.lat <= 31.29,
+  );
+  return local.length ? local : points;
 }
 
 function syncMarkerLabel(view: MarkerView, zoom: number) {
@@ -275,6 +277,8 @@ export function MapLibreCanvas({
   layers = [],
   visibleLayerIds = [],
   layerOpacity = {},
+  showHistoricalRanges = false,
+  showSpeculativeRanges = false,
   routePoints = [],
   trajectoryPoints = [],
   plannedRoute = null,
@@ -285,13 +289,15 @@ export function MapLibreCanvas({
   activeEventId = null,
   selectedId,
   onSelect,
-  onSelectEvent,
+  onReload,
   className,
 }: {
   points: MapPoint[];
   layers?: MapLayer[];
   visibleLayerIds?: string[];
   layerOpacity?: Record<string, number>;
+  showHistoricalRanges?: boolean;
+  showSpeculativeRanges?: boolean;
   routePoints?: MapPoint[];
   trajectoryPoints?: MapPoint[];
   plannedRoute?: PlannedMapRoute | null;
@@ -302,7 +308,7 @@ export function MapLibreCanvas({
   activeEventId?: string | null;
   selectedId?: string | null;
   onSelect?: (point: MapPoint) => void;
-  onSelectEvent?: (event: TimelineEvent) => void;
+  onReload?: () => void;
   className?: string;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -315,24 +321,23 @@ export function MapLibreCanvas({
   const focusedEventIdRef = useRef<string | null>(null);
   const initialLayersRef = useRef(layers);
   const onSelectRef = useRef(onSelect);
-  const onSelectEventRef = useRef(onSelectEvent);
   const pointsRef = useRef(points);
   const selectedIdRef = useRef(selectedId);
   const [status, setStatus] = useState<"loading" | "ready" | "error">(
     "loading",
   );
   onSelectRef.current = onSelect;
-  onSelectEventRef.current = onSelectEvent;
   pointsRef.current = points;
   selectedIdRef.current = selectedId;
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
+    const container = containerRef.current;
     const map = new maplibregl.Map({
-      container: containerRef.current,
+      container,
       style: buildMapStyle(initialLayersRef.current),
-      center: [120.5067, 31.255],
-      zoom: 14,
+      center: [120.5019, 31.2589],
+      zoom: 14.5,
       attributionControl: { compact: true },
     });
     map.addControl(
@@ -349,30 +354,44 @@ export function MapLibreCanvas({
     };
     const syncCameraState = () => {
       if (!containerRef.current) return;
+      const center = map.getCenter();
+      containerRef.current.dataset.mapCameraLng = center.lng.toFixed(6);
+      containerRef.current.dataset.mapCameraLat = center.lat.toFixed(6);
+      containerRef.current.dataset.mapCameraZoom = map.getZoom().toFixed(2);
       containerRef.current.dataset.mapCameraPitch = map.getPitch().toFixed(0);
       containerRef.current.dataset.mapCameraBearing = map
         .getBearing()
         .toFixed(0);
     };
     const resizeObserver = new ResizeObserver(() => {
-      map.resize();
-      const currentSelectedId = selectedIdRef.current;
-      const selectedPoint = pointsRef.current.find(
-        (point) => point.id === currentSelectedId,
-      );
-      if (selectedPoint) {
-        focusMapPoint(map, selectedPoint, 0);
-      }
+      requestAnimationFrame(() => {
+        map.resize();
+        const currentSelectedId = selectedIdRef.current;
+        const selectedPoint = pointsRef.current.find(
+          (point) => point.id === currentSelectedId,
+        );
+        if (selectedPoint) focusMapPoint(map, selectedPoint, 0);
+      });
     });
-    resizeObserver.observe(containerRef.current);
+    resizeObserver.observe(container);
     map.on("zoom", syncMarkerLabels);
     map.on("move", syncCameraState);
     syncCameraState();
-    void map.once("load", () => setStatus("ready"));
+    const markMapReady = () => {
+      window.clearTimeout(loadTimeout);
+      requestAnimationFrame(() => map.resize());
+      setStatus("ready");
+    };
+    const loadTimeout = window.setTimeout(() => {
+      setStatus("error");
+    }, MAP_LOAD_TIMEOUT_MS);
+    void map.once("load", markMapReady);
     map.on("error", (event) => {
-      if (!event.error.message.includes("Failed to fetch")) return;
+      const message = event.error?.message ?? "地图资源加载失败";
+      if (!/fetch|tile|source|style|network|CORS/i.test(message)) return;
       setStatus("error");
     });
+    requestAnimationFrame(() => map.resize());
     mapRef.current = map;
     return () => {
       markersRef.current.forEach((marker) => marker.remove());
@@ -382,6 +401,7 @@ export function MapLibreCanvas({
       resizeObserver.disconnect();
       map.off("zoom", syncMarkerLabels);
       map.off("move", syncCameraState);
+      window.clearTimeout(loadTimeout);
       map.remove();
       mapRef.current = null;
       focusedPointIdRef.current = null;
@@ -404,6 +424,7 @@ export function MapLibreCanvas({
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
+    let initialFitFrame: number | null = null;
 
     const renderMarkers = () => {
       markersRef.current.forEach((marker) => marker.remove());
@@ -465,7 +486,7 @@ export function MapLibreCanvas({
 
         const label = document.createElement("span");
         label.className = cn(
-          "pointer-events-none absolute bottom-full left-1/2 mb-1 max-w-40 -translate-x-1/2 truncate rounded-full border-2 px-2 py-1 text-[11px] whitespace-nowrap shadow-sm backdrop-blur",
+          "pointer-events-none absolute bottom-full left-1/2 mb-1 max-w-40 -translate-x-1/2 truncate rounded-full border-2 px-2 py-1 text-[11px] whitespace-nowrap shadow-sm",
           point.id === selectedId
             ? "border-teal-950 bg-teal-950 text-white"
             : confidenceLabelClass[point.confidence],
@@ -474,49 +495,6 @@ export function MapLibreCanvas({
         label.setAttribute("aria-hidden", "true");
         label.textContent = point.name;
         element.append(dot, label);
-
-        if (activeEvent) {
-          const bubble = document.createElement("button");
-          bubble.type = "button";
-          bubble.className =
-            "absolute bottom-full left-1/2 mb-4 w-[min(18rem,calc(100vw-2rem))] -translate-x-1/2 rounded-md border border-[#b67a5e] bg-[#fffdf8] p-3 text-left text-[#372b27] shadow-[0_10px_30px_rgba(48,37,31,0.22)] transition motion-reduce:transition-none after:absolute after:top-full after:left-1/2 after:-translate-x-1/2 after:border-8 after:border-transparent after:border-t-[#b67a5e] hover:border-[#8f553d] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1d6267]";
-          bubble.dataset.mapEventBubble = "true";
-          bubble.dataset.eventId = activeEvent.id;
-          bubble.setAttribute(
-            "aria-label",
-            `历史事件：${activeEvent.timeLabel}，${activeEvent.title}`,
-          );
-
-          const meta = document.createElement("span");
-          meta.className =
-            "mb-1 flex items-center justify-between gap-2 text-[11px] leading-4 text-[#80533f]";
-          const time = document.createElement("span");
-          time.className = "font-medium";
-          time.textContent = activeEvent.timeLabel;
-          const status = document.createElement("span");
-          status.className =
-            "shrink-0 rounded border border-[#dcc4b7] bg-[#f8eee8] px-1.5 py-0.5";
-          status.textContent =
-            activeEvent.recordKind === "corpus" &&
-            activeEvent.reviewStatus !== "reviewed"
-              ? "待复核语料草稿"
-              : "历史事件";
-          meta.append(time, status);
-
-          const title = document.createElement("span");
-          title.className = "block text-sm font-semibold leading-5";
-          title.textContent = activeEvent.title;
-          const summary = document.createElement("span");
-          summary.className =
-            "mt-1 block line-clamp-3 text-xs leading-5 text-[#5e4b43]";
-          summary.textContent = activeEvent.summary;
-          bubble.append(meta, title, summary);
-          bubble.addEventListener("click", (event) => {
-            event.stopPropagation();
-            onSelectEventRef.current?.(activeEvent);
-          });
-          wrapper.appendChild(bubble);
-        }
 
         const view: MarkerView = {
           activeEvent: Boolean(activeEvent),
@@ -558,19 +536,35 @@ export function MapLibreCanvas({
         );
       }
       if (!hasFittedRef.current && points.length > 0) {
-        const bounds = new maplibregl.LngLatBounds();
-        points.forEach((point) => {
-          const extent = spatialExtentCoordinates(point);
-          if (extent.length)
-            extent.forEach((coordinate) => bounds.extend(coordinate));
-          else bounds.extend([point.lon, point.lat]);
+        initialFitFrame = requestAnimationFrame(() => {
+          map.resize();
+          const focusPoints = initialMuduPoints(points);
+          if (focusPoints.length === 1) {
+            const point = focusPoints[0]!;
+            map.jumpTo({ center: [point.lon, point.lat], zoom: 15 });
+          } else {
+            const bounds = new maplibregl.LngLatBounds();
+            focusPoints.forEach((point) =>
+              bounds.extend([point.lon, point.lat]),
+            );
+            map.fitBounds(bounds, {
+              padding: { top: 128, right: 72, bottom: 72, left: 72 },
+              maxZoom: 15,
+              duration: 0,
+            });
+          }
+          hasFittedRef.current = true;
         });
-        map.fitBounds(bounds, { padding: 56, maxZoom: 15, duration: 0 });
-        hasFittedRef.current = true;
       }
     };
     const renderLines = () => {
-      syncUncertaintyAreas(map, points, selectedId);
+      syncUncertaintyAreas(
+        map,
+        points,
+        selectedId,
+        showHistoricalRanges,
+        showSpeculativeRanges,
+      );
       syncLine(map, "xingxi-study-route", routePoints, "#0f766e", false);
       syncLine(
         map,
@@ -591,6 +585,7 @@ export function MapLibreCanvas({
     if (map.isStyleLoaded()) renderLines();
     else void map.once("load", renderLines);
     return () => {
+      if (initialFitFrame !== null) cancelAnimationFrame(initialFitFrame);
       map.off("load", renderLines);
     };
   }, [
@@ -601,6 +596,8 @@ export function MapLibreCanvas({
     points,
     routePoints,
     selectedId,
+    showHistoricalRanges,
+    showSpeculativeRanges,
     trajectoryPoints,
   ]);
 
@@ -695,18 +692,13 @@ export function MapLibreCanvas({
     const selectedPoint = points.find((point) => point.id === selectedId);
     if (!selectedPoint) return;
 
-    const focusSelectedPoint = () => {
+    const frame = requestAnimationFrame(() => {
+      map.resize();
       focusMapPoint(map, selectedPoint);
       focusedPointIdRef.current = selectedId;
-    };
-    if (map.isStyleLoaded()) focusSelectedPoint();
-    else {
-      void map.once("load", focusSelectedPoint);
-      void map.once("error", focusSelectedPoint);
-    }
+    });
     return () => {
-      map.off("load", focusSelectedPoint);
-      map.off("error", focusSelectedPoint);
+      cancelAnimationFrame(frame);
     };
   }, [points, selectedId]);
 
@@ -721,36 +713,30 @@ export function MapLibreCanvas({
     );
     if (!eventPoint) return;
 
-    let focused = false;
-    const focusEvent = () => {
-      if (focused) return;
-      focused = true;
-      const eventIndex = Math.max(
-        0,
-        events.findIndex((event) => event.id === activeEventId),
-      );
+    const frame = requestAnimationFrame(() => {
+      map.resize();
       map.flyTo({
         center: [eventPoint.lon, eventPoint.lat],
         zoom: Math.max(map.getZoom(), 15.8),
-        pitch: 42,
-        bearing: ((eventIndex * 37 + 18) % 120) - 60,
+        pitch: 0,
+        bearing: 0,
         speed: 0.58,
         curve: 1.35,
         duration: 1400,
         essential: true,
       });
       focusedEventIdRef.current = activeEventId;
-    };
-    if (map.isStyleLoaded()) focusEvent();
-    else {
-      void map.once("load", focusEvent);
-      void map.once("error", focusEvent);
-    }
+    });
     return () => {
-      map.off("load", focusEvent);
-      map.off("error", focusEvent);
+      cancelAnimationFrame(frame);
     };
   }, [activeEventId, events, points]);
+
+  const visibleExtentCount = buildUncertaintyFeatureCollection(
+    points,
+    selectedId,
+    { showHistoricalRanges, showSpeculativeRanges },
+  ).features.length;
 
   return (
     <div className={cn("relative h-full w-full overflow-hidden", className)}>
@@ -759,19 +745,32 @@ export function MapLibreCanvas({
         className="h-full w-full"
         data-map-engine="maplibre-gl"
         data-map-status={status}
+        data-map-base-opacity="1"
+        data-historical-ranges-visible={String(showHistoricalRanges)}
+        data-speculative-ranges-visible={String(showSpeculativeRanges)}
+        data-map-range-feature-count={visibleExtentCount}
         aria-label="古舆地图画布"
       />
       {status === "loading" && (
-        <div className="bg-background/90 text-muted-foreground absolute inset-0 grid place-items-center text-sm">
+        <div className="pointer-events-none absolute top-3 left-1/2 z-10 -translate-x-1/2 rounded-md border border-[#cfdddc] bg-white px-3 py-2 text-sm text-[#52686c] shadow-sm">
           正在加载地图…
         </div>
       )}
       {status === "error" && (
         <div
           data-map-error="true"
-          className="bg-background/90 absolute inset-x-4 top-20 rounded border px-3 py-2 text-sm leading-5"
+          className="absolute inset-x-4 top-20 z-10 flex max-w-[min(92vw,30rem)] items-center gap-3 rounded-md border border-amber-200 bg-white px-3 py-2 text-sm leading-5 text-[#5e4b43] shadow-sm"
         >
-          现代底图暂时无法加载。点位与来源列表仍可使用，请检查网络后刷新。
+          <span className="min-w-0 flex-1">
+            现代底图暂时无法加载。点位与来源列表仍可使用，请检查网络后重试。
+          </span>
+          <button
+            type="button"
+            onClick={onReload}
+            className="shrink-0 rounded border border-[#b8d1cd] px-2.5 py-1.5 text-xs font-medium text-[#276b75] hover:bg-[#eef5f4]"
+          >
+            重新加载地图
+          </button>
         </div>
       )}
     </div>

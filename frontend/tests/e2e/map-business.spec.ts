@@ -79,7 +79,7 @@ const catalog = {
       source_url: "https://www.openstreetmap.org/copyright",
       attribution: "© OpenStreetMap contributors",
       calibration_note: "现代底图，仅用于现状位置参照。",
-      tile_url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+      tile_url: "https://tile.openstreetmap.de/{z}/{x}/{y}.png",
     },
     {
       id: "pingjiang-map-reference",
@@ -175,19 +175,45 @@ const catalog = {
   ],
 };
 
-async function mockMapPage(page: Page) {
+async function mockMapPage(
+  page: Page,
+  mapCatalog: unknown = catalog,
+  tilesAvailable = false,
+) {
   mockLangGraphAPI(page);
   await page.route("**/api/map/catalog", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify(catalog),
+      body: JSON.stringify(mapCatalog),
     }),
   );
-  await page.route("https://tile.openstreetmap.org/**", (route) =>
-    route.abort("failed"),
-  );
+  await page.route("https://tile.openstreetmap.de/**", (route) => {
+    if (!tilesAvailable) return route.abort("failed");
+    return route.fulfill({
+      status: 200,
+      contentType: "image/png",
+      body: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+        "base64",
+      ),
+    });
+  });
+  await page.route("https://example.test/**", (route) => route.abort("failed"));
 }
+
+test("successful modern tiles clear the loading state", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await mockMapPage(page, catalog, true);
+
+  await page.goto("/workspace/map");
+  const mapCanvas = page.getByLabel("古舆地图画布");
+  await expect(mapCanvas).toHaveAttribute("data-map-status", "ready");
+  await expect(page.getByText("正在加载地图…")).toHaveCount(0);
+  await expect(
+    page.getByText("© OpenStreetMap contributors", { exact: true }),
+  ).toBeVisible();
+});
 
 test("desktop exploration keeps the map primary and shows one traceable detail surface", async ({
   page,
@@ -292,7 +318,15 @@ test("desktop exploration keeps the map primary and shows one traceable detail s
       );
     })
     .toBeLessThan(48);
+  const zoomBefore = Number(
+    await mapCanvas.getAttribute("data-map-camera-zoom"),
+  );
   await page.getByRole("button", { name: "Zoom in" }).click();
+  await expect
+    .poll(async () =>
+      Number(await mapCanvas.getAttribute("data-map-camera-zoom")),
+    )
+    .toBeGreaterThan(zoomBefore);
   await expect(yonganBridgeMarker).toHaveAttribute(
     "data-label-visible",
     "true",
@@ -335,49 +369,38 @@ test("desktop exploration keeps the map primary and shows one traceable detail s
   expect(overlaps).toBe(false);
 });
 
-test("featured timeline playback focuses each event and opens its map bubble", async ({
+test("featured timeline playback focuses each event and updates event details", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await mockMapPage(page);
 
   await page.goto("/workspace/map");
+  await expect(page.getByRole("region", { name: "历史事件详情" })).toHaveCount(
+    0,
+  );
+  await page.getByRole("button", { name: "查看历史事件：永安桥始建" }).click();
+  const eventDetails = page.getByRole("region", { name: "历史事件详情" });
+  await expect(eventDetails).toBeVisible();
   await expect(
-    page.getByRole("button", {
-      name: "历史事件：明弘治十年（1497），永安桥始建",
-    }),
-  ).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByLabel("历史故事镜头", { exact: true })).toBeVisible();
-  await expect(
-    page
-      .getByLabel("历史故事镜头", { exact: true })
-      .getByText("史料记载：始建", { exact: true }),
+    eventDetails.locator("dd").filter({ hasText: "明朝" }),
   ).toBeVisible();
+  await expect(eventDetails.getByText("1497年", { exact: true })).toBeVisible();
+  await expect(eventDetails.getByText("永安桥", { exact: true })).toBeVisible();
+  await expect(eventDetails.getByText("傅潮", { exact: true })).toBeVisible();
   await expect(
-    page
-      .getByLabel("历史故事镜头", { exact: true })
-      .getByText("相关人物：傅潮", { exact: true }),
-  ).toBeVisible();
-  await expect(
-    page
-      .getByLabel("历史故事镜头", { exact: true })
-      .getByText("公开条目记载永安桥始建。"),
-  ).toBeVisible();
-  await expect(
-    page
-      .getByLabel("历史故事镜头", { exact: true })
-      .getByText("暂无授权影像、碑刻拓本或三维模型"),
+    eventDetails.getByRole("link", { name: /严家花园 OpenStreetMap 要素/ }),
   ).toBeVisible();
   await expect(page.getByLabel("古舆地图画布")).toHaveAttribute(
     "data-map-camera-pitch",
-    "42",
+    "0",
   );
   await expect(page.getByText("始建", { exact: true })).toBeVisible();
 
-  const timelineScale = page.locator('[data-timeline-scale-start="1497"]');
+  const timelineScale = page.locator('[data-timeline-scale-start="1450"]');
   await expect(timelineScale).toHaveAttribute(
     "data-timeline-scale-end",
-    "1828",
+    "1850",
   );
   const earlyEventBox = await page
     .getByRole("button", { name: "查看历史事件：永安桥始建" })
@@ -391,44 +414,150 @@ test("featured timeline playback focuses each event and opens its map bubble", a
 
   await page.getByRole("button", { name: "播放时间轴" }).click();
   await expect(
-    page.getByRole("button", {
-      name: "历史事件：清道光八年（1828），严家花园前身改称端园",
-    }),
+    page.getByRole("button", { name: "查看历史事件：严家花园前身改称端园" }),
   ).toBeVisible({ timeout: 5_000 });
   await expect(
-    page
-      .getByLabel("历史故事镜头", { exact: true })
-      .getByText("史料记载：沈氏后人出售后，钱照购得并改称端园。", {
-        exact: true,
-      }),
+    eventDetails.getByText("沈氏后人出售后，钱照购得并改称端园。", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    eventDetails.locator("dd").filter({ hasText: "清朝" }),
+  ).toBeVisible();
+  await eventDetails.getByRole("button", { name: "查看地点资料" }).click();
+  await expect(
+    page.getByRole("region", { name: "点位详情" }).getByRole("heading", {
+      name: "严家花园",
+    }),
   ).toBeVisible();
 });
 
-test("map layer controls keep modern positioning optional and flag uncalibrated history", async ({
+test("mobile timeline events open the event sheet and return to place details", async ({
   page,
 }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.setViewportSize({ width: 390, height: 844 });
   await mockMapPage(page);
 
   await page.goto("/workspace/map");
+  await page.getByRole("button", { name: "查看历史事件：永安桥始建" }).click();
+
+  const eventDialog = page.getByRole("dialog");
+  const eventDetails = eventDialog.getByRole("region", {
+    name: "历史事件详情",
+  });
+  await expect(eventDetails).toBeVisible();
+  await expect(
+    eventDetails.locator("dd").filter({ hasText: "明朝" }),
+  ).toBeVisible();
+  await eventDetails.getByRole("button", { name: "查看地点资料" }).click();
+  await expect(
+    eventDialog.getByRole("region", { name: "点位详情" }),
+  ).toBeVisible();
+});
+
+test("map layers default to a full-opacity modern map and keep optional overlays off", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const mapCatalog = {
+    ...catalog,
+    points: [
+      ...catalog.points,
+      {
+        ...catalog.points[1],
+        id: "pt-historical-area",
+        entity_id: "entity-historical-area",
+        name: "史料边界示例",
+        geometry_type: "historical_area",
+        uncertainty_radius_m: null,
+        area_coordinates: [
+          [120.501, 31.251],
+          [120.507, 31.251],
+          [120.507, 31.256],
+          [120.501, 31.256],
+          [120.501, 31.251],
+        ],
+        extent_source: "historical_map",
+      },
+    ],
+    layers: [
+      ...catalog.layers,
+      {
+        id: "calibrated-history",
+        name: "已校准木渎历史图",
+        kind: "historical",
+        available: true,
+        source_url: "https://example.test/history-source",
+        attribution: "测试资料源",
+        calibration_note: "用于验证按需叠加。",
+        tile_url: "https://example.test/history/{z}/{x}/{y}.png",
+      },
+    ],
+  };
+  await mockMapPage(page, mapCatalog);
+
+  await page.goto("/workspace/map");
   await expect(page.getByRole("heading", { name: "古舆地图" })).toBeVisible();
+  const mapCanvas = page.getByLabel("古舆地图画布");
+  await expect(mapCanvas).toHaveAttribute("data-map-base-opacity", "1");
+  await expect(mapCanvas).toHaveAttribute(
+    "data-historical-ranges-visible",
+    "false",
+  );
+  await expect(mapCanvas).toHaveAttribute(
+    "data-speculative-ranges-visible",
+    "false",
+  );
+  await expect(mapCanvas).toHaveAttribute("data-map-range-feature-count", "0");
+  await expect(page.locator("[data-map-display-mode]")).toHaveAttribute(
+    "data-map-display-mode",
+    "modern",
+  );
   await page.getByRole("button", { name: "地图图层" }).click();
 
   await expect(
     page.getByRole("heading", { name: "图层与人物轨迹" }),
   ).toBeVisible();
-  const modernLayer = page.getByRole("checkbox", {
-    name: "显示OpenStreetMap 现代底图",
-  });
-  await expect(modernLayer).toBeChecked();
-  await modernLayer.uncheck();
-  await expect(modernLayer).not.toBeChecked();
-  await expect(page.getByText("待校准", { exact: true })).toBeVisible();
+  const modernMode = page.getByRole("button", { name: "现代地图" });
+  const comparisonMode = page.getByRole("button", { name: "古今对照" });
+  await expect(modernMode).toHaveAttribute("aria-pressed", "true");
+  await expect(comparisonMode).toHaveAttribute("aria-pressed", "false");
+
+  await comparisonMode.click();
+  await expect(page.locator("[data-map-display-mode]")).toHaveAttribute(
+    "data-map-display-mode",
+    "comparison",
+  );
   await expect(
-    page.getByRole("checkbox", {
-      name: "显示《平江图》（1229）公开影像参考",
-    }),
-  ).toBeDisabled();
+    page.getByRole("slider", { name: "已校准木渎历史图叠加透明度" }),
+  ).toBeVisible();
+  await modernMode.click();
+  await expect(page.locator("[data-map-display-mode]")).toHaveAttribute(
+    "data-map-display-mode",
+    "modern",
+  );
+  await expect(
+    page.getByRole("slider", { name: "已校准木渎历史图叠加透明度" }),
+  ).toHaveCount(0);
+
+  const historicalRanges = page.getByRole("checkbox", {
+    name: "显示历史范围",
+  });
+  const speculativeRanges = page.getByRole("checkbox", {
+    name: "显示推测范围",
+  });
+  await expect(historicalRanges).not.toBeChecked();
+  await expect(speculativeRanges).not.toBeChecked();
+  await historicalRanges.check();
+  await expect(mapCanvas).toHaveAttribute("data-map-range-feature-count", "1");
+  await historicalRanges.uncheck();
+  await expect(mapCanvas).toHaveAttribute("data-map-range-feature-count", "0");
+  await speculativeRanges.check();
+  await expect(mapCanvas).toHaveAttribute("data-map-range-feature-count", "1");
+  await speculativeRanges.uncheck();
+  await expect(mapCanvas).toHaveAttribute("data-map-range-feature-count", "0");
+
+  await expect(page.getByText("待校准", { exact: true })).toBeVisible();
 });
 
 test("route mode reveals the editable study route and exports its outline", async ({
