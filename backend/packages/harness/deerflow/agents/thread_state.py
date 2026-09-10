@@ -142,8 +142,9 @@ class DelegationEntry(TypedDict):
     result_sha256: NotRequired[str]
     result_ref: NotRequired[str]
     # Why a guardrail cap ended the run early (#3875 Phase 2): token_capped /
-    # turn_capped / loop_capped. The status stays completed/failed; this field
-    # is the additive signal that distinguishes a capped run from a clean one.
+    # turn_capped / loop_capped / tool_call_limit_capped. The status stays
+    # completed/failed; this field is the additive signal that distinguishes a
+    # capped run from a clean one.
     stop_reason: NotRequired[str]
     created_at: str
 

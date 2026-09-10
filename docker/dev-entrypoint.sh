@@ -96,6 +96,8 @@ fi
 PYTHONPATH=. exec uv run uvicorn app.gateway.app:app \
     --host 0.0.0.0 --port 8001 \
     --reload \
+    --reload-dir=/app/backend/app \
+    --reload-dir=/app/backend/packages \
     --reload-include='*.yaml' \
     --reload-include='.env' \
     --reload-exclude=/app/backend/sandbox \

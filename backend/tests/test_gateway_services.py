@@ -322,6 +322,22 @@ def test_build_run_config_with_overrides():
     assert config["metadata"]["user"] == "alice"
 
 
+def test_server_release_metadata_is_injected_into_tool_runtime_context():
+    from app.gateway.services import build_run_config, inject_knowledge_release_context
+
+    metadata = {
+        "knowledge_release_id": "release-1",
+        "knowledge_release_version": "v1",
+        "knowledge_release_manifest_sha256": "a" * 64,
+        "knowledge_release_scope": "internal",
+    }
+    config = build_run_config("thread-1", None, metadata)
+    inject_knowledge_release_context(config, metadata)
+
+    assert {key: config["context"][key] for key in metadata} == metadata
+    assert config["metadata"] == metadata
+
+
 def test_build_run_config_context_path_still_sets_configurable_thread_id(_stub_app_config):
     """A caller-supplied context (e.g. request-scoped secrets, #3861) must not
     deprive the checkpointer of configurable.thread_id, which it always needs to
@@ -416,13 +432,14 @@ def test_build_run_config_custom_agent_injects_agent_name():
     assert config["run_name"] == "finalis"
 
 
-def test_build_run_config_lead_agent_no_agent_name():
-    """'lead_agent' assistant_id must NOT inject configurable['agent_name']."""
+def test_build_run_config_non_default_lead_agent_injects_agent_name():
+    """The upstream lead agent is an explicit non-default Xingxi persona."""
     from app.gateway.services import build_run_config
 
     config = build_run_config("thread-1", None, None, assistant_id="lead_agent")
-    assert "agent_name" not in config["configurable"]
-    assert "run_name" not in config
+    assert config["configurable"]["agent_name"] == "lead-agent"
+    assert config["context"]["agent_name"] == "lead-agent"
+    assert config["run_name"] == "lead-agent"
 
 
 def test_build_run_config_none_assistant_id_no_agent_name():
@@ -469,15 +486,15 @@ def test_build_run_config_context_custom_agent_injects_agent_name():
     assert config["configurable"]["agent_name"] == "finalis"
 
 
-def test_resolve_agent_factory_returns_make_lead_agent():
-    """resolve_agent_factory always returns make_lead_agent regardless of assistant_id."""
+def test_resolve_agent_factory_returns_xingxi_product_graph():
+    """Every assistant ID enters the Xingxi product graph."""
     from app.gateway.services import resolve_agent_factory
-    from deerflow.agents.lead_agent.agent import make_lead_agent
+    from deerflow.agents.xingxi.agent import make_xingxi_agent
 
-    assert resolve_agent_factory(None) is make_lead_agent
-    assert resolve_agent_factory("lead_agent") is make_lead_agent
-    assert resolve_agent_factory("finalis") is make_lead_agent
-    assert resolve_agent_factory("custom-agent-123") is make_lead_agent
+    assert resolve_agent_factory(None) is make_xingxi_agent
+    assert resolve_agent_factory("lead_agent") is make_xingxi_agent
+    assert resolve_agent_factory("finalis") is make_xingxi_agent
+    assert resolve_agent_factory("custom-agent-123") is make_xingxi_agent
 
 
 def test_build_run_config_configurable_custom_agent_dual_writes_agent_name():

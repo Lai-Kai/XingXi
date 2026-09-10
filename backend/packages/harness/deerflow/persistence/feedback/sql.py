@@ -8,7 +8,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from deerflow.persistence.feedback.model import FeedbackRow
@@ -23,10 +23,11 @@ class FeedbackRepository:
     @staticmethod
     def _row_to_dict(row: FeedbackRow) -> dict:
         d = row.to_dict()
-        val = d.get("created_at")
-        if isinstance(val, datetime):
-            # SQLite drops tzinfo on read; normalize via ``coerce_iso`` so output is always tz-aware.
-            d["created_at"] = coerce_iso(val)
+        for key in ("created_at", "updated_at"):
+            val = d.get(key)
+            if isinstance(val, datetime):
+                # SQLite drops tzinfo on read; normalize output consistently.
+                d[key] = coerce_iso(val)
         return d
 
     async def create(
@@ -38,6 +39,7 @@ class FeedbackRepository:
         user_id: str | None | _AutoSentinel = AUTO,
         message_id: str | None = None,
         comment: str | None = None,
+        category: str | None = None,
     ) -> dict:
         """Create a feedback record. rating must be +1 or -1."""
         if rating not in (1, -1):
@@ -51,7 +53,10 @@ class FeedbackRepository:
             message_id=message_id,
             rating=rating,
             comment=comment,
+            category=category,
+            status="submitted",
             created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
         )
         async with self._sf() as session:
             session.add(row)
@@ -132,6 +137,7 @@ class FeedbackRepository:
         rating: int,
         user_id: str | None | _AutoSentinel = AUTO,
         comment: str | None = None,
+        category: str | None = None,
     ) -> dict:
         """Create or update feedback for (thread_id, run_id, user_id). rating must be +1 or -1."""
         if rating not in (1, -1):
@@ -148,7 +154,11 @@ class FeedbackRepository:
             if row is not None:
                 row.rating = rating
                 row.comment = comment
-                row.created_at = datetime.now(UTC)
+                row.category = category
+                row.status = "submitted"
+                row.assignee_id = None
+                row.review_note = None
+                row.updated_at = datetime.now(UTC)
             else:
                 row = FeedbackRow(
                     feedback_id=str(uuid.uuid4()),
@@ -157,7 +167,10 @@ class FeedbackRepository:
                     user_id=resolved_user_id,
                     rating=rating,
                     comment=comment,
+                    category=category,
+                    status="submitted",
                     created_at=datetime.now(UTC),
+                    updated_at=datetime.now(UTC),
                 )
                 session.add(row)
             await session.commit()
@@ -201,6 +214,64 @@ class FeedbackRepository:
         async with self._sf() as session:
             result = await session.execute(stmt)
             return {row.run_id: self._row_to_dict(row) for row in result.scalars()}
+
+    async def list_quality_queue(
+        self,
+        *,
+        status: str | None = None,
+        category: str | None = None,
+        query: str | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> tuple[list[dict], int]:
+        """List feedback across users for authorized quality reviewers."""
+        filters = []
+        if status:
+            filters.append(FeedbackRow.status == status)
+        if category:
+            filters.append(FeedbackRow.category == category)
+        if query:
+            needle = f"%{query.strip().lower()}%"
+            filters.append(
+                or_(
+                    func.lower(FeedbackRow.comment).like(needle),
+                    func.lower(FeedbackRow.thread_id).like(needle),
+                    func.lower(FeedbackRow.run_id).like(needle),
+                )
+            )
+        count_stmt = select(func.count()).select_from(FeedbackRow).where(*filters)
+        stmt = (
+            select(FeedbackRow)
+            .where(*filters)
+            .order_by(FeedbackRow.updated_at.desc(), FeedbackRow.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        async with self._sf() as session:
+            total = int((await session.execute(count_stmt)).scalar_one())
+            rows = (await session.execute(stmt)).scalars()
+            return [self._row_to_dict(row) for row in rows], total
+
+    async def review(
+        self,
+        feedback_id: str,
+        *,
+        status: str,
+        assignee_id: str,
+        review_note: str | None = None,
+    ) -> dict | None:
+        """Persist a quality review decision for one feedback item."""
+        async with self._sf() as session:
+            row = await session.get(FeedbackRow, feedback_id)
+            if row is None:
+                return None
+            row.status = status
+            row.assignee_id = assignee_id
+            row.review_note = review_note
+            row.updated_at = datetime.now(UTC)
+            await session.commit()
+            await session.refresh(row)
+            return self._row_to_dict(row)
 
     async def list_by_run_ids(
         self,

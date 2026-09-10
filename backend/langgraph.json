@@ -6,7 +6,7 @@
   ],
   "env": ".env",
   "graphs": {
-    "lead_agent": "deerflow.agents:make_lead_agent"
+    "xingxi": "deerflow.agents.xingxi:make_xingxi_agent"
   },
   "auth": {
     "path": "./app/gateway/langgraph_auth.py:auth"

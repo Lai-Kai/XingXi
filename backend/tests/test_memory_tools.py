@@ -516,6 +516,45 @@ class TestModeGating:
         assert tool_names.count("memory_search") == 1
         assert "memory_add" in tool_names
 
+    def test_lead_agent_exclusion_cannot_be_overridden_by_runtime_true(self, monkeypatch):
+        """Configured account exclusions win over caller-supplied runtime flags."""
+        from deerflow.agents.lead_agent import agent as lead_agent_module
+        from deerflow.config.memory_config import MemoryConfig
+
+        monkeypatch.setattr(lead_agent_module, "_resolve_model_name", lambda x=None, **kwargs: "default-model")
+        monkeypatch.setattr(lead_agent_module, "create_chat_model", lambda **kwargs: "model")
+        monkeypatch.setattr(lead_agent_module, "build_middlewares", lambda *args, **kwargs: [])
+        monkeypatch.setattr(lead_agent_module, "apply_prompt_template", lambda **kwargs: "mock_prompt")
+        monkeypatch.setattr(lead_agent_module, "create_agent", lambda **kwargs: kwargs)
+        monkeypatch.setattr(lead_agent_module, "build_tracing_callbacks", lambda: [])
+        monkeypatch.setattr(
+            lead_agent_module,
+            "load_agent_config",
+            lambda name: SimpleNamespace(model=None, skills=None, tool_groups=None),
+        )
+        monkeypatch.setattr(lead_agent_module, "_load_enabled_available_skills", lambda available_skills, *, app_config, user_id=None: [])
+        monkeypatch.setattr("deerflow.tools.get_available_tools", lambda **kwargs: [_NamedTool("bash")])
+
+        app_config = SimpleNamespace(
+            get_model_config=lambda name: SimpleNamespace(supports_thinking=False, supports_vision=False),
+            memory=MemoryConfig(enabled=True, mode="tool", excluded_users=["test-user"]),
+            skills=SimpleNamespace(deferred_discovery=False, container_path="/tmp/skills"),
+            tool_search=SimpleNamespace(enabled=False, auto_promote_top_k=0),
+        )
+
+        agent_kwargs = lead_agent_module._make_lead_agent(
+            {
+                "configurable": {
+                    "agent_name": "test-agent",
+                    "user_id": "test-user",
+                    "memory_enabled": True,
+                }
+            },
+            app_config=app_config,
+        )
+
+        assert "memory_add" not in [tool.name for tool in agent_kwargs["tools"]]
+
     def test_lead_agent_preserves_non_memory_duplicate_tool_names(self, monkeypatch):
         """Memory-tool collision handling should not drop unrelated duplicate tools."""
         from deerflow.agents.lead_agent import agent as lead_agent_module

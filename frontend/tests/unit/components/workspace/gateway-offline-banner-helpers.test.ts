@@ -13,6 +13,9 @@ const fakeUser: User = {
   id: "u1",
   email: "user@example.com",
   system_role: "user",
+  business_role: "public",
+  organization_name: null,
+  capabilities: ["knowledge:read", "chat:use", "map:read"],
   needs_setup: false,
 };
 

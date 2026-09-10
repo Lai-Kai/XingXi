@@ -2,8 +2,10 @@ import asyncio
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.gateway.auth_disabled import warn_if_auth_disabled_enabled
@@ -11,24 +13,34 @@ from app.gateway.auth_middleware import AuthMiddleware
 from app.gateway.config import get_gateway_config
 from app.gateway.csrf_middleware import CSRFMiddleware, get_configured_cors_origins
 from app.gateway.deps import langgraph_runtime
+from app.gateway.errors import gateway_error_response
 from app.gateway.routers import (
-    agents,
     artifacts,
     assistants_compat,
     auth,
     channel_connections,
     channels,
     console,
+    corpus_imports,
+    entities,  # noqa: F401
     features,
     feedback,
     github_webhooks,
     input_polish,
+    knowledge_graph,
+    knowledge_releases,
+    knowledge_search,
+    map_points,  # noqa: F401
     mcp,
     memory,
     models,
+    operations,
+    public_knowledge,
+    research_feed,
+    research_projects,
     runs,
     scheduled_tasks,
-    skills,
+    source_documents,
     suggestions,
     thread_runs,
     threads,
@@ -167,6 +179,93 @@ async def _migrate_orphaned_threads(store, admin_user_id: str) -> int:
     return migrated
 
 
+async def _recover_interrupted_ingestion_jobs(*, grace_seconds: int) -> int:
+    """Requeue steps left running by an earlier Gateway process."""
+
+    from deerflow.persistence.engine import get_session_factory
+    from deerflow.persistence.wu_culture import SqlIngestionJobRepository
+
+    session_factory = get_session_factory()
+    if session_factory is None:
+        return 0
+    recovered = await SqlIngestionJobRepository(session_factory).recover_interrupted(
+        now=datetime.now(UTC),
+        grace_seconds=grace_seconds,
+    )
+    if recovered:
+        logger.info("Recovered %d interrupted ingestion job(s)", len(recovered))
+    return len(recovered)
+
+
+async def _start_ingestion_worker(app: FastAPI, startup_config: AppConfig) -> None:
+    """Start the durable source-ingestion worker after SQL bootstrap is ready."""
+    from deerflow.persistence.engine import get_session_factory
+
+    session_factory = get_session_factory()
+    if session_factory is None:
+        logger.info("Ingestion worker disabled because database backend is memory")
+        return
+
+    from app.gateway.ingestion_worker import IngestionWorker
+    from deerflow.object_storage import create_object_storage
+    from deerflow.persistence.object_storage import SqlObjectMetadataRepository
+    from deerflow.persistence.wu_culture import (
+        SqlEvidenceRepository,
+        SqlIngestionJobRepository,
+        SqlKnowledgeGraphRepository,
+        SqlOcrRepository,
+        SqlParsedDocumentRepository,
+        SqlSourceDocumentRepository,
+        SqlSourceFileRepository,
+        SqlStructuredChunkRepository,
+        SqlTextCleaningRepository,
+    )
+
+    stop_event = asyncio.Event()
+    worker = IngestionWorker(
+        job_repository=SqlIngestionJobRepository(session_factory),
+        source_file_repository=SqlSourceFileRepository(session_factory),
+        source_document_repository=SqlSourceDocumentRepository(session_factory),
+        parsed_repository=SqlParsedDocumentRepository(session_factory),
+        ocr_repository=SqlOcrRepository(session_factory),
+        cleaning_repository=SqlTextCleaningRepository(session_factory),
+        chunk_repository=SqlStructuredChunkRepository(session_factory),
+        evidence_repository=SqlEvidenceRepository(session_factory),
+        graph_repository=SqlKnowledgeGraphRepository(session_factory),
+        object_storage=create_object_storage(startup_config.object_storage),
+        object_metadata_repository=SqlObjectMetadataRepository(session_factory),
+        corpus_config=startup_config.corpus_import,
+        app_config=startup_config,
+        ocr_service_factory=source_documents.get_ocr_service,
+    )
+    task = asyncio.create_task(worker.run_forever(stop_event), name="xingxi-ingestion-worker")
+    app.state.ingestion_worker = worker
+    app.state.ingestion_worker_stop = stop_event
+    app.state.ingestion_worker_task = task
+    logger.info("Historical-source ingestion worker started")
+
+
+async def _stop_ingestion_worker(app: FastAPI) -> None:
+    task = getattr(app.state, "ingestion_worker_task", None)
+    stop_event = getattr(app.state, "ingestion_worker_stop", None)
+    if task is None or stop_event is None:
+        return
+    stop_event.set()
+    try:
+        await asyncio.wait_for(task, timeout=_SHUTDOWN_HOOK_TIMEOUT_SECONDS)
+    except TimeoutError:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        logger.warning("Ingestion worker shutdown exceeded %.1fs", _SHUTDOWN_HOOK_TIMEOUT_SECONDS)
+    except Exception:
+        logger.exception("Ingestion worker stopped with an error")
+    finally:
+        app.state.ingestion_worker_task = None
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan handler."""
@@ -244,6 +343,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # Must run AFTER langgraph_runtime so app.state.store is available for thread migration
         await _ensure_admin_user(app)
 
+        try:
+            await _recover_interrupted_ingestion_jobs(
+                grace_seconds=startup_config.ingestion.recovery_grace_seconds,
+            )
+        except Exception:
+            logger.exception("Failed to recover interrupted ingestion jobs")
+
+        try:
+            await _start_ingestion_worker(app, startup_config)
+        except Exception:
+            logger.exception("Failed to start historical-source ingestion worker")
+
         # Start IM channel service if any channels are configured
         try:
             from app.channels.service import start_channel_service
@@ -273,6 +384,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             logger.exception("Failed to initialize scheduled task service")
 
         yield
+
+        await _stop_ingestion_worker(app)
 
         try:
             await auth.close_oidc_service()
@@ -353,25 +466,24 @@ def create_app() -> FastAPI:
     openapi_url = "/openapi.json" if config.enable_docs else None
 
     app = FastAPI(
-        title="DeerFlow API Gateway",
+        title="Xingxi API Gateway",
         description="""
-## DeerFlow API Gateway
+## Xingxi API Gateway
 
-API Gateway for DeerFlow - A LangGraph-based AI agent backend with sandbox execution capabilities.
+API Gateway for 星羲弦沚, a traceable Wu-culture and Mudu regional-history agent.
 
 ### Features
 
 - **Models Management**: Query and retrieve available AI models
 - **MCP Configuration**: Manage Model Context Protocol (MCP) server configurations
 - **Memory Management**: Access and manage global memory data for personalized conversations
-- **Skills Management**: Query and manage skills and their enabled status
 - **Artifacts**: Access thread artifacts and generated files
 - **Health Monitoring**: System health check endpoints
 
 ### Architecture
 
 LangGraph-compatible requests are routed through nginx to this gateway.
-This gateway provides runtime endpoints for agent runs plus custom endpoints for models, MCP configuration, skills, and artifacts.
+This gateway provides Xingxi runtime endpoints plus supporting model, MCP, memory, and artifact APIs.
         """,
         version="0.1.0",
         lifespan=lifespan,
@@ -402,6 +514,10 @@ This gateway provides runtime endpoints for agent runs plus custom endpoints for
             {
                 "name": "uploads",
                 "description": "Upload and manage user files for threads",
+            },
+            {
+                "name": "source-documents",
+                "description": "Register and maintain historical-source metadata",
             },
             {
                 "name": "threads",
@@ -437,6 +553,19 @@ This gateway provides runtime endpoints for agent runs plus custom endpoints for
             },
         ],
     )
+
+    @app.exception_handler(HTTPException)
+    async def handle_http_error(_request: Request, exc: HTTPException):
+        return gateway_error_response(exc.status_code, exc.detail)
+
+    @app.exception_handler(RequestValidationError)
+    async def handle_validation_error(_request: Request, exc: RequestValidationError):
+        return gateway_error_response(422, exc.errors())
+
+    @app.exception_handler(Exception)
+    async def handle_unexpected_error(_request: Request, exc: Exception):
+        logger.exception("Unhandled Gateway error", exc_info=exc)
+        return gateway_error_response(500, "The Gateway could not complete the request", retryable=True)
 
     # Auth: reject unauthenticated requests to non-public paths (fail-closed safety net)
     app.add_middleware(AuthMiddleware)
@@ -481,9 +610,6 @@ This gateway provides runtime endpoints for agent runs plus custom endpoints for
     # Memory API is mounted at /api/memory
     app.include_router(memory.router)
 
-    # Skills API is mounted at /api/skills
-    app.include_router(skills.router)
-
     # Artifacts API is mounted at /api/threads/{thread_id}/artifacts
     app.include_router(artifacts.router)
 
@@ -496,8 +622,20 @@ This gateway provides runtime endpoints for agent runs plus custom endpoints for
     # Scheduled tasks API is mounted at /api/scheduled-tasks
     app.include_router(scheduled_tasks.router)
 
-    # Agents API is mounted at /api/agents
-    app.include_router(agents.router)
+    # Historical-source registration API is mounted at /api/source-documents
+    app.include_router(source_documents.router)
+    app.include_router(source_documents.public_router)
+    app.include_router(corpus_imports.router)
+
+    app.include_router(knowledge_releases.router)
+    app.include_router(knowledge_graph.router)
+    app.include_router(entities.router)
+    app.include_router(map_points.router)
+    app.include_router(operations.router)
+    app.include_router(public_knowledge.router)
+    app.include_router(research_feed.router)
+    app.include_router(research_projects.router)
+    app.include_router(knowledge_search.router)
 
     # Suggestions API is mounted at /api/threads/{thread_id}/suggestions
     app.include_router(suggestions.router)
@@ -551,7 +689,7 @@ This gateway provides runtime endpoints for agent runs plus custom endpoints for
         Returns:
             Service health status information.
         """
-        return {"status": "healthy", "service": "deer-flow-gateway"}
+        return {"status": "healthy", "service": "xingxi-gateway"}
 
     return app
 

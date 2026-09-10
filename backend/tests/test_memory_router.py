@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.gateway.routers import memory
+from deerflow.config.memory_config import MemoryConfig
 
 
 def _sample_memory(facts: list[dict] | None = None) -> dict:
@@ -299,6 +300,103 @@ def test_get_memory_falls_back_to_effective_user_for_browser_requests() -> None:
         with patch("app.gateway.routers.memory.get_effective_user_id", return_value="real-user"):
             asyncio.run(memory.get_memory(browser_request))
     assert seen["user_id"] == "real-user"
+
+
+def test_get_memory_returns_disabled_state_without_loading_excluded_account() -> None:
+    browser_request = SimpleNamespace(
+        headers={},
+        state=SimpleNamespace(
+            user=SimpleNamespace(
+                id="test-user-id",
+                email="tester@example.com",
+                system_role="user",
+            )
+        ),
+    )
+    mock_mgr = MagicMock()
+
+    with (
+        patch("app.gateway.routers.memory.get_memory_manager", return_value=mock_mgr),
+        patch(
+            "app.gateway.routers.memory.get_memory_config",
+            return_value=MemoryConfig(enabled=True, excluded_users=["tester@example.com"]),
+        ),
+        patch("app.gateway.routers.memory.get_effective_user_id", return_value="test-user-id"),
+    ):
+        response = asyncio.run(memory.get_memory(browser_request))
+
+    assert response.effectiveEnabled is False
+    assert response.disabledReason == "account_excluded"
+    assert response.facts == []
+    mock_mgr.get_memory.assert_not_called()
+
+
+def test_excluded_account_cannot_write_memory() -> None:
+    browser_request = SimpleNamespace(
+        headers={},
+        state=SimpleNamespace(
+            user=SimpleNamespace(
+                id="test-user-id",
+                email="tester@example.com",
+                system_role="user",
+            )
+        ),
+    )
+    mock_mgr = MagicMock()
+
+    with (
+        patch("app.gateway.routers.memory.get_memory_manager", return_value=mock_mgr),
+        patch(
+            "app.gateway.routers.memory.get_memory_config",
+            return_value=MemoryConfig(enabled=True, excluded_users=["tester@example.com"]),
+        ),
+        patch("app.gateway.routers.memory.get_effective_user_id", return_value="test-user-id"),
+    ):
+        try:
+            asyncio.run(memory.clear_memory(browser_request))
+        except memory.HTTPException as exc:
+            assert exc.status_code == 403
+            assert exc.detail == "Memory is disabled for this account."
+        else:
+            raise AssertionError("excluded account write should be rejected")
+
+    mock_mgr.clear_memory.assert_not_called()
+
+
+def test_excluded_account_write_does_not_initialize_memory_manager() -> None:
+    browser_request = SimpleNamespace(
+        headers={},
+        state=SimpleNamespace(
+            user=SimpleNamespace(
+                id="test-user-id",
+                email="tester@example.com",
+                system_role="user",
+            )
+        ),
+    )
+
+    with (
+        patch(
+            "app.gateway.routers.memory.get_memory_manager",
+            side_effect=AssertionError("excluded account must not initialize memory"),
+        ),
+        patch(
+            "app.gateway.routers.memory.get_memory_config",
+            return_value=MemoryConfig(enabled=True, excluded_users=["tester@example.com"]),
+        ),
+        patch("app.gateway.routers.memory.get_effective_user_id", return_value="test-user-id"),
+    ):
+        try:
+            asyncio.run(
+                memory.create_memory_fact_endpoint(
+                    memory.FactCreateRequest(content="remember this"),
+                    browser_request,
+                )
+            )
+        except memory.HTTPException as exc:
+            assert exc.status_code == 403
+        else:
+            raise AssertionError("excluded account write should be rejected")
 
 
 def _browser_request_with_spoofed_owner_header() -> SimpleNamespace:

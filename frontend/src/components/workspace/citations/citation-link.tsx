@@ -1,4 +1,4 @@
-import { ExternalLinkIcon } from "lucide-react";
+﻿import { ExternalLinkIcon } from "lucide-react";
 import type { ComponentProps } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -7,14 +7,20 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
-import { cn } from "@/lib/utils";
+import {
+  evidenceDetailPath,
+  parseEvidenceHref,
+} from "@/core/citations/sources";
+import { recordOperationEvent } from "@/core/operations/api";
 
 export function CitationLink({
   href,
   children,
+  onClick,
   ...props
 }: ComponentProps<"a">) {
-  const domain = extractDomain(href ?? "");
+  const evidenceId = parseEvidenceHref(href);
+  const domain = evidenceId ? "evidence" : extractDomain(href ?? "");
 
   // Priority: children > domain
   const childrenText =
@@ -22,17 +28,29 @@ export function CitationLink({
       ? children.replace(/^citation:\s*/i, "")
       : null;
   const isGenericText = childrenText === "Source" || childrenText === "来源";
-  const displayText = (!isGenericText && childrenText) ?? domain;
+  const displayText = isGenericText ? domain : (childrenText ?? domain);
+  const resolvedHref = evidenceId ? evidenceDetailPath(evidenceId) : href;
 
   return (
     <HoverCard closeDelay={0} openDelay={0}>
       <HoverCardTrigger asChild>
         <a
-          href={href}
-          target="_blank"
-          rel="noopener noreferrer"
+          href={resolvedHref}
+          target={evidenceId ? undefined : "_blank"}
+          rel={evidenceId ? undefined : "noopener noreferrer"}
           className="inline-flex items-center"
-          onClick={(e) => e.stopPropagation()}
+          data-evidence-id={evidenceId ?? undefined}
+          data-citation-protocol={evidenceId ? "evidence" : "http"}
+          onClick={(event) => {
+            event.stopPropagation();
+            recordOperationEvent({
+              event_type: "citation_open",
+              entity_id: evidenceId ?? undefined,
+              entity_name: displayText ?? undefined,
+              metadata: { href: resolvedHref ?? "" },
+            });
+            onClick?.(event);
+          }}
           {...props}
         >
           <Badge
@@ -40,11 +58,10 @@ export function CitationLink({
             className="hover:bg-secondary/80 mx-0.5 cursor-pointer gap-1 rounded-full px-2 py-0.5 text-xs font-normal"
           >
             {displayText}
-            <ExternalLinkIcon className="size-3" />
           </Badge>
         </a>
       </HoverCardTrigger>
-      <HoverCardContent className={cn("relative w-80 p-0", props.className)}>
+      <HoverCardContent className="w-72" align="start">
         <div className="p-3">
           <div className="space-y-1">
             {displayText && (
@@ -52,19 +69,33 @@ export function CitationLink({
                 {displayText}
               </h4>
             )}
-            {href && (
+            {evidenceId ? (
               <p className="text-muted-foreground truncate text-xs break-all">
-                {href}
+                资料出处编号：{evidenceId}
               </p>
+            ) : (
+              href && (
+                <p className="text-muted-foreground truncate text-xs break-all">
+                  {href}
+                </p>
+              )
             )}
           </div>
           <a
-            href={href}
-            target="_blank"
-            rel="noopener noreferrer"
+            href={resolvedHref}
+            target={evidenceId ? undefined : "_blank"}
+            rel={evidenceId ? undefined : "noopener noreferrer"}
             className="text-primary mt-2 inline-flex items-center gap-1 text-xs hover:underline"
+            onClick={() =>
+              recordOperationEvent({
+                event_type: "citation_open",
+                entity_id: evidenceId ?? undefined,
+                entity_name: displayText ?? undefined,
+                metadata: { href: resolvedHref ?? "" },
+              })
+            }
           >
-            Visit source
+            {evidenceId ? "查看出处详情" : "访问来源"}
             <ExternalLinkIcon className="size-3" />
           </a>
         </div>

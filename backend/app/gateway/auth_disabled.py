@@ -51,6 +51,8 @@ def get_auth_disabled_user():
         email=AUTH_DISABLED_USER_EMAIL,
         password_hash=None,
         system_role="admin",
+        business_role="government",
+        organization_name=None,
         needs_setup=False,
         token_version=0,
         oauth_provider=None,

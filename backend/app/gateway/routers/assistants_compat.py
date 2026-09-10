@@ -9,14 +9,12 @@ initialization requirements (``assistants.search()`` and ``assistants.get()``).
 
 from __future__ import annotations
 
-import logging
 from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/assistants", tags=["assistants-compat"])
 
 
@@ -41,15 +39,15 @@ class AssistantSearchRequest(BaseModel):
 
 
 def _get_default_assistant() -> AssistantResponse:
-    """Return the default lead_agent assistant."""
+    """Return the Xingxi product assistant."""
     now = datetime.now(UTC).isoformat()
     return AssistantResponse(
-        assistant_id="lead_agent",
-        graph_id="lead_agent",
-        name="lead_agent",
+        assistant_id="xingxi",
+        graph_id="xingxi",
+        name="星羲弦沚",
         config={},
         metadata={"created_by": "system"},
-        description="DeerFlow lead agent",
+        description="可信、可溯源的吴文化与木渎地域文史智能体",
         created_at=now,
         updated_at=now,
         version=1,
@@ -57,40 +55,13 @@ def _get_default_assistant() -> AssistantResponse:
 
 
 def _list_assistants() -> list[AssistantResponse]:
-    """List all available assistants from config."""
-    assistants = [_get_default_assistant()]
-
-    # Also include custom agents from config.yaml agents directory
-    try:
-        from deerflow.config.agents_config import list_custom_agents
-
-        for agent_cfg in list_custom_agents():
-            now = datetime.now(UTC).isoformat()
-            assistants.append(
-                AssistantResponse(
-                    assistant_id=agent_cfg.name,
-                    graph_id="lead_agent",  # All agents use the same graph
-                    name=agent_cfg.name,
-                    config={},
-                    metadata={"created_by": "user"},
-                    description=agent_cfg.description or "",
-                    created_at=now,
-                    updated_at=now,
-                    version=1,
-                )
-            )
-    except Exception:
-        logger.debug("Could not load custom agents for assistants list")
-
-    return assistants
+    """Return the single assistant exposed by the Xingxi product."""
+    return [_get_default_assistant()]
 
 
 @router.post("/search", response_model=list[AssistantResponse])
 async def search_assistants(body: AssistantSearchRequest | None = None) -> list[AssistantResponse]:
-    """Search assistants.
-
-    Returns all registered assistants (lead_agent + custom agents from config).
-    """
+    """Search the sole Xingxi product assistant."""
     assistants = _list_assistants()
 
     if body and body.graph_id:
@@ -124,7 +95,7 @@ async def get_assistant_graph(assistant_id: str) -> dict:
         raise HTTPException(status_code=404, detail=f"Assistant {assistant_id} not found")
 
     return {
-        "graph_id": "lead_agent",
+        "graph_id": "xingxi",
         "nodes": [],
         "edges": [],
     }
@@ -141,7 +112,7 @@ async def get_assistant_schemas(assistant_id: str) -> dict:
         raise HTTPException(status_code=404, detail=f"Assistant {assistant_id} not found")
 
     return {
-        "graph_id": "lead_agent",
+        "graph_id": "xingxi",
         "input_schema": {},
         "output_schema": {},
         "state_schema": {},

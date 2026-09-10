@@ -27,6 +27,40 @@ async def _cleanup():
 
 class TestFeedbackRepository:
     @pytest.mark.anyio
+    async def test_quality_queue_can_filter_and_review_feedback(self, tmp_path):
+        repo = await _make_feedback_repo(tmp_path)
+        submitted = await repo.create(
+            run_id="r1",
+            thread_id="t1",
+            rating=-1,
+            user_id="user-1",
+            category="citation_error",
+            comment="The cited page does not support the answer.",
+        )
+        await repo.create(run_id="r2", thread_id="t2", rating=1, user_id="user-2")
+
+        pending, total = await repo.list_quality_queue(status="submitted", category="citation_error", limit=20, offset=0)
+        assert total == 1
+        assert pending[0]["category"] == "citation_error"
+        assert pending[0]["status"] == "submitted"
+
+        reviewed = await repo.review(
+            submitted["feedback_id"],
+            status="reviewing",
+            assignee_id="admin-1",
+            review_note="Checking the source page.",
+        )
+        assert reviewed is not None
+        assert reviewed["status"] == "reviewing"
+        assert reviewed["assignee_id"] == "admin-1"
+        assert reviewed["review_note"] == "Checking the source page."
+
+        filtered, total = await repo.list_quality_queue(status="reviewing", limit=20, offset=0)
+        assert total == 1
+        assert filtered[0]["feedback_id"] == submitted["feedback_id"]
+        await _cleanup()
+
+    @pytest.mark.anyio
     async def test_create_positive(self, tmp_path):
         repo = await _make_feedback_repo(tmp_path)
         record = await repo.create(run_id="r1", thread_id="t1", rating=1)

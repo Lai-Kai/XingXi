@@ -113,7 +113,7 @@ async def create_scheduled_task(request: Request, body: ScheduledTaskCreateReque
         user_id=str(user.id),
         thread_id=body.thread_id,
         context_mode=body.context_mode,
-        assistant_id="lead_agent",
+        assistant_id="xingxi",
         title=body.title,
         prompt=body.prompt,
         schedule_type=body.schedule_type,

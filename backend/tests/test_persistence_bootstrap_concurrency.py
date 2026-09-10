@@ -28,7 +28,7 @@ from deerflow.persistence.bootstrap import bootstrap_schema
 pytestmark = pytest.mark.asyncio
 
 
-HEAD = "0005_run_stop_reason"
+HEAD = "0022_alias_query_expansion"
 
 
 def _url(tmp_path: Path) -> str:

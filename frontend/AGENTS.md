@@ -4,7 +4,25 @@ This file provides guidance to AI coding agents (Claude Code, Codex, and others)
 
 ## Project Overview
 
-DeerFlow Frontend is a Next.js 16 web interface for an AI agent system. It communicates with a LangGraph-based backend to provide thread-based AI conversations with streaming responses, artifacts, and a skills/tools system.
+The Xingxi frontend is a Next.js 16 interface for the Wu-culture and Mudu regional-history agent. It reuses DeerFlow's thread streaming, artifacts, sidecar, and settings infrastructure internally. Product routes must present Xingxi directly; do not expose the generic Agent gallery/creation flow or DeerFlow branding.
+
+The three chat entry modes are owned by `core/threads/xingxi-entry.ts`. They send both the validated Xingxi mode and an explicit thinking profile: flash/minimal/off, pro/medium/on, and ultra/high/on. The Gateway revalidates these values, so “深度求索” is a real high-reasoning historical-research mode rather than a generic-agent prompt switch.
+
+The workspace “今日选题” tab loads `/api/research-feed/daily` through `core/research-feed/api.ts`, renders the backend generation date, and schedules a refresh at the returned Shanghai midnight. The backend feed is evidence-gated: yesterday's aggregated real-query popularity is preferred and current-Release RAG topics fill missing slots. It must show loading/error/retry/empty states and must never fall back to stale hard-coded or zero-evidence daily cards. Its “more” action expands in place through `/api/research-feed/history`, showing current and previous-day grounded feeds; it must not navigate or switch to another workspace tab.
+
+The Stage 10 source uploader lives in `components/workspace/source-upload-dialog.tsx`, with transport and validation in `core/source-files/`. It loads server limits and registered sources, uses `XMLHttpRequest.upload` for real per-file progress, and retains each `SourceUploadTask` so cancel and retry remain independent. Browser validation is only an early UX check; the Gateway remains authoritative for type, size, count, and source binding. The server-provided extension list now includes TXT and Markdown for Stage 12; keep the file input `accept` value derived from that response instead of hard-coding formats.
+
+When no SourceDocument exists, the file picker remains enabled so an administrator may prepare the queue before registration. The dialog must show a prominent first-source registration action; only the actual upload action stays disabled until a source ID exists. The Gateway remains authoritative and never accepts an unbound source file.
+
+Stage 11 conflict actions use `SourceUploadError.existingFile` plus `sourceConflictActions`: byte duplicates offer `reference_existing` and `new_version`, while same-name/different-byte conflicts offer only `new_version`. Keep those rules in `core/source-files/queue.ts`; components must not invent additional duplicate actions.
+
+Stage 16 upload responses include `ingestion_job` and optional `ingestion_error`. `core/source-files/api.ts` owns Job/Step types plus polling, cancel, and failed-step retry calls. `source-upload-dialog.tsx` retains the Job on its queue item, polls only pending/running jobs while open, displays backend progress and the current pipeline stage, and stops polling terminal or `awaiting_review` jobs. Never infer progress from upload bytes after the file upload reaches 100%.
+
+Stage 17 review UI lives in `components/workspace/source-review-dialog.tsx` and opens from the document row. It always loads a real ChunkSet and its exact page/Chunk queue, never prototype records. Preserve page/chunk segmented modes, stable comparison dimensions, batch checkboxes, required comments for rejected/disputed decisions, immutable history, and explicit finalize. Raw text and clean text remain side-by-side on desktop and stack on narrow screens.
+
+The knowledge Release UI lives in `components/workspace/knowledge-release-dialog.tsx`. It publishes the latest real ChunkSet for each selected library document and renders server-owned `preparing`, `ready`, `failed`, and `active` states. Only an `active` row matching the active pointer is current; failed rows show the preparation reason and retry action, and rollback is limited to older ready rows. Keep optimistic `state_version` on publish/retry/rollback and never infer preparation success or mutate version history in browser state.
+
+The quality workspace separates visibility from mutation. `quality:read` exposes the queue and detail pane; only `quality:review` renders status, review-note, and save controls. `quality:admin` is reserved for destructive or policy controls. Client gating is UX only, and the Gateway must enforce the same capability on every write.
 
 **Stack**: Next.js 16, React 19, TypeScript 5.8, Tailwind CSS 4, pnpm 10.26.2. Requires Node.js 22+ and pnpm 10.26.2+.
 
@@ -37,7 +55,7 @@ E2E tests live under `tests/e2e/` and use Playwright with Chromium. They mock al
 ## Architecture
 
 ```
-Frontend (Next.js) ──▶ LangGraph SDK ──▶ LangGraph Backend (lead_agent)
+Frontend (Next.js) ──▶ LangGraph SDK ──▶ Xingxi Graph (assistant_id: xingxi)
                                               ├── Sub-Agents
                                               └── Tools & Skills
 ```
@@ -91,6 +109,7 @@ Tool-calling AI messages can contain user-visible text as well as `tool_calls`. 
 - `src/app/workspace/chats/[thread_id]/page.tsx` and `src/app/workspace/agents/[agent_name]/chats/[thread_id]/page.tsx` own active-goal display state for their composer overlays.
 - `src/components/workspace/messages/message-list.tsx` owns human-input card answered/latest/pending gating; entry pages only translate a submitted card response into `sendMessage` calls.
 - `src/core/threads/hooks.ts` owns pre-submit upload state and thread submission.
+- `src/core/projects/api.ts` owns the research-project wire type and normalizes legacy SQLite `0`/`1` archive flags to booleans; `src/app/workspace/projects/page.tsx` owns active/archived counts and tab filtering. `tests/unit/core/projects/api.test.ts` and `tests/e2e/research-project-workspace.spec.ts` own the corresponding API and rendered-list regressions.
 
 ## Code Style
 
@@ -127,3 +146,25 @@ When adding features:
 3. Write unit tests under `tests/unit/` (`pnpm test`) and E2E tests under `tests/e2e/` (`pnpm test:e2e`)
 4. Run `pnpm check` before committing
 5. Update this `AGENTS.md` when architecture, commands, or conventions change
+
+## Xingxi Map Surface
+
+`src/app/workspace/map/page.tsx` loads the read-only catalog through `src/core/map/api.ts`; product data must never be reintroduced as `DEMO_*` browser constants. `src/core/map/types.ts` owns client filtering and timeline contracts, while `components/workspace/map/maplibre-canvas.tsx` owns the OSM canvas, confidence-distinct markers, study-route lines, and explicitly uncertain trajectory lines.
+
+Timeline autoplay is event-driven. The Gateway marks curated records with `featured` and `importance`; `featuredTimelineEvents` sorts only dated featured records by year and stable ID, while the page owns `activeEventId` and the playback timer. The canvas focuses that exact event so multiple events in one year remain distinct, renders one pulsing Marker bubble, and preserves corpus review status in the bubble. Marker DOM must update even when raster tiles fail; only MapLibre style-backed line layers may wait for the style `load` event.
+
+Live visitor location uses `navigator.geolocation.watchPosition`, not one-shot lookup. Start/stop and permission state belong to the page; the canvas owns one reusable user Marker and updates it independently from corpus markers so GPS updates do not rebuild every historical point. The Marker remains visible in both explore and route modes, and route mode may draw an explicitly dashed user-to-first-stop connector until a real road geometry is returned. Geolocation failures must identify the HTTPS/localhost secure-context requirement without weakening browser permissions.
+
+Keep public provenance visible in the details pane. On narrow viewports the map and timeline appear before filters and details, with the entire page scrolling vertically; on desktop the three columns scroll independently. A map source marked unavailable must remain a reference link rather than being rendered as an overlay. The GLB slot remains independent from this two-dimensional data surface.
+
+## Operations Surface
+
+`src/app/workspace/operations/page.tsx` is the governance-only continuous-improvement workspace. It must use real `/api/operations` data for metrics, regression observations, corrections, and asset versions; do not add demo KPI values. `src/core/operations/api.ts` also owns fire-and-forget interaction collection for final answers, citations and map points. Missing rates render as unavailable rather than `0%`, and the three-dimensional load rate remains unavailable until the GLB pipeline is real.
+
+## Fuxianzhi Import Surface
+
+`src/components/workspace/corpus-import-dialog.tsx` is the source-manager view for persisted corpus batches, items, and page-level quality issues from `/api/corpus-imports`. It never scans server paths in the browser. Review pages and evidence details show physical page and optional folio separately; original files open only through the protected source-file content endpoint assembled by `sourceFileContentUrl`.
+
+Source-level contracts include `U` for unrated internal material. Knowledge Release contracts include `scope: "public" | "internal"`; internal Releases must be visibly labelled as working versions and must never be presented as reviewed public editions. Agent citations may use `evidence://<id>`; `core/citations/sources.ts` parses that protocol and routes it to the library Evidence detail surface rather than opening it as an external URL.
+
+Map contracts include `corpus_evidence`, `record_kind`, `review_status`, and `release_id`, but the client only renders catalog records returned by the Gateway. It must not geocode corpus names or synthesize coordinates in the browser. The map provides separate formal/draft filters, renders draft markers distinctly, and lets users select among server-derived person trajectories. The graph workspace provides an evidence-bound, mixed-entity relationship view centered on one subject, with bounded neighborhood expansion, review filters, an ordered event timeline, Evidence links, and a map handoff. It must not render a full subject index as the main graph surface. Searchable fuxianzhi text, corpus drafts, and reviewed map points are deliberately different completion states.

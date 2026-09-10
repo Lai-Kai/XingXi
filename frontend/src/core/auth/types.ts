@@ -6,6 +6,37 @@ export const userSchema = z.object({
   id: z.string(),
   email: z.string().email(),
   system_role: z.enum(["admin", "user"]),
+  business_role: z
+    .enum([
+      "public",
+      "researcher",
+      "cultural_institution",
+      "government",
+      "study_team",
+    ])
+    .default("public"),
+  organization_name: z.string().nullable().optional().default(null),
+  capabilities: z
+    .array(
+      z.enum([
+        "knowledge:read",
+        "chat:use",
+        "map:read",
+        "project:manage",
+        "evidence:research",
+        "export:create",
+        "study-route:use",
+        "source:manage",
+        "source:review",
+        "governance:read",
+        "quality:read",
+        "quality:review",
+        "quality:admin",
+        "release:approve",
+      ]),
+    )
+    .optional()
+    .default([]),
   needs_setup: z.boolean().optional().default(false),
   oauth_provider: z.string().nullable().optional().default(null),
 });
@@ -13,6 +44,9 @@ export const userSchema = z.object({
 export type User = Omit<z.infer<typeof userSchema>, "oauth_provider"> & {
   oauth_provider?: string | null;
 };
+
+export type BusinessRole = User["business_role"];
+export type BusinessCapability = User["capabilities"][number];
 
 // ── SSR auth result (tagged union) ────────────────────────────────
 

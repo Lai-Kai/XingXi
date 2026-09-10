@@ -1,0 +1,191 @@
+{
+  "schema_version": "fuxianzhi-knowledge-seed-v1",
+  "description": "府县志语料中可直接回查 Evidence 的人物、地点、关系、事件与定位草稿。全部记录均为 pending，须人工复核后才能成为正式知识。",
+  "entities": [
+    {
+      "id": "fuxianzhi-person-kangxi",
+      "canonical_name": "康熙帝",
+      "entity_type": "person",
+      "dynasty": "清",
+      "summary": "《康熙吴县志》记载其御舟由胥江至木渎、邓尉山，并于次日到灵岩山。",
+      "review_status": "pending",
+      "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-d08bd01d2ef36ee15feeffb95aa0330ccaeb3257d19f9ab644cb064689ceda95"]
+    },
+    {
+      "id": "fuxianzhi-person-xishi",
+      "canonical_name": "西施",
+      "entity_type": "person",
+      "dynasty": "春秋",
+      "summary": "《宋平江城坊考》汇录灵岩山、馆娃宫与西施洞等地方记忆。",
+      "review_status": "pending",
+      "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-0625e762d386f7873718b935a571c03aca0b4eabf76b91d1e3fd018c569796b9"]
+    },
+    {
+      "id": "fuxianzhi-person-fuchai",
+      "canonical_name": "夫差",
+      "entity_type": "person",
+      "dynasty": "春秋",
+      "summary": "地方文献中的吴王叙事与馆娃宫、西施及灵岩山遗迹相联系。",
+      "review_status": "pending",
+      "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-0625e762d386f7873718b935a571c03aca0b4eabf76b91d1e3fd018c569796b9"]
+    },
+    {
+      "id": "fuxianzhi-person-zhumaichen",
+      "canonical_name": "朱买臣",
+      "entity_type": "person",
+      "dynasty": "汉",
+      "summary": "《康熙吴县志》记木渎北会稽太守庙祀朱买臣，并载其往来木渎藏书的地方传说。",
+      "review_status": "pending",
+      "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-5761d13fe538db2c0f117857e3dbafbb51ace2f45a0e4dd8d3002abd3677388d"]
+    },
+    {
+      "id": "fuxianzhi-person-fanzhongyan",
+      "canonical_name": "范仲淹",
+      "entity_type": "person",
+      "dynasty": "宋",
+      "summary": "《宋平江城坊考》引《吴郡志》，记景祐年间范仲淹守乡郡并奏请立学。",
+      "review_status": "pending",
+      "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-39bd7fa575d6852559e122a32d4d08e2adbbbfabcd2a424595afa3a12d1ee7a3"]
+    },
+    {
+      "id": "fuxianzhi-person-fengguifen",
+      "canonical_name": "冯桂芬",
+      "entity_type": "person",
+      "dynasty": "清",
+      "summary": "《民国吴县志》记清同治六年冯桂芬建六烈祠。",
+      "review_status": "pending",
+      "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-e227b047f9dc293782804eed7daa6557d4e774eed9e9f16849ffa517e960e214"]
+    },
+    {
+      "id": "fuxianzhi-person-luwan",
+      "canonical_name": "陆玩",
+      "entity_type": "person",
+      "dynasty": "晋",
+      "summary": "《宋平江城坊考》载一说称晋陆玩施宅为寺，即灵岩寺。",
+      "review_status": "pending",
+      "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-0625e762d386f7873718b935a571c03aca0b4eabf76b91d1e3fd018c569796b9"]
+    },
+    {
+      "id": "fuxianzhi-person-luochuzhen",
+      "canonical_name": "罗楚珍",
+      "entity_type": "person",
+      "dynasty": "清",
+      "summary": "《康熙吴县志》记罗楚珍任木渎司巡检，顺治二年死于寇难，镇民立祠。",
+      "review_status": "pending",
+      "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-5761d13fe538db2c0f117857e3dbafbb51ace2f45a0e4dd8d3002abd3677388d"]
+    },
+    {
+      "id": "fuxianzhi-place-mudu",
+      "canonical_name": "木渎",
+      "entity_type": "place",
+      "dynasty": "清,现代",
+      "extant_status": "extant",
+      "summary": "《康熙吴县志》记木渎去县西南三十里，并载人家枕河、水陆交通等地方景观。",
+      "review_status": "pending",
+      "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-259083567bebbe835072c5c9c377a3ce9c3f2fd027040e9113c0289d71ba80f8"]
+    },
+    {
+      "id": "fuxianzhi-place-xujiang",
+      "canonical_name": "胥江",
+      "entity_type": "waterway",
+      "dynasty": "清,现代",
+      "extant_status": "extant",
+      "summary": "《康熙吴县志》所记康熙帝御舟至木渎、灵岩一线的水路节点。",
+      "review_status": "pending",
+      "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-d08bd01d2ef36ee15feeffb95aa0330ccaeb3257d19f9ab644cb064689ceda95"]
+    },
+    {
+      "id": "fuxianzhi-place-dengweishan",
+      "canonical_name": "邓尉山",
+      "entity_type": "place",
+      "dynasty": "清,现代",
+      "extant_status": "extant",
+      "summary": "《康熙吴县志》记御驾由木渎登岸后至邓尉山圣恩禅寺。",
+      "review_status": "pending",
+      "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-d08bd01d2ef36ee15feeffb95aa0330ccaeb3257d19f9ab644cb064689ceda95"]
+    },
+    {
+      "id": "fuxianzhi-place-lingyanshan",
+      "canonical_name": "灵岩山",
+      "entity_type": "place",
+      "dynasty": "春秋,晋,梁,清,现代",
+      "extant_status": "extant",
+      "summary": "地方志汇录馆娃宫、西施洞、灵岩寺等历史层累，康熙巡幸记录亦涉及此地。",
+      "review_status": "pending",
+      "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-0625e762d386f7873718b935a571c03aca0b4eabf76b91d1e3fd018c569796b9", "fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-d08bd01d2ef36ee15feeffb95aa0330ccaeb3257d19f9ab644cb064689ceda95"]
+    },
+    {
+      "id": "fuxianzhi-building-guanwagong",
+      "canonical_name": "馆娃宫",
+      "entity_type": "building",
+      "dynasty": "春秋",
+      "extant_status": "site",
+      "summary": "《宋平江城坊考》汇录馆娃宫在灵岩山的地方文献记载，具体范围仍待考证。",
+      "review_status": "pending",
+      "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-0625e762d386f7873718b935a571c03aca0b4eabf76b91d1e3fd018c569796b9"]
+    },
+    {
+      "id": "fuxianzhi-building-suzhou-fuxue",
+      "canonical_name": "苏州府学",
+      "entity_type": "building",
+      "dynasty": "宋,现代",
+      "extant_status": "site",
+      "summary": "《宋平江城坊考》引《吴郡志》记府学在南园之隅及其历代营建。",
+      "review_status": "pending",
+      "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-39bd7fa575d6852559e122a32d4d08e2adbbbfabcd2a424595afa3a12d1ee7a3"]
+    },
+    {
+      "id": "fuxianzhi-building-liulieci",
+      "canonical_name": "六烈祠",
+      "entity_type": "building",
+      "dynasty": "清",
+      "extant_status": "uncertain",
+      "summary": "《民国吴县志》记六烈祠在娄门新桥巷侧，同治六年由冯桂芬建。",
+      "review_status": "pending",
+      "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-e227b047f9dc293782804eed7daa6557d4e774eed9e9f16849ffa517e960e214"]
+    },
+    {
+      "id": "fuxianzhi-building-kuaijitaishoumiao",
+      "canonical_name": "会稽太守庙",
+      "entity_type": "building",
+      "dynasty": "清",
+      "extant_status": "uncertain",
+      "summary": "《康熙吴县志》记庙在木渎北，祀汉朱买臣，俗称藏书庙。",
+      "review_status": "pending",
+      "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-5761d13fe538db2c0f117857e3dbafbb51ace2f45a0e4dd8d3002abd3677388d"]
+    }
+  ],
+  "relations": [
+    {"id": "fuxianzhi-rel-kangxi-visited-xujiang", "subject_id": "fuxianzhi-person-kangxi", "relation_type": "visited", "object_id": "fuxianzhi-place-xujiang", "start_time": "1689", "confidence": 0.9, "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-d08bd01d2ef36ee15feeffb95aa0330ccaeb3257d19f9ab644cb064689ceda95"], "review_status": "pending"},
+    {"id": "fuxianzhi-rel-kangxi-visited-mudu", "subject_id": "fuxianzhi-person-kangxi", "relation_type": "visited", "object_id": "fuxianzhi-place-mudu", "start_time": "1689", "confidence": 0.95, "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-d08bd01d2ef36ee15feeffb95aa0330ccaeb3257d19f9ab644cb064689ceda95"], "review_status": "pending"},
+    {"id": "fuxianzhi-rel-kangxi-visited-dengwei", "subject_id": "fuxianzhi-person-kangxi", "relation_type": "visited", "object_id": "fuxianzhi-place-dengweishan", "start_time": "1689", "confidence": 0.95, "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-d08bd01d2ef36ee15feeffb95aa0330ccaeb3257d19f9ab644cb064689ceda95"], "review_status": "pending"},
+    {"id": "fuxianzhi-rel-kangxi-visited-lingyan", "subject_id": "fuxianzhi-person-kangxi", "relation_type": "visited", "object_id": "fuxianzhi-place-lingyanshan", "start_time": "1689", "confidence": 0.95, "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-d08bd01d2ef36ee15feeffb95aa0330ccaeb3257d19f9ab644cb064689ceda95"], "review_status": "pending"},
+    {"id": "fuxianzhi-rel-xishi-related-guanwa", "subject_id": "fuxianzhi-person-xishi", "relation_type": "related_to", "object_id": "fuxianzhi-building-guanwagong", "confidence": 0.75, "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-0625e762d386f7873718b935a571c03aca0b4eabf76b91d1e3fd018c569796b9"], "review_status": "pending"},
+    {"id": "fuxianzhi-rel-fuchai-related-xishi", "subject_id": "fuxianzhi-person-fuchai", "relation_type": "related_to", "object_id": "fuxianzhi-person-xishi", "confidence": 0.7, "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-0625e762d386f7873718b935a571c03aca0b4eabf76b91d1e3fd018c569796b9"], "review_status": "pending"},
+    {"id": "fuxianzhi-rel-guanwa-located-lingyan", "subject_id": "fuxianzhi-building-guanwagong", "relation_type": "located_in", "object_id": "fuxianzhi-place-lingyanshan", "confidence": 0.75, "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-0625e762d386f7873718b935a571c03aca0b4eabf76b91d1e3fd018c569796b9"], "review_status": "pending"},
+    {"id": "fuxianzhi-rel-luwan-related-lingyan", "subject_id": "fuxianzhi-person-luwan", "relation_type": "related_to", "object_id": "fuxianzhi-place-lingyanshan", "confidence": 0.6, "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-0625e762d386f7873718b935a571c03aca0b4eabf76b91d1e3fd018c569796b9"], "review_status": "pending"},
+    {"id": "fuxianzhi-rel-zhumaichen-related-temple", "subject_id": "fuxianzhi-person-zhumaichen", "relation_type": "related_to", "object_id": "fuxianzhi-building-kuaijitaishoumiao", "confidence": 0.8, "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-5761d13fe538db2c0f117857e3dbafbb51ace2f45a0e4dd8d3002abd3677388d"], "review_status": "pending"},
+    {"id": "fuxianzhi-rel-temple-located-mudu", "subject_id": "fuxianzhi-building-kuaijitaishoumiao", "relation_type": "located_in", "object_id": "fuxianzhi-place-mudu", "confidence": 0.9, "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-5761d13fe538db2c0f117857e3dbafbb51ace2f45a0e4dd8d3002abd3677388d"], "review_status": "pending"},
+    {"id": "fuxianzhi-rel-luochuzhen-worked-mudu", "subject_id": "fuxianzhi-person-luochuzhen", "relation_type": "worked_at", "object_id": "fuxianzhi-place-mudu", "start_time": "1645", "confidence": 0.85, "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-5761d13fe538db2c0f117857e3dbafbb51ace2f45a0e4dd8d3002abd3677388d"], "review_status": "pending"},
+    {"id": "fuxianzhi-rel-fuxue-builtby-fan", "subject_id": "fuxianzhi-building-suzhou-fuxue", "relation_type": "built_by", "object_id": "fuxianzhi-person-fanzhongyan", "start_time": "1034", "confidence": 0.85, "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-39bd7fa575d6852559e122a32d4d08e2adbbbfabcd2a424595afa3a12d1ee7a3"], "review_status": "pending"},
+    {"id": "fuxianzhi-rel-liulieci-builtby-feng", "subject_id": "fuxianzhi-building-liulieci", "relation_type": "built_by", "object_id": "fuxianzhi-person-fengguifen", "start_time": "1867", "confidence": 0.95, "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-e227b047f9dc293782804eed7daa6557d4e774eed9e9f16849ffa517e960e214"], "review_status": "pending"}
+  ],
+  "events": [
+    {"id": "fuxianzhi-event-kangxi-01-xujiang", "title": "康熙帝御舟由胥江西行", "event_type": "imperial_visit", "start_time": "1689", "time_certainty": "approximate", "place_entity_id": "fuxianzhi-place-xujiang", "participant_entity_ids": ["fuxianzhi-person-kangxi"], "summary": "《康熙吴县志》巡幸日程记御舟由胥江至木渎。", "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-d08bd01d2ef36ee15feeffb95aa0330ccaeb3257d19f9ab644cb064689ceda95"], "review_status": "pending"},
+    {"id": "fuxianzhi-event-kangxi-02-mudu", "title": "康熙帝至木渎镇舍舟登岸", "event_type": "imperial_visit", "start_time": "1689", "time_certainty": "approximate", "place_entity_id": "fuxianzhi-place-mudu", "participant_entity_ids": ["fuxianzhi-person-kangxi"], "summary": "方志明确记载御舟至木渎镇后舍舟登陆。", "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-d08bd01d2ef36ee15feeffb95aa0330ccaeb3257d19f9ab644cb064689ceda95"], "review_status": "pending"},
+    {"id": "fuxianzhi-event-kangxi-03-dengwei", "title": "康熙帝至邓尉山圣恩禅寺", "event_type": "imperial_visit", "start_time": "1689", "time_certainty": "approximate", "place_entity_id": "fuxianzhi-place-dengweishan", "participant_entity_ids": ["fuxianzhi-person-kangxi"], "summary": "方志记未刻至邓尉山圣恩禅寺，并询问梅花胜处。", "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-d08bd01d2ef36ee15feeffb95aa0330ccaeb3257d19f9ab644cb064689ceda95"], "review_status": "pending"},
+    {"id": "fuxianzhi-event-kangxi-04-lingyan", "title": "康熙帝次日巡幸灵岩山", "event_type": "imperial_visit", "start_time": "1689", "time_certainty": "approximate", "place_entity_id": "fuxianzhi-place-lingyanshan", "participant_entity_ids": ["fuxianzhi-person-kangxi"], "summary": "方志记次日驾幸灵岩山，游览旧迹并赐额。", "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-d08bd01d2ef36ee15feeffb95aa0330ccaeb3257d19f9ab644cb064689ceda95"], "review_status": "pending"},
+    {"id": "fuxianzhi-event-guanwa-memory", "title": "馆娃宫与西施叙事见于地方志汇录", "event_type": "local_memory", "time_certainty": "unknown", "place_entity_id": "fuxianzhi-place-lingyanshan", "participant_entity_ids": ["fuxianzhi-person-xishi", "fuxianzhi-person-fuchai"], "summary": "这是方志所汇录的历史记忆，不等同于已证实的精确年代事件。", "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-0625e762d386f7873718b935a571c03aca0b4eabf76b91d1e3fd018c569796b9"], "review_status": "pending"},
+    {"id": "fuxianzhi-event-luwan-lingyan", "title": "陆玩施宅为灵岩寺之说", "event_type": "local_memory", "time_certainty": "unknown", "place_entity_id": "fuxianzhi-place-lingyanshan", "participant_entity_ids": ["fuxianzhi-person-luwan"], "summary": "《宋平江城坊考》以“或曰”记录此说，故保留不确定性。", "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-0625e762d386f7873718b935a571c03aca0b4eabf76b91d1e3fd018c569796b9"], "review_status": "pending"},
+    {"id": "fuxianzhi-event-fan-fuxue", "title": "范仲淹守乡郡并筹建府学", "event_type": "institution_building", "start_time": "1034", "time_certainty": "approximate", "place_entity_id": "fuxianzhi-building-suzhou-fuxue", "participant_entity_ids": ["fuxianzhi-person-fanzhongyan"], "summary": "景祐元年任职、次年奏请立学的连续过程，暂以 1034 年作为时间起点。", "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-39bd7fa575d6852559e122a32d4d08e2adbbbfabcd2a424595afa3a12d1ee7a3"], "review_status": "pending"},
+    {"id": "fuxianzhi-event-feng-liulieci", "title": "冯桂芬建六烈祠", "event_type": "institution_building", "start_time": "1867", "time_certainty": "exact", "place_entity_id": "fuxianzhi-building-liulieci", "participant_entity_ids": ["fuxianzhi-person-fengguifen"], "summary": "《民国吴县志》明确记清同治六年冯桂芬建六烈祠。", "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-e227b047f9dc293782804eed7daa6557d4e774eed9e9f16849ffa517e960e214"], "review_status": "pending"},
+    {"id": "fuxianzhi-event-luochuzhen-mudu", "title": "罗楚珍任木渎司巡检并死于寇难", "event_type": "official_service", "start_time": "1645", "time_certainty": "approximate", "place_entity_id": "fuxianzhi-place-mudu", "participant_entity_ids": ["fuxianzhi-person-luochuzhen"], "summary": "《康熙吴县志》记顺治二年事，并记镇民立祠。", "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-5761d13fe538db2c0f117857e3dbafbb51ace2f45a0e4dd8d3002abd3677388d"], "review_status": "pending"}
+  ],
+  "geo_features": [
+    {"entity_id": "fuxianzhi-place-mudu", "name": "木渎古镇", "lon": 120.5067399, "lat": 31.2530116, "confidence": "approximate", "basis": "府县志“木渎去县西南三十里”与现代木渎古镇同名地物交叉定位；点位为现代参照，不代表历史镇域边界。", "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-259083567bebbe835072c5c9c377a3ce9c3f2fd027040e9113c0289d71ba80f8"], "review_status": "pending"},
+    {"entity_id": "fuxianzhi-place-xujiang", "name": "胥江水道", "lon": 120.5237651, "lat": 31.2523832, "confidence": "approximate", "basis": "以现代胥江水道 OSM 要素作为方志路线参照，历史河道范围与航线尚待专题复核。", "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-d08bd01d2ef36ee15feeffb95aa0330ccaeb3257d19f9ab644cb064689ceda95"], "review_status": "pending"},
+    {"entity_id": "fuxianzhi-place-dengweishan", "name": "邓尉山（香雪海参照）", "lon": 120.3668394, "lat": 31.2900024, "confidence": "speculative", "basis": "暂以邓尉山附近现代香雪海点位作参照，不代表圣恩禅寺或康熙驻跸位置。", "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-d08bd01d2ef36ee15feeffb95aa0330ccaeb3257d19f9ab644cb064689ceda95"], "review_status": "pending"},
+    {"entity_id": "fuxianzhi-place-lingyanshan", "name": "灵岩山", "lon": 120.497, "lat": 31.2647, "confidence": "approximate", "basis": "以现代灵岩山景区中心附近作历史山体参照，具体建筑遗址须另行考证。", "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-0625e762d386f7873718b935a571c03aca0b4eabf76b91d1e3fd018c569796b9", "fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-d08bd01d2ef36ee15feeffb95aa0330ccaeb3257d19f9ab644cb064689ceda95"], "review_status": "pending"},
+    {"entity_id": "fuxianzhi-building-suzhou-fuxue", "name": "苏州府学（苏州文庙参照）", "lon": 120.6192583, "lat": 31.2972684, "confidence": "approximate", "basis": "以现存苏州文庙位置参照历史府学，方志所述历代范围与现状边界并不完全等同。", "evidence_ids": ["fulltext-release-2c7aafe43b4247fa86ab0d6b951590e7-chunk-39bd7fa575d6852559e122a32d4d08e2adbbbfabcd2a424595afa3a12d1ee7a3"], "review_status": "pending"}
+  ]
+}

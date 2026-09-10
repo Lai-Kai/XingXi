@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import {
   BookOpenTextIcon,
@@ -10,7 +10,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import {
+  evidenceDetailPath,
   formatCitationMarkdownReference,
+  parseEvidenceHref,
   type CitationSource,
 } from "@/core/citations/sources";
 import { writeTextToClipboard } from "@/core/clipboard";
@@ -50,9 +52,17 @@ export function CitationSourcesPanel({
               {index + 1}
             </span>
             <a
-              href={source.url}
-              target="_blank"
-              rel="noopener noreferrer"
+              href={
+                parseEvidenceHref(source.url)
+                  ? evidenceDetailPath(parseEvidenceHref(source.url)!)
+                  : source.url
+              }
+              target={parseEvidenceHref(source.url) ? undefined : "_blank"}
+              rel={
+                parseEvidenceHref(source.url)
+                  ? undefined
+                  : "noopener noreferrer"
+              }
               className="hover:bg-muted flex min-w-0 flex-1 items-center gap-2 rounded px-2 py-1 transition-colors"
             >
               <span className="min-w-0 flex-1">
@@ -75,7 +85,6 @@ export function CitationSourcesPanel({
     </details>
   );
 }
-
 function CitationSourceCopyButton({ source }: { source: CitationSource }) {
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);

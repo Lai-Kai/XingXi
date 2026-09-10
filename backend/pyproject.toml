@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "deerflow-harness",
+    "wu-culture",
     "fastapi>=0.115.0",
     "httpx>=0.28.0",
     "python-multipart>=0.0.31",
@@ -27,6 +28,7 @@ dependencies = [
 [project.optional-dependencies]
 postgres = ["deerflow-harness[postgres]"]
 redis = ["deerflow-harness[redis]"]
+s3 = ["deerflow-harness[s3]"]
 discord = ["discord.py>=2.7.0"]
 monocle = ["deerflow-harness[monocle]"]
 
@@ -61,7 +63,8 @@ markers = [
 index-url = "https://pypi.org/simple"
 
 [tool.uv.workspace]
-members = ["packages/harness"]
+members = ["packages/harness", "packages/wu_culture"]
 
 [tool.uv.sources]
 deerflow-harness = { workspace = true }
+wu-culture = { workspace = true }

@@ -1,6 +1,18 @@
-"use client";
+﻿"use client";
 
-import { BotIcon, CalendarClock, MessagesSquare } from "lucide-react";
+import {
+  Activity,
+  BookMarked,
+  BookOpen,
+  Bot,
+  ClipboardList,
+  FolderKanban,
+  History,
+  Map,
+  Search,
+  Share2,
+  Scale,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -10,85 +22,85 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { useAgentsApiEnabled } from "@/core/agents";
-import { useI18n } from "@/core/i18n/hooks";
+import { useAuth } from "@/core/auth/AuthProvider";
+import { hasCapability } from "@/core/auth/permissions";
+import type { BusinessCapability, User } from "@/core/auth/types";
+
+const navigation: Array<{
+  label: string;
+  href: string;
+  icon: typeof Search;
+  capability?: BusinessCapability;
+}> = [
+  { label: "文史检索", href: "/workspace", icon: Search },
+  {
+    label: "文献库",
+    href: "/workspace/library",
+    icon: BookOpen,
+    capability: "source:manage",
+  },
+  { label: "星羲智能体", href: "/workspace/agent", icon: Bot },
+  {
+    label: "研究项目",
+    href: "/workspace/projects",
+    icon: FolderKanban,
+    capability: "project:manage",
+  },
+  { label: "古舆地图", href: "/workspace/map", icon: Map },
+  { label: "古文展签", href: "/workspace/glossary", icon: BookMarked },
+  { label: "知识图谱", href: "/workspace/knowledge-graph", icon: Share2 },
+  { label: "异名辨析", href: "/workspace/name-authority", icon: Scale },
+  {
+    label: "质量中心",
+    href: "/workspace/quality",
+    icon: ClipboardList,
+    capability: "quality:read",
+  },
+  {
+    label: "运营中心",
+    href: "/workspace/operations",
+    icon: Activity,
+    capability: "governance:read",
+  },
+  { label: "最近研究", href: "/workspace/chats", icon: History },
+];
+
+export function navigationForUser(user: User | null) {
+  return navigation.filter(
+    (item) => !item.capability || hasCapability(user, item.capability),
+  );
+}
 
 export function WorkspaceNavChatList() {
-  const { t } = useI18n();
   const pathname = usePathname();
-  const { enabled: agentsEnabled } = useAgentsApiEnabled();
+  const { user } = useAuth();
+  const visibleNavigation = navigationForUser(user);
+
   return (
-    <SidebarGroup className="pt-1">
-      <SidebarMenu>
-        <SidebarMenuItem>
-          <SidebarMenuButton isActive={pathname === "/workspace/chats"} asChild>
-            <Link className="text-muted-foreground" href="/workspace/chats">
-              <MessagesSquare />
-              <span>{t.sidebar.chats}</span>
-            </Link>
-          </SidebarMenuButton>
-        </SidebarMenuItem>
-        <SidebarMenuItem>
-          {agentsEnabled ? (
-            <SidebarMenuButton
-              isActive={pathname.startsWith("/workspace/agents")}
-              asChild
-            >
-              <Link className="text-muted-foreground" href="/workspace/agents">
-                <BotIcon />
-                <span>{t.sidebar.agents}</span>
-              </Link>
-            </SidebarMenuButton>
-          ) : (
-            // Disabled: aria-disabled drives the sidebar CVA to suppress
-            // pointer events on the button, so wrap it in a hoverable span
-            // that still surfaces the "feature not enabled" tooltip for mouse
-            // users. The button stays in the tab order (no tabIndex={-1}) and
-            // is wired via aria-describedby to a visually-hidden reason, so
-            // keyboard and screen-reader users also learn why it is disabled.
-            <Tooltip>
-              <TooltipTrigger asChild>
-                {/* cursor-not-allowed lives on the span (the element that
-                    still receives pointer events), not the inert button. */}
-                <span className="block w-full cursor-not-allowed">
-                  <SidebarMenuButton
-                    className="text-muted-foreground/50"
-                    aria-disabled
-                    aria-describedby="agents-disabled-reason"
-                  >
-                    <BotIcon />
-                    <span>{t.sidebar.agents}</span>
-                  </SidebarMenuButton>
-                  <span id="agents-disabled-reason" className="sr-only">
-                    {t.sidebar.agentsDisabledTooltip}
-                  </span>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="right">
-                {t.sidebar.agentsDisabledTooltip}
-              </TooltipContent>
-            </Tooltip>
-          )}
-        </SidebarMenuItem>
-        <SidebarMenuItem>
-          <SidebarMenuButton
-            isActive={pathname.startsWith("/workspace/scheduled-tasks")}
-            asChild
-          >
-            <Link
-              className="text-muted-foreground"
-              href="/workspace/scheduled-tasks"
-            >
-              <CalendarClock />
-              <span>{t.sidebar.scheduledTasks}</span>
-            </Link>
-          </SidebarMenuButton>
-        </SidebarMenuItem>
+    <SidebarGroup className="pt-2">
+      <SidebarMenu className="gap-1.5">
+        {visibleNavigation.map((item) => {
+          const active =
+            item.href === "/workspace"
+              ? pathname === "/workspace"
+              : pathname.startsWith(item.href);
+          const Icon = item.icon;
+          return (
+            <SidebarMenuItem key={item.label}>
+              <SidebarMenuButton
+                isActive={active}
+                tooltip={item.label}
+                className="h-10 px-3"
+                asChild
+              >
+                <Link href={item.href}>
+                  <Icon />
+                  <span>{item.label}</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          );
+        })}
       </SidebarMenu>
     </SidebarGroup>
   );

@@ -240,7 +240,7 @@ ingress:
 # -- DeerFlow config.yaml content. Secrets MUST stay as $VAR references — never
 #    inline literal secret values here. The default enables provisioner sandbox.
 config: |
-  config_version: 26
+  config_version: 28
   log_level: info
 
   models: []
@@ -251,6 +251,17 @@ config: |
   #     model: gpt-4
   #     api_key: $OPENAI_API_KEY
   #     request_timeout: 600.0
+
+  ocr:
+    enabled: false
+    model_name: null
+    api_mode: chat_completions
+    languages: [zh-Hans, zh-Hant]
+    review_confidence_threshold: 0.8
+    max_concurrency: 2
+    max_pages_per_batch: 50
+    timeout: 120.0
+    render_dpi: 150
 
   sandbox:
     use: deerflow.community.aio_sandbox:AioSandboxProvider

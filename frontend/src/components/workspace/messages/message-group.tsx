@@ -1,17 +1,24 @@
 import type { Message } from "@langchain/langgraph-sdk";
 import {
   BookOpenTextIcon,
+  BookCheckIcon,
   ChevronUp,
   CoinsIcon,
   FolderOpenIcon,
   GlobeIcon,
   LightbulbIcon,
   ListTodoIcon,
+  MapPinIcon,
   MessageCircleQuestionMarkIcon,
   MessageSquareTextIcon,
+  MicroscopeIcon,
+  NetworkIcon,
   NotebookPenIcon,
+  ScanTextIcon,
   SearchIcon,
   SquareTerminalIcon,
+  TagsIcon,
+  TimerIcon,
   WrenchIcon,
 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -34,6 +41,11 @@ import {
   findToolCallResult,
 } from "@/core/messages/utils";
 import { useRehypeSplitWordsIntoSpans } from "@/core/rehype";
+import {
+  describeResearchToolCall,
+  isResearchTool,
+  type ResearchToolPhase,
+} from "@/core/threads/research-trace";
 import { extractTitleFromMarkdown } from "@/core/utils/markdown";
 import { env } from "@/env";
 import { cn } from "@/lib/utils";
@@ -65,6 +77,13 @@ export function MessageGroup({
     env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY === "true",
   );
   const steps = useMemo(() => convertToSteps(messages), [messages]);
+  const hasResearchTrace = useMemo(
+    () =>
+      steps.some(
+        (step) => step.type === "toolCall" && isResearchTool(step.name),
+      ),
+    [steps],
+  );
   const debugStepByMessageId = useMemo(
     () =>
       new Map(
@@ -281,6 +300,15 @@ export function MessageGroup({
       className={cn("w-full gap-2 rounded-lg border p-0.5", className)}
       open={true}
     >
+      {hasResearchTrace && (
+        <div className="flex items-center gap-2 px-4 pt-3 text-sm font-medium">
+          <MicroscopeIcon className="text-primary size-4" />
+          <span>{t.researchTrace.title}</span>
+          <span className="text-muted-foreground ml-auto text-xs font-normal">
+            {isLoading ? t.researchTrace.running : t.researchTrace.complete}
+          </span>
+        </div>
+      )}
       {collapsibleAboveLastToolCallSteps.length > 0 && (
         <Button
           key="above"
@@ -326,6 +354,15 @@ export function MessageGroup({
               {renderToolCall(lastToolCallStep, { isLast: true })}
             </FlipDisplay>
           )}
+          {hasResearchTrace &&
+            isLoading &&
+            lastToolCallStep.result !== undefined && (
+              <ChainOfThoughtStep
+                icon={BookCheckIcon}
+                label={t.researchTrace.consolidating}
+                status="active"
+              />
+            )}
         </ChainOfThoughtContent>
       )}
       {lastReasoningStep && (
@@ -476,6 +513,41 @@ function ToolCall({
     ) : (
       fallback
     );
+
+  const researchTool = describeResearchToolCall(name, args);
+  if (researchTool) {
+    const iconByPhase: Record<ResearchToolPhase, typeof SearchIcon> = {
+      planning: ListTodoIcon,
+      sources: SearchIcon,
+      graph: NetworkIcon,
+      timeline: TimerIcon,
+      map: MapPinIcon,
+      gloss: BookOpenTextIcon,
+      names: TagsIcon,
+      comparison: BookCheckIcon,
+      image: ScanTextIcon,
+    };
+    const status =
+      result !== undefined
+        ? "complete"
+        : isLoading && isLast
+          ? "active"
+          : "pending";
+    return (
+      <ChainOfThoughtStep
+        key={id}
+        label={resolveLabel(t.researchTrace.phases[researchTool.phase])}
+        icon={iconByPhase[researchTool.phase]}
+        status={status}
+      >
+        {researchTool.detail && (
+          <ChainOfThoughtSearchResult>
+            {researchTool.detail}
+          </ChainOfThoughtSearchResult>
+        )}
+      </ChainOfThoughtStep>
+    );
+  }
 
   if (name === "web_search") {
     let label: React.ReactNode = t.toolCalls.searchForRelatedInfo;
@@ -731,7 +803,7 @@ interface CoTReasoningStep extends GenericCoTStep<"reasoning"> {
 interface CoTToolCallStep extends GenericCoTStep<"toolCall"> {
   name: string;
   args: Record<string, unknown>;
-  result?: string;
+  result?: string | Record<string, unknown>;
 }
 
 interface CoTAssistantTextStep extends GenericCoTStep<"assistantText"> {

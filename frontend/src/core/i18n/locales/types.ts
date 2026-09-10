@@ -135,6 +135,8 @@ export interface Translations {
     reasoningEffortHigh: string;
     reasoningEffortHighDescription: string;
     searchModels: string;
+    modelUnavailable: string;
+    modelUnavailableShort: string;
     surpriseMe: string;
     surpriseMePrompt: string;
     followupLoading: string;
@@ -458,6 +460,24 @@ export interface Translations {
     skillInstallTooltip: string;
   };
 
+  researchTrace: {
+    title: string;
+    running: string;
+    complete: string;
+    consolidating: string;
+    phases: {
+      planning: string;
+      sources: string;
+      graph: string;
+      timeline: string;
+      map: string;
+      gloss: string;
+      names: string;
+      comparison: string;
+      image: string;
+    };
+  };
+
   humanInput: {
     answered: string;
     pending: string;
@@ -555,6 +575,9 @@ export interface Translations {
       title: string;
       description: string;
       empty: string;
+      accountDisabledTitle: string;
+      accountDisabledDescription: string;
+      globallyDisabledDescription: string;
       rawJson: string;
       exportButton: string;
       exportSuccess: string;

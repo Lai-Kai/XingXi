@@ -1,8 +1,10 @@
-import { describe, expect, it } from "@rstest/core";
+﻿import { describe, expect, it } from "@rstest/core";
 
 import {
+  evidenceDetailPath,
   extractCitationSources,
   formatCitationMarkdownReference,
+  parseEvidenceHref,
 } from "@/core/citations/sources";
 
 describe("extractCitationSources", () => {
@@ -138,6 +140,47 @@ describe("formatCitationMarkdownReference", () => {
 
     expect(formatCitationMarkdownReference(source!)).toBe(
       "[Paper A](https://example.com/a)",
+    );
+  });
+});
+
+describe("evidence protocol citations", () => {
+  it("extracts evidence:// citations with stable ids", () => {
+    const markdown =
+      "香溪有桥 [citation:1](evidence://evidence-1) 与 [citation:2](evidence://evidence-2)。";
+    const firstIndex = markdown.indexOf("[citation:1]");
+    const secondIndex = markdown.indexOf("[citation:2]");
+
+    expect(extractCitationSources(markdown)).toEqual([
+      {
+        id: "evidence://evidence-1",
+        title: "1",
+        url: "evidence://evidence-1",
+        domain: "evidence",
+        count: 1,
+        occurrences: [{ index: firstIndex, title: "1" }],
+        evidenceId: "evidence-1",
+        protocol: "evidence",
+      },
+      {
+        id: "evidence://evidence-2",
+        title: "2",
+        url: "evidence://evidence-2",
+        domain: "evidence",
+        count: 1,
+        occurrences: [{ index: secondIndex, title: "2" }],
+        evidenceId: "evidence-2",
+        protocol: "evidence",
+      },
+    ]);
+  });
+
+  it("builds library deep links for evidence ids", () => {
+    expect(parseEvidenceHref("evidence://synthetic-evidence-a-1")).toBe(
+      "synthetic-evidence-a-1",
+    );
+    expect(evidenceDetailPath("synthetic-evidence-a-1")).toBe(
+      "/workspace/library?evidence_id=synthetic-evidence-a-1",
     );
   });
 });

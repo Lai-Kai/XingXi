@@ -63,9 +63,8 @@ export const zhCN: Translations = {
 
   // Welcome
   welcome: {
-    greeting: "你好，欢迎回来！",
-    description:
-      "欢迎使用 🦌 DeerFlow，一个完全开源的超级智能体。通过内置和自定义的 Skills，\nDeerFlow 可以帮你搜索网络、分析数据，还能为你生成幻灯片、\n图片、视频、播客及网页等，几乎可以做任何事情。",
+    greeting: "星羲弦沚",
+    description: "可信、可溯源的吴文化与木渎地域文史智能体。",
 
     createYourOwnSkill: "创建你自己的 Agent SKill",
     createYourOwnSkillDescription:
@@ -111,7 +110,7 @@ export const zhCN: Translations = {
 
   // Input Box
   inputBox: {
-    placeholder: "今天我能为你做些什么？",
+    placeholder: "询问木渎古迹、人物、方志出处或历史沿革",
     createSkillPrompt:
       "我们一起用 skill-creator 技能来创建一个技能吧。先问问我希望这个技能能做什么。",
     addAttachments: "添加附件",
@@ -155,6 +154,8 @@ export const zhCN: Translations = {
     reasoningEffortHigh: "高",
     reasoningEffortHighDescription: "全维度逻辑推演 + 多路径验证 + 反推校验",
     searchModels: "搜索模型...",
+    modelUnavailable: "尚未配置对话模型",
+    modelUnavailableShort: "未配置模型",
     surpriseMe: "小惊喜",
     surpriseMePrompt: "给我一个小惊喜吧",
     followupLoading: "正在生成可能的后续问题...",
@@ -518,7 +519,7 @@ export const zhCN: Translations = {
 
   // Page titles (document title)
   pages: {
-    appName: "DeerFlow",
+    appName: "星羲弦沚",
     chats: "对话",
     newChat: "新对话",
     untitled: "未命名",
@@ -544,6 +545,24 @@ export const zhCN: Translations = {
     clickToViewContent: "点击查看文件内容",
     writeTodos: "更新 To-do 列表",
     skillInstallTooltip: "安装技能并使其可在 DeerFlow 中使用",
+  },
+
+  researchTrace: {
+    title: "研究过程",
+    running: "进行中",
+    complete: "已完成",
+    consolidating: "核验证据并整理结论",
+    phases: {
+      planning: "拆解研究问题",
+      sources: "检索文献证据",
+      graph: "查询人物、地点与事件关系",
+      timeline: "梳理历史时间线",
+      map: "核对地图位置",
+      gloss: "释读古文原文",
+      names: "校核历史名称与异名",
+      comparison: "交叉比对不同史料",
+      image: "识别上传图像",
+    },
   },
 
   humanInput: {
@@ -644,6 +663,11 @@ export const zhCN: Translations = {
       description:
         "DeerFlow 会在后台不断从你的对话中自动学习。这些记忆能帮助 DeerFlow 更好地理解你，并提供更个性化的体验。",
       empty: "暂无可展示的记忆数据。",
+      accountDisabledTitle: "此测试账号未启用长期记忆",
+      accountDisabledDescription:
+        "该账号的对话不会读取或写入长期记忆，适合进行不受历史偏好影响的功能测试。运行日志和错误日志仍会正常记录。",
+      globallyDisabledDescription:
+        "系统当前已关闭长期记忆。对话不会读取或写入跨会话记忆。",
       rawJson: "原始 JSON",
       exportButton: "导出记忆",
       exportSuccess: "记忆已导出",

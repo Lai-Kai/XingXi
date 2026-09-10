@@ -61,7 +61,6 @@ import {
   pathOfThread,
   titleOfThread,
 } from "@/core/threads/utils";
-import { env } from "@/env";
 import { isIMEComposing } from "@/lib/ime";
 
 import { ThreadChannelIcon } from "./thread-channel-source";
@@ -224,11 +223,7 @@ export function RecentChatList() {
   return (
     <>
       <SidebarGroup>
-        <SidebarGroupLabel>
-          {env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY !== "true"
-            ? t.sidebar.recentChats
-            : t.sidebar.demoChats}
-        </SidebarGroupLabel>
+        <SidebarGroupLabel>最近研究</SidebarGroupLabel>
         <SidebarGroupContent className="group-data-[collapsible=icon]:pointer-events-none group-data-[collapsible=icon]:-mt-8 group-data-[collapsible=icon]:opacity-0">
           <SidebarMenu>
             <div className="flex w-full flex-col gap-1">
@@ -261,7 +256,7 @@ export function RecentChatList() {
                         )}
                       </Link>
                     </SidebarMenuButton>
-                    {env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY !== "true" && (
+                    {
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <SidebarMenuAction
@@ -325,7 +320,7 @@ export function RecentChatList() {
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
-                    )}
+                    }
                   </SidebarMenuItem>
                 );
               })}

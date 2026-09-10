@@ -22,10 +22,12 @@ from __future__ import annotations
 
 import logging
 import secrets
+from collections.abc import Sequence
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.runnables import RunnableConfig
+from langchain_core.tools import BaseTool
 
 from deerflow.agents.lead_agent.prompt import apply_prompt_template
 from deerflow.agents.middlewares.clarification_middleware import ClarificationMiddleware
@@ -246,6 +248,7 @@ def build_middlewares(
     deferred_setup=None,
     mcp_routing_middleware: AgentMiddleware | None = None,
     user_id: str | None = None,
+    memory_enabled: bool = True,
 ):
     """Build the lead-agent middleware chain based on runtime configuration.
 
@@ -277,7 +280,13 @@ def build_middlewares(
     # first HumanMessage to keep the system prompt fully static for prefix-cache reuse.
     from deerflow.agents.middlewares.dynamic_context_middleware import DynamicContextMiddleware
 
-    middlewares.append(DynamicContextMiddleware(agent_name=agent_name, app_config=resolved_app_config))
+    middlewares.append(
+        DynamicContextMiddleware(
+            agent_name=agent_name,
+            app_config=resolved_app_config,
+            memory_enabled=memory_enabled,
+        )
+    )
 
     # Deterministically load a full SKILL.md when the user starts the turn with
     # /skill-name. This keeps the base system prompt metadata-only while giving
@@ -338,10 +347,9 @@ def build_middlewares(
     # Add TitleMiddleware
     middlewares.append(TitleMiddleware(app_config=resolved_app_config))
 
-    # Add MemoryMiddleware (after TitleMiddleware) — skipped in enabled tool mode
-    if should_use_memory_tools(resolved_app_config.memory):
-        pass
-    else:
+    # Add passive memory only for accounts that may use memory and only when
+    # model-directed memory tools are not the selected mode.
+    if memory_enabled and not should_use_memory_tools(resolved_app_config.memory):
         if resolved_app_config.memory.mode == "tool" and not resolved_app_config.memory.enabled:
             logger.warning("memory.mode is 'tool' but memory.enabled is false; memory tools will not be registered.")
         middlewares.append(MemoryMiddleware(agent_name=agent_name, memory_config=resolved_app_config.memory))
@@ -447,7 +455,23 @@ def make_lead_agent(config: RunnableConfig):
     return _make_lead_agent(config, app_config=runtime_app_config or get_app_config())
 
 
-def _make_lead_agent(config: RunnableConfig, *, app_config: AppConfig):
+def _extend_system_prompt(base_prompt: str, extension: str | None) -> str:
+    if not extension:
+        return base_prompt
+    return f"{base_prompt.rstrip()}\n\n{extension.strip()}"
+
+
+def _make_lead_agent(
+    config: RunnableConfig,
+    *,
+    app_config: AppConfig,
+    system_prompt_extension: str | None = None,
+    system_prompt_override: str | None = None,
+    include_default_tools: bool = True,
+    include_skill_tools: bool = True,
+    additional_tools: Sequence[BaseTool] | None = None,
+    custom_middlewares: list[AgentMiddleware] | None = None,
+):
     # Lazy import to avoid circular dependency
     from deerflow.tools import get_available_tools
     from deerflow.tools.builtins import setup_agent, update_agent
@@ -463,6 +487,18 @@ def _make_lead_agent(config: RunnableConfig, *, app_config: AppConfig):
 
     runtime_user_id = cfg.get("user_id")
     resolved_user_id = str(runtime_user_id) if runtime_user_id else get_effective_user_id()
+    from deerflow.config.memory_config import is_memory_enabled_for_identity
+    from deerflow.runtime.user_context import get_current_user
+
+    current_user = get_current_user()
+    identity_memory_enabled = is_memory_enabled_for_identity(
+        resolved_app_config.memory,
+        user_id=resolved_user_id,
+        email=str(getattr(current_user, "email", "") or "") or None,
+    )
+    # A false server gate always wins, and a caller cannot use a true value to
+    # bypass the configured account exclusion policy.
+    memory_enabled = identity_memory_enabled and cfg.get("memory_enabled") is not False
 
     thinking_enabled = cfg.get("thinking_enabled", True)
     reasoning_effort = cfg.get("reasoning_effort", None)
@@ -477,6 +513,8 @@ def _make_lead_agent(config: RunnableConfig, *, app_config: AppConfig):
 
     agent_config = load_agent_config(agent_name) if not is_bootstrap else None
     available_skills = _available_skill_names(agent_config, is_bootstrap)
+    if not include_skill_tools:
+        available_skills = set()
     # Custom agent model from agent config (if any), or None to let _resolve_model_name pick the default
     agent_model_name = agent_config.model if agent_config and agent_config.model else None
 
@@ -533,13 +571,13 @@ def _make_lead_agent(config: RunnableConfig, *, app_config: AppConfig):
             existing = list(existing)
         config["callbacks"] = [*existing, *tracing_callbacks]
 
-    enabled_skills = _load_enabled_available_skills(available_skills, app_config=resolved_app_config, user_id=resolved_user_id)
+    enabled_skills = _load_enabled_available_skills(available_skills, app_config=resolved_app_config, user_id=resolved_user_id) if include_skill_tools else []
 
     # Build skill search setup (deferred skill discovery).
     # Controlled by skills.deferred_discovery — independent from tool_search.enabled.
     from deerflow.skills.describe import build_skill_search_setup
 
-    skill_search_enabled = resolved_app_config.skills.deferred_discovery
+    skill_search_enabled = include_skill_tools and resolved_app_config.skills.deferred_discovery
     container_base_path = resolved_app_config.skills.container_path
 
     if is_bootstrap:
@@ -552,7 +590,17 @@ def _make_lead_agent(config: RunnableConfig, *, app_config: AppConfig):
             enabled=skill_search_enabled,
             container_base_path=container_base_path,
         )
-        raw_tools = get_available_tools(model_name=model_name, subagent_enabled=subagent_enabled, app_config=resolved_app_config) + [setup_agent]
+        raw_tools = list(additional_tools or ())
+        if include_default_tools:
+            raw_tools = [
+                *get_available_tools(
+                    model_name=model_name,
+                    subagent_enabled=subagent_enabled,
+                    app_config=resolved_app_config,
+                ),
+                setup_agent,
+                *raw_tools,
+            ]
         configured_tools = raw_tools
         if non_interactive:
             configured_tools = [tool for tool in configured_tools if tool.name not in _NON_INTERACTIVE_DISABLED_TOOL_NAMES]
@@ -564,8 +612,26 @@ def _make_lead_agent(config: RunnableConfig, *, app_config: AppConfig):
         )
         if skill_setup.describe_skill_tool:
             final_tools.append(skill_setup.describe_skill_tool)
-        if should_use_memory_tools(resolved_app_config.memory):
+        if include_default_tools and memory_enabled and should_use_memory_tools(resolved_app_config.memory):
             _append_memory_tools_without_name_conflicts(final_tools)
+        system_prompt = (
+            system_prompt_override.strip()
+            if system_prompt_override
+            else _extend_system_prompt(
+                apply_prompt_template(
+                    subagent_enabled=subagent_enabled,
+                    max_concurrent_subagents=max_concurrent_subagents,
+                    max_total_subagents=max_total_subagents,
+                    available_skills=set(_BOOTSTRAP_SKILL_NAMES),
+                    app_config=resolved_app_config,
+                    deferred_names=setup.deferred_names,
+                    user_id=resolved_user_id,
+                    skill_names=skill_setup.skill_names or None,
+                    memory_enabled=memory_enabled,
+                ),
+                system_prompt_extension,
+            )
+        )
         return create_agent(
             model=create_chat_model(name=model_name, thinking_enabled=thinking_enabled, app_config=resolved_app_config, attach_tracing=False),
             tools=final_tools,
@@ -577,17 +643,10 @@ def _make_lead_agent(config: RunnableConfig, *, app_config: AppConfig):
                 deferred_setup=setup,
                 mcp_routing_middleware=mcp_routing_middleware,
                 user_id=resolved_user_id,
+                memory_enabled=memory_enabled,
+                custom_middlewares=custom_middlewares,
             ),
-            system_prompt=apply_prompt_template(
-                subagent_enabled=subagent_enabled,
-                max_concurrent_subagents=max_concurrent_subagents,
-                max_total_subagents=max_total_subagents,
-                available_skills=set(_BOOTSTRAP_SKILL_NAMES),
-                app_config=resolved_app_config,
-                deferred_names=setup.deferred_names,
-                user_id=resolved_user_id,
-                skill_names=skill_setup.skill_names or None,
-            ),
+            system_prompt=system_prompt,
             state_schema=ThreadState,
         )
 
@@ -616,10 +675,10 @@ def _make_lead_agent(config: RunnableConfig, *, app_config: AppConfig):
     # leave it unset, so ``update_agent`` remains available there.
     channel_name = cfg.get("channel_name")
     is_webhook_channel = channel_name in _WEBHOOK_CHANNELS
-    extra_tools = [update_agent] if agent_name and not is_webhook_channel else []
+    extra_tools = [update_agent] if include_default_tools and agent_name and not is_webhook_channel else []
     # Default lead agent (unchanged behavior)
-    raw_tools = get_available_tools(model_name=model_name, groups=agent_config.tool_groups if agent_config else None, subagent_enabled=subagent_enabled, app_config=resolved_app_config)
-    configured_tools = raw_tools + extra_tools
+    raw_tools = get_available_tools(model_name=model_name, groups=agent_config.tool_groups if agent_config else None, subagent_enabled=subagent_enabled, app_config=resolved_app_config) if include_default_tools else []
+    configured_tools = raw_tools + extra_tools + list(additional_tools or ())
     if non_interactive:
         configured_tools = [tool for tool in configured_tools if tool.name not in _NON_INTERACTIVE_DISABLED_TOOL_NAMES]
     final_tools, setup = assemble_deferred_tools(configured_tools, enabled=resolved_app_config.tool_search.enabled)
@@ -631,8 +690,28 @@ def _make_lead_agent(config: RunnableConfig, *, app_config: AppConfig):
     mcp_routing_hints_section = get_mcp_routing_hints_prompt_section(configured_tools, deferred_names=setup.deferred_names)
     if skill_setup.describe_skill_tool:
         final_tools.append(skill_setup.describe_skill_tool)
-    if should_use_memory_tools(resolved_app_config.memory):
+    if include_default_tools and memory_enabled and should_use_memory_tools(resolved_app_config.memory):
         _append_memory_tools_without_name_conflicts(final_tools)
+    system_prompt = (
+        system_prompt_override.strip()
+        if system_prompt_override
+        else _extend_system_prompt(
+            apply_prompt_template(
+                subagent_enabled=subagent_enabled,
+                max_concurrent_subagents=max_concurrent_subagents,
+                max_total_subagents=max_total_subagents,
+                agent_name=agent_name,
+                available_skills=available_skills,
+                app_config=resolved_app_config,
+                deferred_names=setup.deferred_names,
+                mcp_routing_hints_section=mcp_routing_hints_section,
+                user_id=resolved_user_id,
+                skill_names=skill_setup.skill_names or None,
+                memory_enabled=memory_enabled,
+            ),
+            system_prompt_extension,
+        )
+    )
     return create_agent(
         model=create_chat_model(name=model_name, thinking_enabled=thinking_enabled, reasoning_effort=reasoning_effort, app_config=resolved_app_config, attach_tracing=False),
         tools=final_tools,
@@ -645,18 +724,9 @@ def _make_lead_agent(config: RunnableConfig, *, app_config: AppConfig):
             deferred_setup=setup,
             mcp_routing_middleware=mcp_routing_middleware,
             user_id=resolved_user_id,
+            memory_enabled=memory_enabled,
+            custom_middlewares=custom_middlewares,
         ),
-        system_prompt=apply_prompt_template(
-            subagent_enabled=subagent_enabled,
-            max_concurrent_subagents=max_concurrent_subagents,
-            max_total_subagents=max_total_subagents,
-            agent_name=agent_name,
-            available_skills=available_skills,
-            app_config=resolved_app_config,
-            deferred_names=setup.deferred_names,
-            mcp_routing_hints_section=mcp_routing_hints_section,
-            user_id=resolved_user_id,
-            skill_names=skill_setup.skill_names or None,
-        ),
+        system_prompt=system_prompt,
         state_schema=ThreadState,
     )

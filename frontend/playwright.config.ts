@@ -10,6 +10,7 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : undefined,
   reporter: process.env.CI ? "github" : "html",
+  preserveOutput: "always",
   timeout: 30_000,
 
   use: {

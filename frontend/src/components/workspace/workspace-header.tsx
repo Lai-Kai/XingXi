@@ -1,67 +1,45 @@
 "use client";
 
-import { MessageSquarePlus } from "lucide-react";
+import { Sparkles } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 
-import {
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarTrigger,
-  useSidebar,
-} from "@/components/ui/sidebar";
-import { useI18n } from "@/core/i18n/hooks";
-import { env } from "@/env";
+import { SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
+import { useAuth } from "@/core/auth/AuthProvider";
+import { businessRoleLabel } from "@/core/auth/permissions";
 import { cn } from "@/lib/utils";
 
 export function WorkspaceHeader({ className }: { className?: string }) {
-  const { t } = useI18n();
   const { state } = useSidebar();
-  const pathname = usePathname();
+  const { user } = useAuth();
+
   return (
-    <>
-      <div
-        className={cn(
-          "group/workspace-header flex h-12 flex-col justify-center",
-          className,
-        )}
+    <div
+      className={cn(
+        "flex h-16 items-center justify-between gap-2 px-1",
+        className,
+      )}
+    >
+      <Link
+        href="/workspace"
+        aria-label="星羲弦沚首页"
+        className="flex min-w-0 items-center gap-2.5"
       >
-        {state === "collapsed" ? (
-          <div className="group-has-data-[collapsible=icon]/sidebar-wrapper:-translate-y flex w-full cursor-pointer items-center justify-center">
-            <div className="text-primary block pt-1 font-serif group-hover/workspace-header:hidden">
-              DF
-            </div>
-            <SidebarTrigger className="hidden pl-2 group-hover/workspace-header:block" />
-          </div>
-        ) : (
-          <div className="flex items-center justify-between gap-2">
-            {env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY === "true" ? (
-              <Link href="/" className="text-primary ml-2 font-serif">
-                DeerFlow
-              </Link>
-            ) : (
-              <div className="text-primary ml-2 cursor-default font-serif">
-                DeerFlow
-              </div>
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-[#20282b] text-white">
+          <Sparkles className="size-5" />
+        </span>
+        {state !== "collapsed" && (
+          <span className="min-w-0">
+            <span className="block truncate text-base font-semibold">星羲弦沚</span>
+            {user && (
+              <span className="block truncate text-[11px] text-[#648087]">
+                {businessRoleLabel(user.business_role)}
+                {user.organization_name ? ` · ${user.organization_name}` : ""}
+              </span>
             )}
-            <SidebarTrigger />
-          </div>
+          </span>
         )}
-      </div>
-      <SidebarMenu>
-        <SidebarMenuItem>
-          <SidebarMenuButton
-            isActive={pathname === "/workspace/chats/new"}
-            asChild
-          >
-            <Link className="text-muted-foreground" href="/workspace/chats/new">
-              <MessageSquarePlus size={16} />
-              <span>{t.sidebar.newChat}</span>
-            </Link>
-          </SidebarMenuButton>
-        </SidebarMenuItem>
-      </SidebarMenu>
-    </>
+      </Link>
+      {state !== "collapsed" && <SidebarTrigger />}
+    </div>
   );
 }

@@ -13,12 +13,12 @@ shared contract).
 import logging
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger(__name__)
 
 # Host-shared MemoryConfig fields (read by every backend / call site / factory).
-_SHARED_FIELDS = frozenset({"enabled", "mode", "injection_enabled", "shutdown_flush_timeout_seconds", "manager_class", "backend_config"})
+_SHARED_FIELDS = frozenset({"enabled", "mode", "injection_enabled", "excluded_users", "shutdown_flush_timeout_seconds", "manager_class", "backend_config"})
 
 # DeerMem-private fields that used to live at the top level of `memory:` in
 # config.yaml (pre-abstraction). On load they are auto-migrated into
@@ -69,6 +69,13 @@ class MemoryConfig(BaseModel):
         default=True,
         description="Whether to inject memory into the system prompt (call-site gate).",
     )
+    excluded_users: frozenset[str] = Field(
+        default_factory=frozenset,
+        description=(
+            "Exact user IDs or email addresses for accounts that must not load, "
+            "write, or manage durable memory. Values are trimmed and case-insensitive."
+        ),
+    )
     shutdown_flush_timeout_seconds: float = Field(
         default=30.0,
         ge=1.0,
@@ -110,10 +117,41 @@ class MemoryConfig(BaseModel):
         ),
     )
 
+    @field_validator("excluded_users", mode="before")
+    @classmethod
+    def normalize_excluded_users(cls, value: object) -> frozenset[str]:
+        if value is None:
+            return frozenset()
+        if isinstance(value, str):
+            raise ValueError("memory.excluded_users must be a list of exact user IDs or email addresses")
+        try:
+            normalized = {str(item).strip().casefold() for item in value}
+        except TypeError as exc:
+            raise ValueError("memory.excluded_users must be a list of exact user IDs or email addresses") from exc
+        normalized.discard("")
+        return frozenset(normalized)
+
 
 def should_use_memory_tools(config: MemoryConfig) -> bool:
     """Return True when memory should use model-directed tools."""
     return config.enabled and config.mode == "tool"
+
+
+def is_memory_enabled_for_identity(
+    config: MemoryConfig,
+    *,
+    user_id: str | None,
+    email: str | None = None,
+) -> bool:
+    """Return the effective memory state for one authenticated identity."""
+    if not config.enabled:
+        return False
+    identifiers = {
+        value.strip().casefold()
+        for value in (user_id, email)
+        if isinstance(value, str) and value.strip()
+    }
+    return config.excluded_users.isdisjoint(identifiers)
 
 
 # Global configuration instance

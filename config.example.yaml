@@ -15,7 +15,7 @@
 # ============================================================================
 # Bump this number when the config schema changes.
 # Run `make config-upgrade` to merge new fields into your local config.yaml.
-config_version: 26
+config_version: 29
 
 # ============================================================================
 # Logging
@@ -89,6 +89,102 @@ max_recursion_limit: 1000
 #     output_per_million: 32.0         # price per 1M output tokens
 #     input_cache_hit_per_million: 0.8 # price per 1M cache-hit input tokens
 #                                      # (optional; omit → hits billed at miss price)
+
+# Embedding provider (OpenAI-compatible /v1/embeddings endpoint).
+# Keep disabled until the provider has been verified with a real embedding call.
+# embedding:
+#   enabled: true
+#   model: text-embedding-3-small
+#   version: v1            # Bump when provider/model behavior changes; rebuild before searching.
+#   api_key: $OPENAI_API_KEY
+#   base_url: https://api.example.com/v1
+#   dimensions: 1536       # Required for persistent vector indexes; never mix dimensions.
+#   batch_size: 32
+#   timeout: 60.0
+#   max_retries: 2
+
+# Full-text/vector fusion. Each channel has an independent deadline; one
+# healthy channel can still return a degraded response.
+hybrid_search:
+  channel_timeout_seconds: 5.0
+  rrf_k: 60
+
+# Ranked historical citations are packed into this prompt budget. The default
+# character estimator is deterministic and network-free; tiktoken is optional.
+evidence_pack:
+  token_budget: 4000
+  max_items: 12
+  max_quote_tokens: 512
+  min_quote_tokens: 24
+  token_counting: char
+
+# Deterministic trust-aware reranking after RRF. Component weights must sum to 1.
+trust_rerank:
+  policy_version: trust-rerank-v1
+  relevance_weight: 0.70
+  authority_weight: 0.15
+  review_weight: 0.10
+  temporal_weight: 0.05
+  document_repeat_penalty: 0.05
+
+# Optional reranker. The response must contain
+# results: [{index: 0, relevance_score: 0.95}, ...].
+# Keep disabled until the provider endpoint and model have been verified.
+# reranker:
+#   enabled: true
+#   model: jina-reranker-v2-base-multilingual
+#   api_key: $RERANKER_API_KEY
+#   base_url: https://api.example.com/v1
+#   endpoint: /rerank
+#   candidate_limit: 50
+#   batch_size: 50
+#   timeout: 30.0
+#   max_retries: 2
+#   fail_open: true          # Preserve original order if the provider fails.
+
+# Historical-source object storage. Local files live under
+# DEER_FLOW_HOME/objects, which is already persisted by the Docker Gateway
+# mount. Select s3 for AWS S3, MinIO, or another S3-compatible service.
+object_storage:
+  backend: local             # local or s3
+  local_dir: objects         # Relative paths resolve under DEER_FLOW_HOME.
+  # bucket: historical-sources
+  # endpoint_url: http://minio:9000   # Omit for AWS S3.
+  # region: us-east-1
+  # access_key_id: $S3_ACCESS_KEY_ID
+  # secret_access_key: $S3_SECRET_ACCESS_KEY
+  # session_token: $S3_SESSION_TOKEN
+  # prefix: xingxi
+  # addressing_style: path   # path is the safest default for MinIO.
+
+# Read-only server corpora. Paths are container paths and must be mounted with
+# `:ro`; HTTP clients can never supply an arbitrary filesystem root.
+corpus_import:
+  roots: []
+  # - id: fuxianzhi
+  #   path: /data/corpora/fuxianzhi
+
+# Scanned PDF/image OCR. model_name references one entry under models[]; that
+# model must set supports_vision: true. Its api_key and base_url/api_base are
+# reused, so secrets are not duplicated here.
+ocr:
+  enabled: false
+  model_name: null           # Example: gpt-5.4
+  api_mode: chat_completions # Use responses when the provider requires /v1/responses.
+  languages: [zh-Hans, zh-Hant]
+  review_confidence_threshold: 0.8
+  max_concurrency: 2
+  max_pages_per_batch: 50
+  timeout: 120.0
+  render_dpi: 150
+
+# Persistent ingestion job scheduling. The database enforces this limit when
+# workers claim a pending step, so multiple Gateway workers share one budget.
+ingestion:
+  max_concurrent_jobs: 2
+  lease_seconds: 60
+  recovery_grace_seconds: 10
+  auto_publish_internal_release: true
 
 models:
   # Example: Volcengine (Doubao) model
@@ -1457,6 +1553,7 @@ summarization:
 # Shared fields (host level, backend-agnostic):
 #   enabled             - Master switch for the memory mechanism (call-site gate)
 #   injection_enabled   - Whether to inject memory into the system prompt (call-site gate)
+#   excluded_users      - Exact user IDs/emails that never load or write memory
 #   shutdown_flush_timeout_seconds - Hard budget (s) to drain pending updates on Gateway graceful shutdown (default: 30)
 #   manager_class       - Backend selector: registered name (deermem/noop) or dotted path
 #   backend_config      - Backend-private config dict (passthrough; each backend self-interprets)
@@ -1490,6 +1587,12 @@ summarization:
 memory:
   enabled: true
   injection_enabled: true # Whether to inject memory into system prompt
+  # Keep automated/test accounts out of durable memory. Matching is exact,
+  # case-insensitive, and accepts either the account email or user ID.
+  excluded_users: []
+  # excluded_users:
+  #   - tester@example.com
+  #   - 00000000-0000-0000-0000-000000000000
   # Hard budget (seconds) to drain pending memory updates on Gateway graceful
   # shutdown. Each pending item does one LLM call, so large IM batches may need
   # more. Must fit inside the pod's K8s terminationGracePeriodSeconds (channel
@@ -1616,6 +1719,9 @@ skill_evolution:
 #
 # Postgres mode: put your connection URL in .env as DATABASE_URL,
 # then reference it here with $DATABASE_URL.
+# Production Docker additionally detects this backend and loads
+# docker/docker-compose.postgres.yaml. If POSTGRES_PASSWORD is absent,
+# scripts/deploy.sh generates and persists one under DEER_FLOW_HOME.
 #
 # Install the driver — Issue #2754 fix lands `UV_EXTRAS` in every code path:
 #   Local      `make dev` auto-detects from `database.backend: postgres` below
@@ -1668,6 +1774,8 @@ run_events:
   backend: memory
   max_trace_content: 10240
   track_token_usage: true
+  # Use backend: db in production when run/audit events must survive restarts.
+  # The memory backend is appropriate for local testing and does not persist.
 
 # ============================================================================
 # Scheduled Tasks Configuration

@@ -1,0 +1,23 @@
+services:
+  nginx:
+    ports: !override
+      - "127.0.0.1:12026:2026"
+    cpus: 0.5
+    mem_limit: 256m
+
+  frontend:
+    volumes:
+      - /data/laikai/cache/frontend-next:/app/frontend/.next
+    cpus: 4
+    mem_limit: 6g
+
+  gateway:
+    volumes:
+      - /data/laikai/府縣志:/data/corpora/fuxianzhi:ro
+      - /data/laikai/import-manifests:/data/import-manifests
+    cpus: 8
+    mem_limit: 12g
+
+  redis:
+    cpus: 1
+    mem_limit: 1g

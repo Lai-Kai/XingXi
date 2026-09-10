@@ -31,9 +31,10 @@ from app.gateway.auth.oidc_state import (
     get_state_cookie,
     set_state_cookie,
 )
+from app.gateway.auth.roles import BusinessRole
 from app.gateway.auth.user_provisioning import get_or_provision_oidc_user
 from app.gateway.csrf_middleware import CSRF_COOKIE_NAME, _request_origin, generate_csrf_token, is_secure_request
-from app.gateway.deps import get_current_user_from_request, get_local_provider
+from app.gateway.deps import get_current_user_from_request, get_local_provider, require_admin_user
 from deerflow.config.auth_config import OIDCProviderConfig
 
 logger = logging.getLogger(__name__)
@@ -337,7 +338,7 @@ async def register(request: Request, response: Response, body: RegisterRequest):
     token = create_access_token(str(user.id), token_version=user.token_version)
     _set_session_cookie(response, token, request)
 
-    return UserResponse(id=str(user.id), email=user.email, system_role=user.system_role, oauth_provider=user.oauth_provider)
+    return UserResponse.from_user(user)
 
 
 @router.post("/logout", response_model=MessageResponse)
@@ -407,13 +408,33 @@ async def change_password(request: Request, response: Response, body: ChangePass
 async def get_me(request: Request):
     """Get current authenticated user info."""
     user = await get_current_user_from_request(request)
-    return UserResponse(
-        id=str(user.id),
-        email=user.email,
-        system_role=user.system_role,
-        needs_setup=user.needs_setup,
-        oauth_provider=user.oauth_provider,
-    )
+    return UserResponse.from_user(user)
+
+
+class BusinessProfileUpdate(BaseModel):
+    business_role: BusinessRole
+    organization_name: str | None = Field(default=None, max_length=255)
+
+
+@router.get("/users", response_model=list[UserResponse])
+async def list_users(request: Request):
+    await require_admin_user(request, detail="Administrator privileges are required to manage user roles")
+    users = await get_local_provider().list_users()
+    return [UserResponse.from_user(user) for user in users]
+
+
+@router.patch("/users/{user_id}/business-profile", response_model=UserResponse)
+async def update_business_profile(user_id: str, body: BusinessProfileUpdate, request: Request):
+    await require_admin_user(request, detail="Administrator privileges are required to manage user roles")
+    provider = get_local_provider()
+    user = await provider.get_user(user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.business_role = body.business_role
+    organization_name = body.organization_name.strip() if body.organization_name else None
+    user.organization_name = organization_name or None
+    updated = await provider.update_user(user)
+    return UserResponse.from_user(updated)
 
 
 # Per-IP cache: ip → (timestamp, result_dict).
@@ -527,7 +548,7 @@ async def initialize_admin(request: Request, response: Response, body: Initializ
     token = create_access_token(str(user.id), token_version=user.token_version)
     _set_session_cookie(response, token, request)
 
-    return UserResponse(id=str(user.id), email=user.email, system_role=user.system_role, oauth_provider=user.oauth_provider)
+    return UserResponse.from_user(user)
 
 
 # ── OIDC / SSO Endpoints ────────────────────────────────────────────────

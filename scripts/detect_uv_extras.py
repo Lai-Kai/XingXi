@@ -233,6 +233,8 @@ def detect_from_config(path: Path) -> list[str]:
         extras.add("postgres")
     if (section_value(lines, "stream_bridge", "type") or "").lower() == "redis":
         extras.add("redis")
+    if (section_value(lines, "object_storage", "backend") or "").lower() == "s3":
+        extras.add("s3")
     if (nested_section_value(lines, "channels.discord", "enabled") or "").lower() == "true":
         extras.add("discord")
     return sorted(extras)

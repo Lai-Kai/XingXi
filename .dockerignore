@@ -7,6 +7,7 @@ docker/
 
 # Python
 __pycache__/
+**/.pytest*
 *.py[cod]
 *$py.class
 *.so
@@ -63,6 +64,7 @@ skills/
 frontend/.next
 frontend/node_modules
 backend/.venv
+backend/.deer-flow
 backend/htmlcov
 backend/.coverage
 *.md

@@ -3,10 +3,8 @@
 Replaces the unconditional ``Base.metadata.create_all`` at Gateway startup.
 Combines two ideas:
 
-1. ``create_all`` stays the empty-DB fast path -- it renders ``Base.metadata``
-   faithfully across SQLite and Postgres dialects (JSON vs JSONB, server
-   defaults, index/FK names, type affinity) without anyone having to hand-keep
-   a mirror baseline in sync with the models.
+1. Empty databases run the complete Alembic chain so migration-only tables,
+   extensions, constraints, and data backfills cannot be skipped.
 2. **Alembic owns every change from baseline onward.** Any new ORM column /
    table / index must ship as a revision under ``migrations/versions/``.
 
@@ -15,7 +13,7 @@ Three-branch decision (see ``_decide_state``)
 
 | DB state                              | Action                                  |
 |---------------------------------------|-----------------------------------------|
-| empty (no DeerFlow tables)            | ``create_all`` + ``alembic stamp head`` |
+| empty (no DeerFlow tables)            | ``alembic upgrade head``                |
 | legacy (DeerFlow tables, no alembic)  | ``create_all`` (baseline tables only, as backfill) + ``stamp 0001_baseline`` + ``upgrade head`` |
 | versioned (``alembic_version`` row)   | ``alembic upgrade head``                |
 
@@ -319,6 +317,51 @@ def _run_create_all_sync(sync_conn: Any) -> None:
     Base.metadata.create_all(sync_conn)
 
 
+def _ensure_postgres_extensions_sync(sync_conn: Any) -> None:
+    """Install database extensions required by current ORM column types."""
+    if sync_conn.dialect.name == "postgresql":
+        sync_conn.exec_driver_sql("CREATE EXTENSION IF NOT EXISTS vector")
+
+
+_INGESTION_FOREIGN_KEY_CONTRACT = {
+    "wu_ingestion_jobs": {
+        ("document_id", "wu_source_documents", "id", "RESTRICT"),
+        ("source_file_id", "wu_source_files", "id", "RESTRICT"),
+    },
+    "wu_ingestion_steps": {
+        ("job_id", "wu_ingestion_jobs", "id", "CASCADE"),
+    },
+    "wu_ingestion_events": {
+        ("job_id", "wu_ingestion_jobs", "id", "CASCADE"),
+    },
+}
+
+
+def _validate_ingestion_foreign_keys_sync(sync_conn: Any) -> None:
+    """Fail startup when the live ingestion schema diverges from its contract."""
+    inspector = sa_inspect(sync_conn)
+    tables = set(inspector.get_table_names())
+    violations: list[str] = []
+    for table_name, expected in _INGESTION_FOREIGN_KEY_CONTRACT.items():
+        if table_name not in tables:
+            violations.append(f"{table_name}: table missing")
+            continue
+        actual = {
+            (
+                item["constrained_columns"][0],
+                item["referred_table"],
+                item["referred_columns"][0],
+                item["options"].get("ondelete", "NO ACTION").upper(),
+            )
+            for item in inspector.get_foreign_keys(table_name)
+            if len(item["constrained_columns"]) == 1 and len(item["referred_columns"]) == 1
+        }
+        if actual != expected:
+            violations.append(f"{table_name}: expected={sorted(expected)!r}, actual={sorted(actual)!r}")
+    if violations:
+        raise RuntimeError("ingestion foreign-key contract mismatch after migrations; " + "; ".join(violations))
+
+
 def _run_baseline_create_all_sync(sync_conn: Any) -> None:
     """Create only the baseline tables on *sync_conn* (idempotent via checkfirst).
 
@@ -485,15 +528,16 @@ async def bootstrap_schema(engine: AsyncEngine, *, backend: str) -> None:
     cfg = _get_alembic_config(engine)
 
     async with _bootstrap_lock(engine, backend=backend):
+        if backend == "postgres":
+            async with engine.begin() as conn:
+                await conn.run_sync(_ensure_postgres_extensions_sync)
         async with engine.connect() as conn:
             state = await conn.run_sync(_reflect_state)
         decision = _decide_state(state)
 
         if decision == "empty":
-            logger.info("bootstrap: branch=empty -> create_all + stamp head (%s)", head)
-            async with engine.begin() as conn:
-                await conn.run_sync(_run_create_all_sync)
-            await asyncio.to_thread(_stamp, cfg, head)
+            logger.info("bootstrap: branch=empty -> upgrade head (%s)", head)
+            await asyncio.to_thread(_upgrade, cfg, "head")
 
         elif decision == "legacy":
             logger.info(
@@ -522,5 +566,8 @@ async def bootstrap_schema(engine: AsyncEngine, *, backend: str) -> None:
 
         else:  # pragma: no cover -- defensive
             raise RuntimeError(f"bootstrap: unhandled decision {decision!r}")
+
+        async with engine.connect() as conn:
+            await conn.run_sync(_validate_ingestion_foreign_keys_sync)
 
     logger.info("bootstrap: complete (backend=%s)", backend)

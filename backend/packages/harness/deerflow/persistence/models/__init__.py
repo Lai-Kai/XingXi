@@ -22,22 +22,36 @@ from deerflow.persistence.channel_connections.model import (
 )
 from deerflow.persistence.feedback.model import FeedbackRow
 from deerflow.persistence.models.run_event import RunEventRow
+from deerflow.persistence.object_storage.model import ObjectMetadataRow
 from deerflow.persistence.run.model import RunRow
 from deerflow.persistence.scheduled_task_runs.model import ScheduledTaskRunRow
 from deerflow.persistence.scheduled_tasks.model import ScheduledTaskRow
 from deerflow.persistence.thread_meta.model import ThreadMetaRow
 from deerflow.persistence.user.model import UserRow
+from deerflow.persistence.wu_culture.model import ChunkSetRow, CleanedOcrPageRow, EvidenceRow, OcrPageAttemptRow, OcrRegionRow, ParsedBlockRow, ParsedDocumentRow, SourceDocumentRow, SourceFileRow, TextChunkRow, TextCleaningChangeRow
 
 __all__ = [
     "ChannelConnectionRow",
     "ChannelConversationRow",
     "ChannelCredentialRow",
     "ChannelOAuthStateRow",
+    "ChunkSetRow",
+    "CleanedOcrPageRow",
     "FeedbackRow",
     "RunEventRow",
+    "ObjectMetadataRow",
     "RunRow",
     "ScheduledTaskRow",
     "ScheduledTaskRunRow",
     "ThreadMetaRow",
     "UserRow",
+    "EvidenceRow",
+    "OcrPageAttemptRow",
+    "OcrRegionRow",
+    "ParsedBlockRow",
+    "ParsedDocumentRow",
+    "SourceDocumentRow",
+    "SourceFileRow",
+    "TextChunkRow",
+    "TextCleaningChangeRow",
 ]

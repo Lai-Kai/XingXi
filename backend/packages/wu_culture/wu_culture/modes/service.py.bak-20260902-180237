@@ -1,0 +1,70 @@
+from __future__ import annotations
+
+from enum import StrEnum
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class XingxiMode(StrEnum):
+    FLASH = "flash"
+    PRO = "pro"
+    ULTRA = "ultra"
+
+
+class ModeProfile(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    mode: XingxiMode
+    label: str
+    enable_subagents: bool
+    enable_plan: bool
+    max_tool_calls: int = Field(ge=0)
+    max_answer_tokens: int = Field(ge=64)
+    evidence_required: bool = True
+    description: str
+
+
+_PROFILES = {
+    XingxiMode.FLASH: ModeProfile(
+        mode=XingxiMode.FLASH,
+        label="快速问答",
+        enable_subagents=False,
+        enable_plan=False,
+        max_tool_calls=3,
+        max_answer_tokens=800,
+        evidence_required=True,
+        description="Low-latency short answers with citations; no sub-agents.",
+    ),
+    XingxiMode.PRO: ModeProfile(
+        mode=XingxiMode.PRO,
+        label="深度考据",
+        enable_subagents=False,
+        enable_plan=True,
+        max_tool_calls=12,
+        max_answer_tokens=4000,
+        evidence_required=True,
+        description="Structured multi-source research with medium model reasoning.",
+    ),
+    XingxiMode.ULTRA: ModeProfile(
+        mode=XingxiMode.ULTRA,
+        label="深度求索",
+        enable_subagents=False,
+        enable_plan=True,
+        max_tool_calls=20,
+        max_answer_tokens=6000,
+        evidence_required=True,
+        description="Extended evidence research with high model reasoning.",
+    ),
+}
+
+
+def resolve_mode_profile(mode: str | XingxiMode | None) -> ModeProfile:
+    if mode is None:
+        return _PROFILES[XingxiMode.FLASH]
+    value = mode.value if isinstance(mode, XingxiMode) else str(mode).strip().lower()
+    if value in {"flash", "fast", "quick"}:
+        return _PROFILES[XingxiMode.FLASH]
+    if value in {"pro", "plan", "deep", "research"}:
+        return _PROFILES[XingxiMode.PRO]
+    if value in {"ultra", "deep-research", "deep_research"}:
+        return _PROFILES[XingxiMode.ULTRA]
+    return _PROFILES[XingxiMode.FLASH]

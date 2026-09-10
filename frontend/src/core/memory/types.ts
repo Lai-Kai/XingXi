@@ -22,6 +22,8 @@ export interface MemoryFactPatchInput {
 export interface UserMemory {
   version: string;
   lastUpdated: string;
+  effectiveEnabled: boolean;
+  disabledReason?: "globally_disabled" | "account_excluded" | null;
   user: {
     workContext: {
       summary: string;

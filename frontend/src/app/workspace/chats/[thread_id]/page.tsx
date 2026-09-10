@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -43,6 +43,10 @@ import {
 import { isHiddenFromUIMessage } from "@/core/messages/utils";
 import { useModels } from "@/core/models/hooks";
 import { useNotification } from "@/core/notification/hooks";
+import {
+  getResearchProject,
+  listResearchProjectDocuments,
+} from "@/core/projects/api";
 import { useLocalSettings, useThreadSettings } from "@/core/settings";
 import {
   useBranchThread,
@@ -52,14 +56,23 @@ import {
 } from "@/core/threads/hooks";
 import { threadTokenUsageToTokenUsage } from "@/core/threads/token-usage";
 import { textOfMessage } from "@/core/threads/utils";
+import {
+  modeContextForEntry,
+  parseEntryMode,
+} from "@/core/threads/xingxi-entry";
 import { env } from "@/env";
 import { cn } from "@/lib/utils";
 
 export default function ChatPage() {
   const { t } = useI18n();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const starterPrompt = searchParams.get("prompt")?.trim();
   const { threadId, setThreadId, isNewThread, setIsNewThread, isMock } =
     useThreadChat();
+  const starterProjectId = isNewThread
+    ? searchParams.get("project_id")?.trim()
+    : undefined;
   // `isNewThread` tracks whether the backend has the thread yet — gates the
   // SDK's history fetch (see issue #2746).  `isWelcomeMode` is the visual
   // welcome layout (centered input, hero, quick actions); we flip it to false
@@ -67,8 +80,67 @@ export default function ChatPage() {
   // `isNewThread` stays true until the backend actually creates the thread.
   const [isWelcomeMode, setIsWelcomeMode] = useState(isNewThread);
   const [settings, setSettings] = useThreadSettings(threadId);
+  const entryModeContext = useMemo(() => {
+    const entryMode = isNewThread
+      ? parseEntryMode(searchParams.get("mode"))
+      : undefined;
+    return entryMode ? modeContextForEntry(entryMode) : null;
+  }, [isNewThread, searchParams]);
+  const [projectScope, setProjectScope] = useState<{
+    id: string;
+    name: string;
+    documentIds: string[];
+  } | null>(null);
+  const [projectScopeLoading, setProjectScopeLoading] = useState(
+    Boolean(starterProjectId),
+  );
+
+  useEffect(() => {
+    if (!starterProjectId) {
+      setProjectScope(null);
+      setProjectScopeLoading(false);
+      return;
+    }
+    let active = true;
+    setProjectScopeLoading(true);
+    void Promise.all([
+      getResearchProject(starterProjectId),
+      listResearchProjectDocuments(starterProjectId),
+    ])
+      .then(([project, documents]) => {
+        if (!active) return;
+        setProjectScope({
+          id: project.id,
+          name: project.name,
+          documentIds: documents.map((document) => document.id),
+        });
+      })
+      .catch(() => {
+        if (active) setProjectScope(null);
+      })
+      .finally(() => {
+        if (active) setProjectScopeLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [starterProjectId]);
+  const runtimeContext = useMemo(
+    () => ({
+      ...settings.context,
+      ...(entryModeContext ?? {}),
+      ...(projectScope
+        ? {
+            research_project_id: projectScope.id,
+            research_project_name: projectScope.name,
+            research_project_document_ids: projectScope.documentIds,
+          }
+        : {}),
+    }),
+    [entryModeContext, projectScope, settings.context],
+  );
   const [localSettings, setLocalSettings] = useLocalSettings();
-  const { tokenUsageEnabled } = useModels();
+  const { models, tokenUsageEnabled, isLoading: modelsLoading } = useModels();
   const threadTokenUsage = useThreadTokenUsage(
     isNewThread || isMock ? undefined : threadId,
     { enabled: tokenUsageEnabled && !isMock },
@@ -79,11 +151,12 @@ export default function ChatPage() {
   });
   const branchThread = useBranchThread();
   const backendTokenUsage = threadTokenUsageToTokenUsage(threadTokenUsage.data);
-  const mountedRef = useRef(false);
+  const [mounted, setMounted] = useState(false);
+  const starterSentRef = useRef(false);
   useSpecificChatMode();
 
   useEffect(() => {
-    mountedRef.current = true;
+    setMounted(true);
   }, []);
 
   // Keep welcome layout in sync when navigating between threads (sidebar
@@ -108,7 +181,7 @@ export default function ChatPage() {
   } = useThreadStream({
     threadId: isNewThread ? undefined : threadId,
     displayThreadId: threadId,
-    context: settings.context,
+    context: runtimeContext,
     isMock,
     // onSend only animates the UI; do NOT flip `isNewThread` here — the
     // LangGraph SDK eagerly fetches /history the moment it receives a
@@ -140,6 +213,57 @@ export default function ChatPage() {
     },
   });
 
+  useEffect(() => {
+    if (
+      (!entryModeContext && !projectScope) ||
+      (settings.context.mode === entryModeContext?.mode &&
+        settings.context.reasoning_effort ===
+          entryModeContext?.reasoning_effort &&
+        settings.context.research_project_id === projectScope?.id &&
+        JSON.stringify(settings.context.research_project_document_ids ?? []) ===
+          JSON.stringify(projectScope?.documentIds ?? []))
+    ) {
+      return;
+    }
+    setSettings("context", runtimeContext);
+  }, [
+    entryModeContext,
+    projectScope,
+    runtimeContext,
+    setSettings,
+    settings.context,
+  ]);
+
+  useEffect(() => {
+    if (
+      !starterPrompt ||
+      starterSentRef.current ||
+      !isNewThread ||
+      isMock ||
+      projectScopeLoading ||
+      (starterProjectId && !projectScope) ||
+      modelsLoading ||
+      models.length === 0
+    ) {
+      return;
+    }
+    starterSentRef.current = true;
+    void sendMessage(threadId, { text: starterPrompt, files: [] }).catch(() => {
+      starterSentRef.current = false;
+    });
+  }, [
+    isMock,
+    isNewThread,
+    models.length,
+    modelsLoading,
+    projectScope,
+    projectScopeLoading,
+    sendMessage,
+    starterPrompt,
+    starterProjectId,
+    threadId,
+  ]);
+
   const hasThreadMessages = thread.messages.length > 0;
 
   useEffect(() => {
@@ -169,13 +293,17 @@ export default function ChatPage() {
 
   const handleSubmit = useCallback(
     (message: PromptInputMessage, options?: InputBoxSubmitOptions) => {
+      if (models.length === 0) {
+        toast.error(t.inputBox.modelUnavailable);
+        return;
+      }
       const sendPromise = sendMessage(threadId, message, undefined, options);
       if (message.files.length > 0) {
         return sendPromise;
       }
       void sendPromise;
     },
-    [sendMessage, threadId],
+    [models.length, sendMessage, t.inputBox.modelUnavailable, threadId],
   );
   const handleSubmitHumanInput = useCallback(
     async (request: HumanInputRequest, response: HumanInputResponse) => {
@@ -257,7 +385,7 @@ export default function ChatPage() {
     <ThreadContext.Provider value={{ thread, isMock }}>
       <SidecarProvider
         parentThreadId={threadId}
-        context={settings.context}
+        context={runtimeContext}
         isMock={isMock}
       >
         <ChatBox threadId={threadId}>
@@ -370,42 +498,52 @@ export default function ChatPage() {
                       </div>
                     </div>
                   )}
-                  {mountedRef.current ? (
-                    <InputBox
-                      className={cn(
-                        "bg-background/5 w-full",
-                        isWelcomeMode && "-translate-y-2 sm:-translate-y-4",
+                  {mounted ? (
+                    <>
+                      {!modelsLoading && models.length === 0 && (
+                        <div
+                          className="border-border bg-background text-muted-foreground mb-3 rounded-md border px-3 py-2 text-center text-sm shadow-xs"
+                          role="status"
+                        >
+                          {t.inputBox.modelUnavailable}
+                        </div>
                       )}
-                      isWelcomeMode={isWelcomeMode}
-                      threadId={threadId}
-                      autoFocus={isWelcomeMode}
-                      status={
-                        thread.error
-                          ? "error"
-                          : thread.isLoading
-                            ? "streaming"
-                            : "ready"
-                      }
-                      context={settings.context}
-                      extraHeader={
-                        isWelcomeMode &&
-                        !hasGoal &&
-                        !hasTodos && <Welcome mode={settings.context.mode} />
-                      }
-                      disabled={
-                        isMock ||
-                        env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY === "true" ||
-                        isUploading ||
-                        hasOpenHumanInputCard ||
-                        (!isNewThread && isHistoryLoading)
-                      }
-                      onContextChange={(context) =>
-                        setSettings("context", context)
-                      }
-                      onGoalChange={setLocalGoal}
-                      onSubmit={handleSubmit}
-                      onStop={handleStop}
-                    />
+                      <InputBox
+                        className={cn(
+                          "bg-background/5 w-full",
+                          isWelcomeMode && "-translate-y-2 sm:-translate-y-4",
+                        )}
+                        isWelcomeMode={isWelcomeMode}
+                        threadId={threadId}
+                        autoFocus={isWelcomeMode}
+                        status={
+                          thread.error
+                            ? "error"
+                            : thread.isLoading
+                              ? "streaming"
+                              : "ready"
+                        }
+                        context={runtimeContext}
+                        extraHeader={
+                          isWelcomeMode &&
+                          !hasGoal &&
+                          !hasTodos && <Welcome mode={runtimeContext.mode} />
+                        }
+                        disabled={
+                          isMock ||
+                          env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY === "true" ||
+                          isUploading ||
+                          hasOpenHumanInputCard ||
+                          (!isNewThread && isHistoryLoading)
+                        }
+                        onContextChange={(context) =>
+                          setSettings("context", context)
+                        }
+                        onGoalChange={setLocalGoal}
+                        onSubmit={handleSubmit}
+                        onStop={handleStop}
+                      />
+                    </>
                   ) : (
                     <div
                       aria-hidden="true"

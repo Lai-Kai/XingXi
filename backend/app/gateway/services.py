@@ -31,6 +31,7 @@ from app.gateway.internal_auth import (
 from app.gateway.utils import sanitize_log_param
 from deerflow.agents.middlewares.dynamic_context_middleware import _DYNAMIC_CONTEXT_REMINDER_KEY, _REMINDER_DATE_KEY
 from deerflow.config.app_config import get_app_config
+from deerflow.persistence.engine import get_session_factory
 from deerflow.runtime import (
     END_SENTINEL,
     HEARTBEAT_SENTINEL,
@@ -64,6 +65,32 @@ _SERVER_OWNED_DYNAMIC_CONTEXT_KEYS = frozenset(
         _REMINDER_DATE_KEY,
     }
 )
+
+_KNOWLEDGE_RELEASE_METADATA_KEYS = (
+    "knowledge_release_id",
+    "knowledge_release_version",
+    "knowledge_release_manifest_sha256",
+    "knowledge_release_scope",
+)
+
+
+async def resolve_active_knowledge_release_metadata(repository: Any | None = None) -> dict[str, Any]:
+    if repository is None:
+        session_factory = get_session_factory()
+        if session_factory is None:
+            return {}
+        from deerflow.persistence.wu_culture import SqlKnowledgeReleaseRepository
+
+        repository = SqlKnowledgeReleaseRepository(session_factory)
+    active = await repository.get_active()
+    if active is None:
+        return {}
+    return {
+        "knowledge_release_id": active.id,
+        "knowledge_release_version": active.version,
+        "knowledge_release_manifest_sha256": active.manifest_sha256,
+        "knowledge_release_scope": active.scope,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -181,7 +208,7 @@ def normalize_input(raw_input: dict[str, Any] | None, *, trusted_internal: bool 
     return raw_input
 
 
-_DEFAULT_ASSISTANT_ID = "lead_agent"
+_DEFAULT_ASSISTANT_ID = "xingxi"
 
 
 # Whitelist of run-context keys that the langgraph-compat layer forwards from
@@ -217,7 +244,7 @@ _CONTEXT_INTERNAL_CALLER_KEYS: frozenset[str] = frozenset({"non_interactive"})
 #   ``is_internal``       — derived from ``request.state.auth_source``
 #   ``authz_attributes`` — Phase 1A has no Gateway-side producer; always cleared.
 #   ``channel_user_id``  — accepted only from trusted internal ``body.context``.
-_SERVER_OWNED_AUTHZ_CONTEXT_KEYS: frozenset[str] = frozenset({"is_internal", "authz_attributes", "channel_user_id"})
+_SERVER_OWNED_AUTHZ_CONTEXT_KEYS: frozenset[str] = frozenset({"is_internal", "authz_attributes", "channel_user_id", "memory_enabled"})
 
 # Keys forwarded from ``body.context`` into ``config['context']`` ONLY (the
 # runtime context that becomes ``ToolRuntime.context`` / ``runtime.context``),
@@ -294,6 +321,16 @@ def merge_run_context_overrides(config: dict[str, Any], context: Mapping[str, An
         runtime_context.setdefault("user_id", context["user_id"])
 
 
+def inject_knowledge_release_context(config: dict[str, Any], metadata: Mapping[str, Any]) -> None:
+    """Expose the server-resolved release snapshot to ToolRuntime consumers."""
+    runtime_context = config.setdefault("context", {})
+    if not isinstance(runtime_context, dict):
+        raise TypeError("run context must be a mapping")
+    for key in _KNOWLEDGE_RELEASE_METADATA_KEYS:
+        if key in metadata:
+            runtime_context[key] = metadata[key]
+
+
 async def resolve_trusted_internal_owner_for_attribution(request: Request, owner_user_id: str | None) -> Any | None:
     """Resolve the DeerFlow user used only for trusted internal attribution."""
 
@@ -352,6 +389,18 @@ def inject_authenticated_user_context(
     if user_id is None:
         return
 
+    from deerflow.config.memory_config import get_memory_config, is_memory_enabled_for_identity
+
+    memory_owner = internal_owner_user if internal_owner_user is not None else user
+    memory_user_id = getattr(memory_owner, "id", None)
+    if getattr(user, "system_role", None) == INTERNAL_SYSTEM_ROLE and internal_owner_user is None:
+        memory_user_id = runtime_context.get("user_id") or memory_user_id
+    runtime_context["memory_enabled"] = is_memory_enabled_for_identity(
+        get_memory_config(),
+        user_id=str(memory_user_id) if memory_user_id is not None else None,
+        email=str(getattr(memory_owner, "email", "") or "") or None,
+    )
+
     if getattr(user, "system_role", None) == INTERNAL_SYSTEM_ROLE:
         runtime_context = config.setdefault("context", {})
         if not isinstance(runtime_context, dict):
@@ -380,15 +429,12 @@ def inject_authenticated_user_context(
 def resolve_agent_factory(assistant_id: str | None):
     """Resolve the agent factory callable from config.
 
-    Custom agents are implemented as ``lead_agent`` + an ``agent_name``
-    injected into ``configurable`` or ``context`` — see
-    :func:`build_run_config`.  All ``assistant_id`` values therefore map to the
-    same factory; the routing happens inside ``make_lead_agent`` when it reads
-    ``cfg["agent_name"]``.
+    Xingxi is the product graph. Custom assistant IDs are forwarded as an
+    ``agent_name`` by :func:`build_run_config` and resolved inside that graph.
     """
-    from deerflow.agents.lead_agent.agent import make_lead_agent
+    from deerflow.agents.xingxi.agent import make_xingxi_agent
 
-    return make_lead_agent
+    return make_xingxi_agent
 
 
 # Lead-agent recursion budget bounds. The Gateway must NOT trust a
@@ -671,13 +717,17 @@ async def start_run(
 
     owner_context_token = set_current_user(SimpleNamespace(id=owner_user_id)) if owner_user_id else None
     try:
+        run_metadata = dict(body.metadata or {})
+        for key in _KNOWLEDGE_RELEASE_METADATA_KEYS:
+            run_metadata.pop(key, None)
+        run_metadata.update(await resolve_active_knowledge_release_metadata())
         try:
             async with goal_thread_lock(thread_id):
                 record = await run_mgr.create_or_reject(
                     thread_id,
                     body.assistant_id,
                     on_disconnect=disconnect,
-                    metadata=body.metadata or {},
+                    metadata=run_metadata,
                     # Persist a secret-redacted copy of the config: the run record is
                     # written to runs.kwargs_json and echoed by the run API, so a
                     # request-scoped secret (#3861) must not ride along. The live
@@ -721,7 +771,7 @@ async def start_run(
             graph_input = Command(resume=command["resume"])
         else:
             graph_input = normalize_input(body.input, trusted_internal=is_internal_caller)
-        config = build_run_config(thread_id, body.config, body.metadata, assistant_id=body.assistant_id)
+        config = build_run_config(thread_id, body.config, run_metadata, assistant_id=body.assistant_id)
         await apply_checkpoint_to_run_config(config, body=body, thread_id=thread_id, request=request)
 
         # Merge DeerFlow-specific context overrides into both ``configurable`` and ``context``.
@@ -733,6 +783,7 @@ async def start_run(
             # ``body.config`` is free-form and copied verbatim by
             # ``build_run_config``; scrub internal-only keys smuggled there.
             strip_internal_context_keys(config)
+        inject_knowledge_release_context(config, run_metadata)
         internal_owner_user = await resolve_trusted_internal_owner_for_attribution(request, owner_user_id)
         inject_authenticated_user_context(
             config,

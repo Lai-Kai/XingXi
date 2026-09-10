@@ -528,6 +528,20 @@ async def require_admin_user(request: Request, *, detail: str) -> None:
         raise HTTPException(status_code=403, detail=detail)
 
 
+async def require_business_capability(request: Request, capability: str, *, detail: str):
+    """Require a Xingxi business capability and return the authenticated user."""
+    from app.gateway.auth.roles import BusinessCapability, BusinessRole, capabilities_for
+
+    user = getattr(request.state, "user", None)
+    if user is None:
+        user = await get_current_user_from_request(request)
+    role = BusinessRole(getattr(user, "business_role", BusinessRole.PUBLIC))
+    allowed = capabilities_for(getattr(user, "system_role", "user"), role)
+    if BusinessCapability(capability) not in allowed:
+        raise HTTPException(status_code=403, detail=detail)
+    return user
+
+
 async def get_optional_user_from_request(request: Request):
     """Get optional authenticated user from request.
 

@@ -1,5 +1,5 @@
 {
-  "name": "deer-flow-frontend",
+  "name": "xingxi-frontend",
   "version": "2.1.0",
   "private": true,
   "type": "module",
@@ -68,6 +68,7 @@
     "hast": "^1.0.0",
     "katex": "^0.16.28",
     "lucide-react": "^0.562.0",
+    "maplibre-gl": "^4.7.1",
     "motion": "^12.26.2",
     "nanoid": "^5.1.6",
     "next": "^16.2.6",

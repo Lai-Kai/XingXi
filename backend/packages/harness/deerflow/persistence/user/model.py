@@ -31,6 +31,8 @@ class UserRow(Base):
     # "admin" | "user" — kept as plain string to avoid ALTER TABLE pain
     # when new roles are introduced.
     system_role: Mapped[str] = mapped_column(String(16), nullable=False, default="user")
+    business_role: Mapped[str] = mapped_column(String(32), nullable=False, default="public")
+    organization_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

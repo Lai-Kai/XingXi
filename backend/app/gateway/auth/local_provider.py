@@ -99,6 +99,9 @@ class LocalAuthProvider(AuthProvider):
         """Update an existing user."""
         return await self._repo.update_user(user)
 
+    async def list_users(self, *, limit: int = 200) -> list[User]:
+        return await self._repo.list_users(limit=limit)
+
     async def get_user_by_email(self, email: str) -> User | None:
         """Get user by email."""
         return await self._repo.get_user_by_email(email)

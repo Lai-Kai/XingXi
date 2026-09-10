@@ -1,0 +1,105 @@
+"""Dedicated LangGraph factory for the Xingxi product."""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from typing import Any
+
+from wu_culture.modes import resolve_mode_profile
+
+from .prompt import XINGXI_SYSTEM_PROMPT
+from .tools import build_xingxi_tools
+
+
+def _supports_vision(app_config: Any, config: Mapping[str, Any]) -> bool:
+    configurable = config.get("configurable")
+    requested_model = None
+    if isinstance(configurable, Mapping):
+        requested_model = configurable.get("model_name") or configurable.get("model")
+
+    get_model_config = getattr(app_config, "get_model_config", None)
+    model_config = get_model_config(requested_model) if callable(get_model_config) and requested_model else None
+    if model_config is None:
+        models = getattr(app_config, "models", ())
+        model_config = models[0] if models else None
+    return bool(getattr(model_config, "supports_vision", False))
+
+
+def prepare_xingxi_config(config: Mapping[str, Any]) -> dict[str, Any]:
+    """Remove generic custom-agent modes from a Xingxi product run."""
+    # LangGraph runtime config can contain live stores/connections. Copy only
+    # the small mapping sections this adapter mutates; deepcopy would attempt
+    # to pickle objects such as aiosqlite/sqlite3 connections.
+    prepared = dict(config)
+    for section_name in ("configurable", "context"):
+        section = config.get(section_name)
+        if isinstance(section, dict):
+            section = dict(section)
+            section.pop("agent_name", None)
+            section.pop("is_bootstrap", None)
+            prepared[section_name] = section
+    metadata = config.get("metadata")
+    if isinstance(metadata, dict):
+        metadata = dict(metadata)
+        metadata["product"] = "xingxi"
+        prepared["metadata"] = metadata
+    else:
+        prepared["metadata"] = {"product": "xingxi"}
+
+    # Map product mode flags into DeerFlow plan/subagent toggles.
+    configurable = prepared.get("configurable")
+    if not isinstance(configurable, dict):
+        configurable = {}
+        prepared["configurable"] = configurable
+    raw_mode = configurable.get("mode") or prepared["metadata"].get("mode")
+    profile = resolve_mode_profile(raw_mode)
+    configurable["mode"] = profile.mode.value
+    configurable["is_plan_mode"] = profile.enable_plan
+    configurable["subagent_enabled"] = profile.enable_subagents
+    configurable["max_tool_calls"] = profile.max_tool_calls
+    configurable["max_answer_tokens"] = profile.max_answer_tokens
+    configurable["thinking_enabled"] = profile.mode.value != "flash"
+    configurable["reasoning_effort"] = {
+        "flash": "minimal",
+        "pro": "medium",
+        # Ultra broadens the evidence budget; it should not force a long
+        # high-effort reasoning pass when the retrieved evidence is already
+        # sufficient to answer the question.
+        "ultra": "medium",
+    }[profile.mode.value]
+    prepared["metadata"]["xingxi_mode"] = profile.mode.value
+    prepared["metadata"]["xingxi_mode_label"] = profile.label
+    return prepared
+
+
+def make_xingxi_agent(config: Mapping[str, Any]):
+    """Build Xingxi using DeerFlow's internal model, tool, and middleware stack."""
+    from deerflow.agents.lead_agent.agent import _make_lead_agent
+    from deerflow.agents.middlewares.evidence_citation_middleware import EvidenceCitationMiddleware
+    from deerflow.agents.middlewares.evidence_refusal_middleware import EvidenceRefusalMiddleware
+    from deerflow.agents.middlewares.xingxi_safety_middleware import XingxiSafetyMiddleware
+    from deerflow.agents.middlewares.xingxi_tool_call_limit_middleware import XingxiToolCallLimitMiddleware
+    from deerflow.config import get_app_config
+
+    prepared_config = prepare_xingxi_config(config)
+    app_config = get_app_config()
+    max_tool_calls = int(prepared_config["configurable"]["max_tool_calls"])
+    product_tools = build_xingxi_tools(mode=prepared_config["configurable"]["mode"])
+    if _supports_vision(app_config, prepared_config):
+        from deerflow.tools.builtins import view_image_tool
+
+        product_tools.append(view_image_tool)
+    return _make_lead_agent(
+        prepared_config,
+        app_config=app_config,
+        system_prompt_override=XINGXI_SYSTEM_PROMPT,
+        include_default_tools=False,
+        include_skill_tools=False,
+        additional_tools=product_tools,
+        custom_middlewares=[
+            XingxiSafetyMiddleware(),
+            XingxiToolCallLimitMiddleware(max_tool_calls=max_tool_calls),
+            EvidenceCitationMiddleware(),
+            EvidenceRefusalMiddleware(),
+        ],
+    )

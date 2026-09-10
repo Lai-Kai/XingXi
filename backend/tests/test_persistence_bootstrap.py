@@ -4,7 +4,7 @@ Covers the three-branch decision table:
 
 | DB state                              | Action                                  |
 |---------------------------------------|-----------------------------------------|
-| empty                                 | create_all + stamp head                 |
+| empty                                 | alembic upgrade head                    |
 | legacy (DeerFlow tables, no alembic_version) | create_all (baseline tables only, backfill) + stamp baseline + upgrade head |
 | versioned                             | upgrade head                            |
 
@@ -35,6 +35,7 @@ from deerflow.persistence.bootstrap import (
     _BASELINE_INDEX_NAMES,
     _BASELINE_TABLE_NAMES,
     _decide_state,
+    _ensure_postgres_extensions_sync,
     _get_alembic_config,
     _get_head_revision,
     _run_baseline_create_all_sync,
@@ -48,12 +49,27 @@ from deerflow.persistence.migrations._helpers import _normalize_default
 asyncio_test = pytest.mark.asyncio
 
 
-HEAD = "0005_run_stop_reason"
+HEAD = "0040_poetry_mention_relation"
 BASELINE = "0001_baseline"
 
 
 def _url(tmp_path: Path, name: str = "test.db") -> str:
     return f"sqlite+aiosqlite:///{(tmp_path / name).as_posix()}"
+
+
+def test_postgres_extensions_are_created_before_model_tables():
+    statements: list[str] = []
+
+    class _Connection:
+        class dialect:
+            name = "postgresql"
+
+        def exec_driver_sql(self, statement: str) -> None:
+            statements.append(statement)
+
+    _ensure_postgres_extensions_sync(_Connection())
+
+    assert statements == ["CREATE EXTENSION IF NOT EXISTS vector"]
 
 
 async def _table_names(engine) -> set[str]:
@@ -143,14 +159,35 @@ async def test_empty_branch_creates_all_and_stamps_head(tmp_path: Path) -> None:
             "channel_credentials",
             "channel_conversations",
             "channel_oauth_states",
+            "wu_source_documents",
+            "wu_text_chunks",
+            "wu_evidence",
+            "wu_object_metadata",
+            "wu_ocr_page_attempts",
+            "wu_ocr_regions",
+            "wu_cleaned_ocr_pages",
+            "wu_text_cleaning_changes",
+            "wu_chunk_sets",
+            "wu_ingestion_jobs",
+            "wu_ingestion_steps",
+            "wu_ingestion_events",
+            "wu_review_records",
+            "wu_research_projects",
+            "wu_project_documents",
+            "wu_project_records",
+            "wu_operation_events",
+            "wu_correction_records",
+            "wu_evaluation_cases",
+            "wu_evaluation_runs",
+            "wu_evaluation_results",
+            "wu_asset_versions",
             "alembic_version",
         }:
             assert required in tables, f"missing table: {required}"
         assert "token_usage_by_model" in await _runs_columns(engine)
         assert await _alembic_version(engine) == HEAD
         # The partial unique index on (thread_id WHERE status IN pending/running)
-        # must exist on a fresh DB because the empty-branch stamps head without
-        # running migrations, so the index has to come from ``Base.metadata``.
+        # must exist on a fresh DB after the full migration chain.
         indexes = await _runs_index_names(engine)
         assert "uq_runs_thread_active" in indexes, indexes
         assert "ix_runs_lease" in indexes, indexes
@@ -847,7 +884,7 @@ class TestDecideState:
 # ---------------------------------------------------------------------------
 
 
-def test_head_revision_is_token_usage_revision() -> None:
+def test_head_revision_is_structured_chunking_revision() -> None:
     assert _get_head_revision() == HEAD
 
 

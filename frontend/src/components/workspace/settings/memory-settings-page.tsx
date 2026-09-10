@@ -4,6 +4,7 @@ import {
   DownloadIcon,
   PenLineIcon,
   PlusIcon,
+  ShieldOffIcon,
   Trash2Icon,
   UploadIcon,
 } from "lucide-react";
@@ -546,6 +547,20 @@ export function MemorySettingsPage() {
         ) : !memory ? (
           <div className="text-muted-foreground text-sm">
             {t.settings.memory.empty}
+          </div>
+        ) : !memory.effectiveEnabled ? (
+          <div className="border-border bg-muted/40 flex items-start gap-3 rounded-md border p-4">
+            <ShieldOffIcon className="text-muted-foreground mt-0.5 size-5 shrink-0" />
+            <div className="min-w-0">
+              <p className="text-sm font-medium">
+                {t.settings.memory.accountDisabledTitle}
+              </p>
+              <p className="text-muted-foreground mt-1 text-sm leading-6">
+                {memory.disabledReason === "globally_disabled"
+                  ? t.settings.memory.globallyDisabledDescription
+                  : t.settings.memory.accountDisabledDescription}
+              </p>
+            </div>
           </div>
         ) : (
           <div className="space-y-4">

@@ -14,6 +14,8 @@ from deerflow.runtime.runs.store.base import RunStore
 class MemoryRunStore(RunStore):
     def __init__(self) -> None:
         self._runs: dict[str, dict[str, Any]] = {}
+        self._insertion_order: dict[str, int] = {}
+        self._next_order = 0
         # Secondary index: thread_id -> insertion-ordered run_id set (a dict is
         # used as an ordered set), maintained in lockstep with ``_runs`` so
         # per-thread queries avoid O(total in-memory runs) full scans. Mirrors
@@ -51,6 +53,8 @@ class MemoryRunStore(RunStore):
         lease_expires_at=None,
     ):
         now = datetime.now(UTC).isoformat()
+        self._next_order += 1
+        self._insertion_order[run_id] = self._next_order
         self._runs[run_id] = {
             "run_id": run_id,
             "thread_id": thread_id,
@@ -86,7 +90,7 @@ class MemoryRunStore(RunStore):
         if not run_ids:
             return []
         results = [run for run_id in run_ids if (run := self._runs.get(run_id)) is not None and (user_id is None or run.get("user_id") == user_id)]
-        results.sort(key=lambda r: r["created_at"], reverse=True)
+        results.sort(key=lambda r: (r["created_at"], self._insertion_order.get(r["run_id"], 0)), reverse=True)
         return results[:limit]
 
     async def list_successful_regenerate_sources(self, thread_id, *, user_id=None):
@@ -131,6 +135,7 @@ class MemoryRunStore(RunStore):
     async def delete(self, run_id):
         run = self._runs.pop(run_id, None)
         if run is not None:
+            self._insertion_order.pop(run_id, None)
             self._unindex_run(run_id, run["thread_id"])
 
     async def update_run_completion(self, run_id, *, status, **kwargs):
@@ -370,6 +375,8 @@ class MemoryRunStore(RunStore):
             "created_at": created_at or now,
             "updated_at": now,
         }
+        self._next_order += 1
+        self._insertion_order[run_id] = self._next_order
         self._runs[run_id] = new_row
         self._index_run(run_id, thread_id)
         return new_row, claimed

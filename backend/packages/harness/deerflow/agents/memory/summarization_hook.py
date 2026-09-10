@@ -19,6 +19,10 @@ def memory_flush_hook(event: SummarizationEvent) -> None:
     if not get_memory_config().enabled or not event.thread_id:
         return
 
+    runtime_context = getattr(event.runtime, "context", None)
+    if isinstance(runtime_context, dict) and runtime_context.get("memory_enabled") is False:
+        return
+
     user_id = resolve_runtime_user_id(event.runtime)
     get_memory_manager().add_nowait(
         event.thread_id,

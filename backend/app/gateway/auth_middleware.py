@@ -13,7 +13,6 @@ from collections.abc import Callable
 
 from fastapi import HTTPException, Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import JSONResponse
 from starlette.types import ASGIApp
 
 from app.gateway.auth.errors import AuthErrorCode, AuthErrorResponse
@@ -25,6 +24,7 @@ from app.gateway.auth_disabled import (
     is_auth_disabled,
 )
 from app.gateway.authz import _ALL_PERMISSIONS, AuthContext
+from app.gateway.errors import gateway_error_response
 from app.gateway.internal_auth import INTERNAL_AUTH_HEADER_NAME, get_internal_user, is_valid_internal_auth_token
 from deerflow.runtime.user_context import reset_current_user, set_current_user
 
@@ -36,6 +36,7 @@ _PUBLIC_PATH_PREFIXES: tuple[str, ...] = (
     "/openapi.json",
     "/api/v1/auth/oauth/",
     "/api/v1/auth/callback/",
+    "/api/public/source-documents/",
     # Inbound webhooks authenticate themselves via provider-specific signatures
     # (e.g. GitHub's X-Hub-Signature-256), not session cookies.
     "/api/webhooks/",
@@ -128,21 +129,19 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 user = await get_current_user_from_request(request)
             except HTTPException as exc:
                 if not is_auth_disabled():
-                    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+                    return gateway_error_response(exc.status_code, exc.detail)
                 user = get_auth_disabled_user()
                 auth_source = AUTH_SOURCE_AUTH_DISABLED
         elif is_auth_disabled():
             user = get_auth_disabled_user()
             auth_source = AUTH_SOURCE_AUTH_DISABLED
         else:
-            return JSONResponse(
-                status_code=401,
-                content={
-                    "detail": AuthErrorResponse(
-                        code=AuthErrorCode.NOT_AUTHENTICATED,
-                        message="Authentication required",
-                    ).model_dump()
-                },
+            return gateway_error_response(
+                401,
+                AuthErrorResponse(
+                    code=AuthErrorCode.NOT_AUTHENTICATED,
+                    message="Authentication required",
+                ).model_dump(),
             )
 
         # Stamp both request.state.user (for the contextvar pattern)

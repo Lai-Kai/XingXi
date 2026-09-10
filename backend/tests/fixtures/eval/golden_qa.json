@@ -1,0 +1,37 @@
+{
+  "schema_version": "golden-qa-v1",
+  "cases": [
+    {
+      "id": "bridge-list",
+      "query": "香溪沿岸有哪些古桥？",
+      "expect_status": "answered",
+      "min_citations": 2,
+      "must_include_any": [
+        "桥"
+      ],
+      "forbid": [
+        "历史上不存在"
+      ]
+    },
+    {
+      "id": "bridge-paraphrase",
+      "query": "香溪附近古桥有哪些",
+      "expect_status": "answered",
+      "min_citations": 1,
+      "forbid": [
+        "历史上不存在"
+      ]
+    },
+    {
+      "id": "no-evidence-refusal",
+      "query": "火星上的木渎古桥叫什么",
+      "expect_status": "refused",
+      "must_include_any": [
+        "当前检索范围内暂无明确记载"
+      ],
+      "forbid": [
+        "历史上不存在"
+      ]
+    }
+  ]
+}

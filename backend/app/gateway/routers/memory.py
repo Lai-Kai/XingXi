@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 from app.gateway.internal_auth import get_trusted_internal_owner_user_id
 from deerflow.agents.memory import get_memory_manager
-from deerflow.config.memory_config import get_memory_config
+from deerflow.config.memory_config import get_memory_config, is_memory_enabled_for_identity
 from deerflow.config.paths import make_safe_user_id
 from deerflow.runtime.user_context import get_effective_user_id
 
@@ -79,6 +79,35 @@ class MemoryResponse(BaseModel):
     user: UserContext = Field(default_factory=UserContext)
     history: HistoryContext = Field(default_factory=HistoryContext)
     facts: list[Fact] = Field(default_factory=list)
+    effectiveEnabled: bool = Field(default=True, description="Whether durable memory is enabled for the current account.")
+    disabledReason: Literal["globally_disabled", "account_excluded"] | None = Field(default=None, description="Why durable memory is unavailable for the current account.")
+
+
+def _memory_access(request: Request) -> tuple[str, bool, Literal["globally_disabled", "account_excluded"] | None]:
+    """Resolve storage owner and effective per-account memory policy."""
+    config = get_memory_config()
+    storage_user_id = _resolve_memory_user_id(request)
+    raw_owner = get_trusted_internal_owner_user_id(request)
+    request_user = getattr(getattr(request, "state", None), "user", None)
+    email = None if raw_owner else str(getattr(request_user, "email", "") or "") or None
+    identity_user_id = raw_owner or storage_user_id
+    enabled = is_memory_enabled_for_identity(config, user_id=identity_user_id, email=email)
+    if storage_user_id != identity_user_id:
+        enabled = enabled and is_memory_enabled_for_identity(config, user_id=storage_user_id)
+    if enabled:
+        return storage_user_id, True, None
+    return storage_user_id, False, "globally_disabled" if not config.enabled else "account_excluded"
+
+
+def _empty_memory_response(reason: Literal["globally_disabled", "account_excluded"]) -> MemoryResponse:
+    return MemoryResponse(effectiveEnabled=False, disabledReason=reason)
+
+
+def _require_memory_access(request: Request) -> str:
+    user_id, enabled, _reason = _memory_access(request)
+    if not enabled:
+        raise HTTPException(status_code=403, detail="Memory is disabled for this account.")
+    return user_id
 
 
 def _map_memory_fact_value_error(exc: ValueError) -> HTTPException:
@@ -183,7 +212,11 @@ async def get_memory(http_request: Request) -> MemoryResponse:
         }
         ```
     """
-    memory_data = get_memory_manager().get_memory(user_id=_resolve_memory_user_id(http_request))
+    user_id, enabled, reason = _memory_access(http_request)
+    if not enabled:
+        assert reason is not None
+        return _empty_memory_response(reason)
+    memory_data = get_memory_manager().get_memory(user_id=user_id)
     return MemoryResponse(**memory_data)
 
 
@@ -203,7 +236,10 @@ async def reload_memory(http_request: Request) -> MemoryResponse:
     Returns:
         The reloaded memory data.
     """
-    user_id = _resolve_memory_user_id(http_request)
+    user_id, enabled, reason = _memory_access(http_request)
+    if not enabled:
+        assert reason is not None
+        return _empty_memory_response(reason)
     manager = get_memory_manager()
     if hasattr(manager, "reload_memory"):
         memory_data = manager.reload_memory(user_id=user_id)
@@ -226,7 +262,8 @@ async def reload_memory(http_request: Request) -> MemoryResponse:
 async def clear_memory(http_request: Request) -> MemoryResponse:
     """Clear all persisted memory data."""
     try:
-        memory_data = get_memory_manager().clear_memory(user_id=_resolve_memory_user_id(http_request))
+        user_id = _require_memory_access(http_request)
+        memory_data = get_memory_manager().clear_memory(user_id=user_id)
     except OSError as exc:
         raise HTTPException(status_code=500, detail="Failed to clear memory data.") from exc
 
@@ -243,12 +280,13 @@ async def clear_memory(http_request: Request) -> MemoryResponse:
 async def create_memory_fact_endpoint(request: FactCreateRequest, http_request: Request) -> MemoryResponse:
     """Create a single fact manually."""
     try:
+        user_id = _require_memory_access(http_request)
         create_fact = _require_capability("create_fact", label="create fact")
         memory_data, fact_id = create_fact(
             content=request.content,
             category=request.category,
             confidence=request.confidence,
-            user_id=_resolve_memory_user_id(http_request),
+            user_id=user_id,
         )
     except ValueError as exc:
         raise _map_memory_fact_value_error(exc) from exc
@@ -271,8 +309,9 @@ async def create_memory_fact_endpoint(request: FactCreateRequest, http_request: 
 async def delete_memory_fact_endpoint(fact_id: str, http_request: Request) -> MemoryResponse:
     """Delete a single fact from memory by fact id."""
     try:
+        user_id = _require_memory_access(http_request)
         delete_fact = _require_capability("delete_fact", label="delete fact")
-        memory_data = delete_fact(fact_id, user_id=_resolve_memory_user_id(http_request))
+        memory_data = delete_fact(fact_id, user_id=user_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=f"Memory fact '{fact_id}' not found.") from exc
     except OSError as exc:
@@ -291,13 +330,14 @@ async def delete_memory_fact_endpoint(fact_id: str, http_request: Request) -> Me
 async def update_memory_fact_endpoint(fact_id: str, request: FactPatchRequest, http_request: Request) -> MemoryResponse:
     """Partially update a single fact manually."""
     try:
+        user_id = _require_memory_access(http_request)
         update_fact = _require_capability("update_fact", label="update fact")
         memory_data = update_fact(
             fact_id=fact_id,
             content=request.content,
             category=request.category,
             confidence=request.confidence,
-            user_id=_resolve_memory_user_id(http_request),
+            user_id=user_id,
         )
     except ValueError as exc:
         raise _map_memory_fact_value_error(exc) from exc
@@ -318,7 +358,11 @@ async def update_memory_fact_endpoint(fact_id: str, request: FactPatchRequest, h
 )
 async def export_memory(http_request: Request) -> MemoryResponse:
     """Export the current memory data."""
-    memory_data = get_memory_manager().get_memory(user_id=_resolve_memory_user_id(http_request))
+    user_id, enabled, reason = _memory_access(http_request)
+    if not enabled:
+        assert reason is not None
+        return _empty_memory_response(reason)
+    memory_data = get_memory_manager().get_memory(user_id=user_id)
     return MemoryResponse(**memory_data)
 
 
@@ -332,7 +376,11 @@ async def export_memory(http_request: Request) -> MemoryResponse:
 async def import_memory(request: MemoryResponse, http_request: Request) -> MemoryResponse:
     """Import and persist memory data."""
     try:
-        memory_data = get_memory_manager().import_memory(request.model_dump(), user_id=_resolve_memory_user_id(http_request))
+        user_id = _require_memory_access(http_request)
+        memory_data = get_memory_manager().import_memory(
+            request.model_dump(exclude={"effectiveEnabled", "disabledReason"}),
+            user_id=user_id,
+        )
     except OSError as exc:
         raise HTTPException(status_code=500, detail="Failed to import memory data.") from exc
 
@@ -402,7 +450,12 @@ async def get_memory_status(http_request: Request) -> MemoryStatusResponse:
         Combined memory configuration and current data.
     """
     config = get_memory_config()
-    memory_data = get_memory_manager().get_memory(user_id=_resolve_memory_user_id(http_request))
+    user_id, enabled, reason = _memory_access(http_request)
+    if enabled:
+        memory_response = MemoryResponse(**get_memory_manager().get_memory(user_id=user_id))
+    else:
+        assert reason is not None
+        memory_response = _empty_memory_response(reason)
 
     return MemoryStatusResponse(
         config=MemoryConfigResponse(
@@ -413,5 +466,5 @@ async def get_memory_status(http_request: Request) -> MemoryStatusResponse:
             manager_class=config.manager_class,
             backend_config=config.backend_config,
         ),
-        data=MemoryResponse(**memory_data),
+        data=memory_response,
     )

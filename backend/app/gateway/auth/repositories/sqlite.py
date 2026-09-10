@@ -39,6 +39,8 @@ class SQLiteUserRepository(UserRepository):
             email=row.email,
             password_hash=row.password_hash,
             system_role=row.system_role,  # type: ignore[arg-type]
+            business_role=row.business_role,
+            organization_name=row.organization_name,
             # SQLite loses tzinfo on read; reattach UTC so downstream
             # code can compare timestamps reliably.
             created_at=row.created_at if row.created_at.tzinfo else row.created_at.replace(tzinfo=UTC),
@@ -55,6 +57,8 @@ class SQLiteUserRepository(UserRepository):
             email=user.email,
             password_hash=user.password_hash,
             system_role=user.system_role,
+            business_role=user.business_role.value,
+            organization_name=user.organization_name,
             created_at=user.created_at,
             oauth_provider=user.oauth_provider,
             oauth_id=user.oauth_id,
@@ -102,12 +106,20 @@ class SQLiteUserRepository(UserRepository):
             row.email = user.email
             row.password_hash = user.password_hash
             row.system_role = user.system_role
+            row.business_role = user.business_role.value
+            row.organization_name = user.organization_name
             row.oauth_provider = user.oauth_provider
             row.oauth_id = user.oauth_id
             row.needs_setup = user.needs_setup
             row.token_version = user.token_version
             await session.commit()
         return user
+
+    async def list_users(self, *, limit: int = 200) -> list[User]:
+        stmt = select(UserRow).order_by(UserRow.created_at.asc()).limit(max(1, min(limit, 500)))
+        async with self._sf() as session:
+            rows = (await session.execute(stmt)).scalars().all()
+            return [self._row_to_user(row) for row in rows]
 
     async def count_users(self) -> int:
         stmt = select(func.count()).select_from(UserRow)

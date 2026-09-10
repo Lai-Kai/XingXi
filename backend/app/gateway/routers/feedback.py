@@ -7,13 +7,13 @@ optionally scoped to a specific message.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.gateway.authz import require_permission
-from app.gateway.deps import get_current_user, get_feedback_repo, get_run_store
+from app.gateway.deps import get_current_user, get_feedback_repo, get_run_store, require_business_capability
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/threads", tags=["feedback"])
@@ -26,13 +26,15 @@ router = APIRouter(prefix="/api/threads", tags=["feedback"])
 
 class FeedbackCreateRequest(BaseModel):
     rating: int = Field(..., description="Feedback rating: +1 (positive) or -1 (negative)")
-    comment: str | None = Field(default=None, description="Optional text feedback")
+    comment: str | None = Field(default=None, max_length=2000, description="Optional text feedback")
     message_id: str | None = Field(default=None, description="Optional: scope feedback to a specific message")
+    category: Literal["citation_error", "factual_error", "missing_source", "expression_issue", "other"] | None = None
 
 
 class FeedbackUpsertRequest(BaseModel):
     rating: int = Field(..., description="Feedback rating: +1 (positive) or -1 (negative)")
-    comment: str | None = Field(default=None, description="Optional text feedback")
+    comment: str | None = Field(default=None, max_length=2000, description="Optional text feedback")
+    category: Literal["citation_error", "factual_error", "missing_source", "expression_issue", "other"] | None = None
 
 
 class FeedbackResponse(BaseModel):
@@ -43,7 +45,24 @@ class FeedbackResponse(BaseModel):
     message_id: str | None = None
     rating: int
     comment: str | None = None
+    category: str | None = None
+    status: str = "submitted"
+    assignee_id: str | None = None
+    review_note: str | None = None
     created_at: str = ""
+    updated_at: str | None = None
+
+
+class FeedbackQueueResponse(BaseModel):
+    items: list[FeedbackResponse]
+    total: int
+    limit: int
+    offset: int
+
+
+class FeedbackReviewRequest(BaseModel):
+    status: Literal["submitted", "reviewing", "accepted", "rejected"]
+    review_note: str | None = Field(default=None, max_length=4000)
 
 
 class FeedbackStatsResponse(BaseModel):
@@ -86,6 +105,7 @@ async def upsert_feedback(
         rating=body.rating,
         user_id=user_id,
         comment=body.comment,
+        category=body.category,
     )
 
 
@@ -139,7 +159,56 @@ async def create_feedback(
         user_id=user_id,
         message_id=body.message_id,
         comment=body.comment,
+        category=body.category,
     )
+
+
+@router.get("/feedback/quality-queue", response_model=FeedbackQueueResponse)
+async def list_quality_feedback(
+    request: Request,
+    status: str | None = None,
+    category: str | None = None,
+    query: str | None = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> FeedbackQueueResponse:
+    await require_business_capability(
+        request,
+        "quality:read",
+        detail="Quality review privileges are required",
+    )
+    limit = max(1, min(limit, 100))
+    offset = max(0, offset)
+    items, total = await get_feedback_repo(request).list_quality_queue(
+        status=status,
+        category=category,
+        query=query,
+        limit=limit,
+        offset=offset,
+    )
+    return FeedbackQueueResponse(items=items, total=total, limit=limit, offset=offset)
+
+
+@router.patch("/feedback/{feedback_id}/review", response_model=FeedbackResponse)
+async def review_quality_feedback(
+    feedback_id: str,
+    body: FeedbackReviewRequest,
+    request: Request,
+) -> dict[str, Any]:
+    reviewer = await require_business_capability(
+        request,
+        "quality:review",
+        detail="Quality review privileges are required",
+    )
+    reviewed = await get_feedback_repo(request).review(
+        feedback_id,
+        status=body.status,
+        assignee_id=str(reviewer.id),
+        review_note=body.review_note,
+    )
+    if reviewed is None:
+        raise HTTPException(status_code=404, detail="Feedback not found")
+    return reviewed
 
 
 @router.get("/{thread_id}/runs/{run_id}/feedback", response_model=list[FeedbackResponse])

@@ -8,10 +8,20 @@ import sys
 from pathlib import Path
 
 
+def _source_checkout_pythonpath(backend_root: Path) -> str:
+    return os.pathsep.join(
+        (
+            str(backend_root),
+            str(backend_root / "packages" / "harness"),
+            str(backend_root / "packages" / "wu_culture"),
+        )
+    )
+
+
 def test_gateway_app_imports_first_without_subagent_import_cycle() -> None:
     """The replay gateway imports app.gateway.app in a clean process."""
     backend_root = Path(__file__).resolve().parents[1]
-    env = {**os.environ, "PYTHONPATH": str(backend_root)}
+    env = {**os.environ, "PYTHONPATH": _source_checkout_pythonpath(backend_root)}
     result = subprocess.run(
         [sys.executable, "-c", "from app.gateway.app import app"],
         capture_output=True,
@@ -24,7 +34,7 @@ def test_gateway_app_imports_first_without_subagent_import_cycle() -> None:
 def test_subagent_package_public_executor_exports_are_lazy_importable() -> None:
     """The package-level executor exports must not re-enter their own import."""
     backend_root = Path(__file__).resolve().parents[1]
-    env = {**os.environ, "PYTHONPATH": str(backend_root)}
+    env = {**os.environ, "PYTHONPATH": _source_checkout_pythonpath(backend_root)}
     result = subprocess.run(
         [
             sys.executable,

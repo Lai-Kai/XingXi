@@ -4,6 +4,9 @@ export const AUTH_DISABLED_USER: User = {
   id: "default",
   email: "default@test.local",
   system_role: "admin",
+  business_role: "government",
+  organization_name: null,
+  capabilities: [],
   needs_setup: false,
   oauth_provider: null,
 };

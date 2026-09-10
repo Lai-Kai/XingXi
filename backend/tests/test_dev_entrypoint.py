@@ -54,6 +54,13 @@ def test_entrypoint_excludes_runtime_state_from_uvicorn_reload():
     assert "--reload-exclude=/app/backend/.deer-flow" in content
 
 
+def test_entrypoint_limits_uvicorn_reload_to_source_directories():
+    content = ENTRYPOINT.read_text(encoding="utf-8")
+
+    assert "--reload-dir=/app/backend/app" in content
+    assert "--reload-dir=/app/backend/packages" in content
+
+
 def test_no_uv_extras_yields_empty_flags():
     proc = _run(None)
     assert proc.returncode == 0

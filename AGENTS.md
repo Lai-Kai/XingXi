@@ -2,6 +2,20 @@
 
 This file provides guidance to AI coding agents (Claude Code, Codex, and others) when working with code in this repository. It is the source of truth; the sibling `CLAUDE.md` imports it via `@AGENTS.md`.
 
+## Agent skills
+
+### Issue tracker
+
+Project implementation work is tracked as local Markdown; never publish Xingxi work to the upstream ByteDance GitHub repository. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Local issues use the five canonical triage role names without aliases. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This is a single-context Xingxi product repository; use `../PROJECT_PLAN.md` as the current domain and phased-delivery source of truth, then consult any future `CONTEXT.md` and `docs/adr/` records. See `docs/agents/domain.md`.
+
 It is the **monorepo orientation layer**: it maps the whole repo and points to the
 module guides that own the depth. For anything inside a module, read that module's
 guide rather than expecting full detail here:
@@ -12,29 +26,32 @@ guide rather than expecting full detail here:
 - **[frontend/AGENTS.md](frontend/AGENTS.md)** — frontend depth: Next.js App Router layout,
   thread/streaming data flow, code style, commands.
 
-## What is DeerFlow
+## What is Xingxi
 
-DeerFlow is a LangGraph-based AI super-agent system with a full-stack architecture. The
-backend runs a "super agent" with sandboxed execution, persistent memory, subagent
-delegation, and extensible tools (built-in, MCP, community), all per-thread isolated. The
-frontend is a Next.js chat UI. External IM platforms (Feishu, Slack, Telegram, Discord,
-DingTalk) bridge into the same agent through the Gateway.
+Xingxi is a Wu-culture and Mudu regional-history product built by refactoring the DeerFlow
+source tree. `xingxi` is the only public assistant and graph. DeerFlow's sandbox, memory,
+subagent, tool, streaming, and persistence modules are internal engine capabilities; do not
+reintroduce the generic Agent gallery, Agent creation flow, or DeerFlow branding into product
+routes.
 
 ## Service Topology
 
-A single `make dev` / Docker stack runs four cooperating services:
+A single `make dev` / Docker stack runs the cooperating services below:
 
 | Service         | Port   | Role                                                                 |
 | --------------- | ------ | ------------------------------------------------------------------- |
 | **Nginx**       | `2026` | Unified reverse-proxy entry point — open this in the browser        |
 | **Gateway API** | `8001` | FastAPI REST API + embedded LangGraph-compatible agent runtime      |
 | **Frontend**    | `3000` | Next.js web interface                                               |
+| **PostgreSQL**  | `5432` | Production database; Docker-internal only in PostgreSQL mode        |
 | **Provisioner** | `8002` | Optional — only when sandbox is configured for provisioner/K8s mode |
 
 Nginx is the single public entry: it serves the frontend and proxies `/api/langgraph/*`
 to the Gateway's LangGraph runtime, rewriting it to Gateway's native `/api/*` routes; all
 other `/api/*` go straight to the Gateway REST routers. See
 [backend/AGENTS.md](backend/AGENTS.md) for the runtime and router detail.
+
+Production Docker loads `docker-compose.postgres.yaml` only when `config.yaml` selects `database.backend: postgres`. PostgreSQL has no host port; `scripts/deploy.sh` persists its password under `DEER_FLOW_HOME` and its data in a named volume.
 
 ## Repository Map
 
@@ -73,6 +90,21 @@ Skill quality review note:
 Scheduled-task note:
 - The scheduled-task MVP adds a workspace page at `/workspace/scheduled-tasks` plus a background scheduler service gated by `config.yaml -> scheduler.enabled`.
 - Scheduled background runs are intentionally non-interactive: they execute through the normal run lifecycle, but the lead-agent toolset excludes `ask_clarification` when `context.non_interactive=true`. The key is honored only for internally-authenticated callers (the scheduler launch path); client-supplied `context.non_interactive` is dropped.
+
+Historical-source ingestion note:
+- Stage 13 scanned-source OCR is an admin ingestion surface under `/api/source-documents`. It renders PDF/PNG/JPEG page images, uses one configured `supports_vision` model through an OpenAI-compatible endpoint, persists append-only page attempts and normalized regions, exposes failed-page retry and a low-confidence review queue, and reuses canonical file results. It does not clean OCR text, create retrieval chunks, or index content.
+- Stage 14 cleaning is a separate admin ingestion step. It preserves OCR raw text and hash, appends versioned clean generations with complete rule-policy snapshots and positional changes, and exposes raw/clean comparison plus page history. Clean output is never a human-review decision and remains outside retrieval until later stages.
+- Stage 15 creates immutable, versioned ChunkSets from the latest clean pages. It preserves volume/item/paragraph/page structure, raw/clean traceability, stable IDs and window policy. These rows share `wu_text_chunks` with the evidence domain but are not searchable until later indexing/review stages explicitly admit them.
+- Stage 16 creates one persistent ingestion Job after a successful source upload. Job, ordered Step, and append-only Event rows track parse/OCR/clean/chunk/review/index progress. Claims use a database-wide concurrency budget plus DeerFlow-style worker leases and heartbeat renewal; restart recovery requeues only expired leases. The workflow stops at `awaiting_review` after chunking and cannot auto-index or publish before Stage 17 review.
+- Stage 17 human review uses immutable `wu_review_records` plus materialized current status on exact clean page generations and Chunks. Admin-only batch decisions are atomic; rejected/disputed decisions require comments. A ChunkSet review can finalize only when every Chunk and every referenced clean page is reviewed, then advances its ingestion Job to index pending. It does not create a knowledge release.
+- Stage 18 knowledge releases use immutable `wu_knowledge_releases` and exact manifest items plus one optimistic `wu_knowledge_release_state` active pointer and append-only switch events. Publish validates Chunk/page review inside the same transaction, and activate/rollback changes only the pointer. Gateway run creation overwrites client-supplied release metadata with the active Release ID/version/hash. No full-text or vector index is created in this stage.
+- Stage 19 full-text search uses release-scoped `wu_fulltext_documents` and `wu_fulltext_index_states`. SQLite FTS5 trigram and PostgreSQL pg_trgm GIN are storage adapters for the same exact lexical contract. Production Release publication injects `SqlFullTextRepository`, so index rows and readiness are written before the active pointer in one transaction; activate/rollback requires a matching ready index. `search_sources` uses the Release ID frozen in Run metadata, applies current source authorization dynamically, and never performs semantic/vector recall.
+- Stage 20 vector search uses versioned `wu_vector_index_versions`, `wu_vector_embeddings`, and `wu_vector_index_states`. SQLite delegates cosine KNN to sqlite-vec dimension tables; PostgreSQL uses pgvector with dimension-specific partial HNSW indexes. A build persists as `building`, embeds in configured batches, validates every vector, and switches the active index only after the complete write. Model, explicit compatibility version, and dimensions must match at query time. Dynamic source authorization remains authoritative, and lexical/vector fusion is intentionally deferred to Stage 21.
+- Stage 21 hybrid search resolves one Release ID before starting both channels, runs full-text and vector retrieval concurrently with independent deadlines, rejects cross-Release responses, and applies deterministic RRF by Chunk ID. Responses expose channel status, ranks, native scores, and each RRF contribution. A healthy channel remains usable when the other times out, errors, or is not configured. Do not add source-level or review-status weights here; Stage 22 owns trust-aware reranking.
+- Stage 22 reranks the Stage 21 candidate pool with an explicit versioned policy. It normalizes fused relevance, adds configured source-authority/review/verified-temporal components, then greedily applies a document-repeat penalty before truncating to `top_k`. Every hit retains its component values, reasons, and low-authority/disputed/temporal-conflict warnings. Unknown time is neutral and must never be inferred from free text. D/E and disputed candidates remain visible; the tool status becomes `inferred` or `conflicting` where appropriate.
+- Stage 23 structured retrieval uses one Pydantic whitelist shared by Gateway and `search_sources`, with a matching frontend contract/client. Release/Chunk metadata lives in `wu_search_filter_metadata`; multi-valued dynasty/entity facets live in normalized `wu_search_filter_facets`. Filters compile through SQLAlchemy columns and correlated `EXISTS`, with OR within a category and AND across categories. Cursor payloads bind the Release and request fingerprint. Never infer or populate missing facets from free text; later entity/time stages own those values.
+- Stage 24 alias expansion is query-time and Release-scoped. `wu_alias_index`, `wu_alias_dynasties`, and `wu_alias_evidence` preserve entity candidates, periods, review state, and real Evidence foreign keys. Only one reviewed, evidence-backed, period-compatible candidate may rewrite a query. Ambiguous aliases return candidates and block automatic replacement; missing-evidence/unreviewed/period-mismatch records remain explanatory only. Alias creation and final entity linking remain owned by later extraction/review stages.
+- Evidence-bound derived knowledge may be bootstrapped from `backend/data/fuxianzhi_knowledge_seed.json`. The loader validates active-Release membership, writes deterministic `pending` entities/relations/events/GeoFeatures idempotently, and preserves any record already moved out of `pending` by human review. Map and graph clients must distinguish those drafts from reviewed records.
 
 ## Commands: Root vs. Module
 

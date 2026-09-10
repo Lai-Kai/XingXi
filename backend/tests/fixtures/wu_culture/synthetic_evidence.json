@@ -1,0 +1,107 @@
+[
+  {
+    "document": {
+      "id": "synthetic-gazetteer-a",
+      "title": "《测试镇志甲》",
+      "edition": "测试版",
+      "source_type": "gazetteer",
+      "source_level": "A",
+      "copyright_status": "authorized",
+      "authorization_status": "active",
+      "authorization_basis": "synthetic test fixture",
+      "visibility_scope": "public",
+      "authorized_uses": ["public_quote"],
+      "file_hash": "synthetic-only-a"
+    },
+    "chunk": {
+      "id": "synthetic-chunk-a-1",
+      "document_id": "synthetic-gazetteer-a",
+      "volume": "测试卷一",
+      "section": "桥梁测试目",
+      "paragraph": "1",
+      "original_text": "合成测试文字：香溪东岸有甲桥，始建年代未详。",
+      "normalized_text": "香溪东岸有甲桥始建年代未详",
+      "page_start": 12,
+      "page_end": 12,
+      "review_status": "reviewed"
+    },
+    "evidence": {
+      "id": "synthetic-evidence-a-1",
+      "document_id": "synthetic-gazetteer-a",
+      "chunk_id": "synthetic-chunk-a-1",
+      "quote": "香溪东岸有甲桥，始建年代未详。",
+      "source_level": "A",
+      "review_status": "reviewed"
+    }
+  },
+  {
+    "document": {
+      "id": "synthetic-study-c",
+      "title": "《测试桥梁研究》",
+      "edition": "测试版",
+      "source_type": "scholarly_work",
+      "source_level": "C",
+      "copyright_status": "authorized",
+      "authorization_status": "active",
+      "authorization_basis": "synthetic test fixture",
+      "visibility_scope": "public",
+      "authorized_uses": ["public_quote"],
+      "file_hash": "synthetic-only-c"
+    },
+    "chunk": {
+      "id": "synthetic-chunk-c-1",
+      "document_id": "synthetic-study-c",
+      "volume": "测试章节",
+      "section": "香溪桥梁",
+      "paragraph": "2",
+      "original_text": "合成测试文字：研究者将乙桥列为香溪沿岸桥梁，位置仍待核验。",
+      "normalized_text": "研究者将乙桥列为香溪沿岸桥梁位置仍待核验",
+      "page_start": 30,
+      "page_end": 31,
+      "review_status": "reviewed"
+    },
+    "evidence": {
+      "id": "synthetic-evidence-c-1",
+      "document_id": "synthetic-study-c",
+      "chunk_id": "synthetic-chunk-c-1",
+      "quote": "研究者将乙桥列为香溪沿岸桥梁，位置仍待核验。",
+      "source_level": "C",
+      "review_status": "reviewed"
+    }
+  },
+  {
+    "document": {
+      "id": "synthetic-oral-d",
+      "title": "测试口述记录",
+      "edition": null,
+      "source_type": "oral_history",
+      "source_level": "D",
+      "copyright_status": "authorized",
+      "authorization_status": "active",
+      "authorization_basis": "synthetic test fixture",
+      "visibility_scope": "public",
+      "authorized_uses": ["public_quote"],
+      "file_hash": "synthetic-only-d"
+    },
+    "chunk": {
+      "id": "synthetic-chunk-d-1",
+      "document_id": "synthetic-oral-d",
+      "volume": null,
+      "section": "传说测试",
+      "paragraph": "1",
+      "original_text": "合成测试文字：传说丙桥曾在香溪附近，尚无方志证据。",
+      "normalized_text": "传说丙桥曾在香溪附近尚无方志证据",
+      "page_start": 1,
+      "page_end": 1,
+      "review_status": "reviewed"
+    },
+    "evidence": {
+      "id": "synthetic-evidence-d-1",
+      "document_id": "synthetic-oral-d",
+      "chunk_id": "synthetic-chunk-d-1",
+      "quote": "传说丙桥曾在香溪附近，尚无方志证据。",
+      "source_level": "D",
+      "review_status": "reviewed"
+    }
+  }
+]

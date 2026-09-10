@@ -4,7 +4,7 @@ This file provides guidance to AI coding agents (Claude Code, Codex, and others)
 
 ## Project Overview
 
-DeerFlow is a LangGraph-based AI super agent system with a full-stack architecture. The backend provides a "super agent" with sandbox execution, persistent memory, subagent delegation, and extensible tool integration - all operating in per-thread isolated environments.
+This backend powers Xingxi (星羲弦沚), the sole public-facing Wu-culture and Mudu regional-history agent. DeerFlow remains the internal LangGraph runtime providing sandbox execution, persistent memory, subagent delegation, and tool integration; generic DeerFlow Agent and Skill management are not product surfaces.
 
 **Architecture**:
 - **Gateway API** (port 8001): REST API plus embedded LangGraph-compatible agent runtime
@@ -26,7 +26,8 @@ deer-flow/
 │   ├── Makefile               # Backend-only commands (dev, gateway, lint)
 │   ├── langgraph.json         # LangGraph Studio graph configuration
 │   ├── packages/
-│   │   └── harness/           # deerflow-harness package (import: deerflow.*)
+│   │   ├── wu_culture/        # domain models, repositories, and evidence retrieval
+│   │   └── harness/           # internal runtime package (import: deerflow.*)
 │   │       ├── pyproject.toml
 │   │       └── deerflow/
 │   │           ├── agents/            # LangGraph agent system
@@ -64,6 +65,32 @@ deer-flow/
     ├── public/                # Public skills (committed)
     └── custom/                # Custom skills (gitignored)
 ```
+
+### Xingxi Domain Boundary
+
+- `packages/wu_culture` owns historical source, chunk, evidence, entity, alias, relation, search, and citation contracts. It must not import `app.*` or `deerflow.*`.
+- `packages/harness/deerflow/agents/xingxi` owns Xingxi graph assembly and adapts domain services into LangChain tools.
+- Xingxi calls `_make_lead_agent` with a complete system-prompt override and disables default tools plus skill tools. Its public tool surface is restricted to `search_sources` and, in pro/ultra modes, `compare_sources`; generic DeerFlow capabilities must not leak back through the prompt or tool list.
+- Xingxi modes are server-authoritative: flash disables thinking with minimal effort, pro enables medium reasoning, and ultra enables high reasoning with a larger evidence-tool budget. Client-supplied flags cannot downgrade these profiles.
+- `_make_lead_agent(..., additional_tools=...)` is the internal extension point for Xingxi product tools. Do not reintroduce Xingxi as a preset, custom Agent, SOUL file, or mounted Skill.
+- Runtime evidence uses `deerflow.persistence.wu_culture.SqlEvidenceRepository`, backed by the unified async SQLAlchemy session factory. `search_sources` uses this repository on the Gateway async tool path and falls back to an empty repository only when `database.backend=memory` or no engine exists.
+- Source authorization is owned by `wu_culture.authorization.evaluate_source_access`. New and migrated sources default to `unconfirmed`, `internal`, and no authorized uses. Public quote/full-text decisions also require public visibility; an elapsed `authorization_valid_until` is denied dynamically as `expired` without mutating the stored status.
+- `SqlSourceDocumentRepository.update_authorization` must update the source policy and append its `wu_source_authorization_events` row in one transaction. Authorization mutations and history are admin-only; `/api/public/source-documents/{id}/access` is anonymous and returns only the access decision, never the authorization basis or proof key.
+- Source-original upload is admin-only at `POST /api/source-documents/{id}/files`. The Gateway streams multipart input through `DEER_FLOW_HOME/source-upload-staging`, validates PDF/PNG/JPEG/DOCX/TXT/Markdown content signatures and configured `uploads` limits, then stores bytes through `deerflow.object_storage`. `SqlSourceFileRepository.attach` writes `wu_object_metadata` and `wu_source_files` in one transaction; a failed binding removes only an object newly created by that request. Batch items fail independently, and staging files are always removed.
+- Stage 11 deduplication is global across registered sources. `SourceFile.sha256` identifies content; one partial unique index allows exactly one canonical row (`duplicate_of_file_id IS NULL`) per hash while explicit references/identical versions point to that canonical row. `DuplicateSourceFileError` converts concurrent unique conflicts into the same `duplicate_file` API result as preflight detection. `version_of_file_id` records an explicit lineage decision and is independent of byte equality.
+- Stage 12 digital parsing lives in `wu_culture.parsing`. `parse_document` routes PDF, DOCX, TXT, and Markdown through a small synchronous domain interface; Gateway must call it with `asyncio.to_thread`. `SqlParsedDocumentRepository` stores one parse per canonical `SourceFile` in `wu_parsed_documents` plus ordered page-bound `wu_parsed_blocks`. Duplicate references resolve to their canonical file before parsing. `no_extractable_text` is an OCR handoff, not a successful empty parse; parsing never mutates the source object and never creates `TextChunk` or indexes.
+- Stage 13 scanned-source OCR lives in `wu_culture.ocr`. PDFium renders physical PDF pages and Pillow normalizes PNG/JPEG pages; rendered page images are content-addressed `page_image` objects. `OpenAICompatibleVisionOcrProvider` reuses a configured `supports_vision` model and requests strict JSON containing raw text, confidence, upright rotation, and normalized regions. `SqlOcrRepository` appends every page attempt to `wu_ocr_page_attempts` with child `wu_ocr_regions`; latest-page and review-queue queries never overwrite history. Duplicate references resolve to canonical OCR, and retry is allowed only for a latest `failed` page. OCR never creates cleaned text, `TextChunk`, evidence, or indexes.
+- Stage 14 text cleaning lives in `wu_culture.cleaning`. It accepts server-read `RawOcrPage` values and a complete `TextCleaningPolicy`, then returns raw/clean SHA-256 values plus ordered positional `TextChange` records. CRLF normalization, wrapped-line joining, repeated marginalia/page-number removal, OpenCC conversion, and explicit one-character variant maps are deterministic policy steps. `SqlTextCleaningRepository` appends page generations to `wu_cleaned_ocr_pages` and changes to `wu_text_cleaning_changes`; raw/hash validation and policy/result consistency are domain invariants. Never accept caller-supplied raw text as a cleaning API write, mutate `wu_ocr_page_attempts`, or treat clean output as human collation.
+- Stage 15 structure chunking lives in `wu_culture.chunking`. `chunk_cleaned_pages` recognizes volume/item headings, keeps their line boundaries, joins unfinished paragraphs across physical pages, projects clean windows back to OCR raw, and applies bounded overlapping windows. Stable Chunk and structure IDs hash the canonical file, complete `ChunkingPolicy`, hierarchy, page range, index, and content. `SqlStructuredChunkRepository` stores immutable `wu_chunk_sets` and their rows in the existing `wu_text_chunks` table; a split version cannot be reused for different policy or clean input. No vectors, entities, evidence, or indexing are produced.
+- Stage 16 ingestion state lives in `wu_culture.ingestion`; SQL snapshots use `wu_ingestion_jobs`, ordered `wu_ingestion_steps`, and append-only `wu_ingestion_events`. Every transition increments the optimistic version and event sequence in one transaction. `try_start_step` enforces the global `ingestion.max_concurrent_jobs` budget in SQL and assigns an owner lease; only that worker can renew it. Startup recovery follows DeerFlow RunManager/Scheduler lease semantics and requeues only expired leases after grace. Upload creates the initial Job but does not execute processors; worker/admin transition endpoints connect Stage 12-15 processors, and chunk completion stops at `awaiting_review`.
+- Stage 17 review lives in `wu_culture.review`. `SqlReviewRepository.review_many` validates every target belongs to one source file before writing, appends one revision per page/Chunk, and materializes current `review_status` in the same transaction. Review records are never updated/deleted. Queue reads are scoped to one immutable ChunkSet and its exact clean page IDs. Publication gates require reviewed Chunk plus all referenced pages; finalization advances only the ingestion review step and leaves indexing/publication to later stages.
+- Release publication uses `preparing`, `ready`, `failed`, and `active` states. `SqlKnowledgeReleaseRepository.publish` first persists the immutable reviewed manifest, then prepares the full-text index plus graph/map asset snapshot in one transaction; only a complete preparation may atomically switch the singleton active pointer and append its event. Preparation failures roll back all derived rows, persist a retryable failed state, and must never be converted into an empty asset snapshot. Retry completes the original publish audit action. Activate/rollback require both ready index and assets, and `get_active` rejects pointer/status drift. Migration `0037_release_preparation_state` classifies legacy Releases and clears an incomplete active pointer.
+- Quality governance uses three distinct capabilities: `quality:read` for queue/detail reads, `quality:review` for status and review-note mutations, and `quality:admin` for future destructive or policy operations. Government business users receive read and review; only system administrators automatically receive admin. Never authorize a quality write with `quality:read`.
+- Stage 19 lexical search lives in `wu_culture.fulltext`. `SqlFullTextRepository` materializes one searchable row per Release manifest item and a manifest-bound ready state inside the Release preparation transaction. SQLite uses an external-content FTS5 trigram table (created by Alembic, ORM `after_create`, or an idempotent Repository guard); PostgreSQL migration enables pg_trgm and a GIN index. Quoted phrases and normalized whitespace terms are exact AND constraints; two-character names use bound `LIKE` fallback. Ranking uses only lexical field weights in this stage. Search re-evaluates `evaluate_source_access` for the requested use on every query, so stale index snapshots cannot bypass revocation/expiry.
+- The evidence tables remain empty until an authorized ingestion workflow writes them. Files under `tests/fixtures/wu_culture` are synthetic and must never be loaded as product knowledge.
+- Historical claims must be supported by `search_sources` citations. An empty result starts with `暂无明确方志记载`, but the refusal middleware must retain the model's useful visible analysis under `补充分析（以下内容未被当前本地文献核验）`; it never proves historical nonexistence and must not invent local citations.
+- The ingestion worker runs parse/OCR/clean/chunk/evidence/graph and auto-publishes all source-authorized ChunkSets into one internal working Release. `internal_processing` is the only automatic working-corpus grant; public quote/full-text still requires an explicit separate authorization.
+- `app.gateway.routers.research_feed` owns the public `/api/research-feed/daily` evidence-gated topic endpoint. It ranks the previous Shanghai calendar day's persisted Xingxi first-human messages by distinct users and then run count, excludes procedural/tool-test prompts, and accepts a hot query only when it contains a current-Release source topic that itself returns at least two full-text evidence hits and the query also grounds (comparison prompts require two documents). Missing slots rotate through current-release graph entities and indexed document titles, applying the same gate; every card title is the source topic itself, while the hot query remains only the research prompt. No active release or no qualified candidate returns an empty feed, never a static ungrounded fallback. The endpoint returns the next Shanghai midnight and disables HTTP caching.
 
 ## Important Development Guidelines
 
@@ -196,6 +223,13 @@ tool graph or subagent executor during state/schema imports.
 
 ### Agent System
 
+**Xingxi Product Agent** (`packages/harness/deerflow/agents/xingxi/agent.py`):
+- Public graph factory: `make_xingxi_agent(config)`, registered as `xingxi` in `langgraph.json`
+- Sanitizes generic custom-agent/bootstrap context before delegating to the internal lead-agent assembler
+- Adds the product-level historical evidence prompt without exposing prompt injection through request context
+- Adds `search_sources` as a dual sync/async tool: explicit in-memory services support deterministic domain tests, while Gateway `.ainvoke()` reads persisted evidence through the unified database session factory
+- Gateway defaults to `assistant_id="xingxi"`; custom Agent CRUD is legacy engine code, not a product entry point
+
 **Lead Agent** (`packages/harness/deerflow/agents/lead_agent/agent.py`):
 - Entry point: `make_lead_agent(config: RunnableConfig)` registered in `langgraph.json`
 - Dynamic model selection via `create_chat_model()` with thinking/vision support
@@ -284,6 +318,28 @@ The deprecated `checkpointer` section remains backward compatible and, when
 present, overrides `database` for the LangGraph checkpointer and Store only;
 application repositories continue to use `database`.
 
+**Docker PostgreSQL**: production `scripts/deploy.sh` detects `database.backend: postgres`, adds `docker/docker-compose.postgres.yaml`, starts the internal `postgres:17-alpine` service, and waits for `pg_isready` before Gateway startup. The database uses the `deer-flow_postgres-data` volume and is not published to the host. `POSTGRES_USER`/`POSTGRES_DB` may come from `.env`; when `POSTGRES_PASSWORD` is absent, deploy generates a URL-safe secret at `DEER_FLOW_HOME/.postgres-password` and reuses it. SQLite data is never copied implicitly when switching backends.
+
+**Historical-source object storage**: `wu_culture.storage` owns the backend-neutral object and metadata contracts. `deerflow.object_storage` provides async local and S3-compatible adapters; synchronous filesystem/SDK work is offloaded with `asyncio.to_thread`. Local objects default to `DEER_FLOW_HOME/objects`, inside the existing persistent Gateway mount. `deerflow.persistence.object_storage` stores metadata in `wu_object_metadata`; it must never gain a bytes/content column. Object keys are generated from owner, kind, and SHA-256, and all reads/deletes enforce the owner segment. Existing thread uploads and sandbox outputs are separate ephemeral/workspace concerns and must not be reused as the historical-source object store. Selecting `object_storage.backend: s3` makes `scripts/detect_uv_extras.py` install the `s3` extra for boto3.
+
+**Source registration**: `POST/GET/PATCH /api/source-documents` is an admin-only Gateway surface backed by `SqlSourceDocumentRepository` and `wu_source_documents`. The server generates immutable `source-<uuid>` IDs and owns `created_by/created_at/updated_by/updated_at`; clients may not supply those fields. Title is intentionally not unique: edition and source institution distinguish records, and even exact metadata duplicates remain separate provenance records until a later deduplication policy says otherwise. Stage 08 never accepts file bytes or object keys. It sets `copyright_status=unknown`; authorization policy belongs to Stage 09, while file upload belongs to Stage 10.
+
+**Source file upload**: `GET /api/source-documents/upload/limits`, `POST /api/source-documents/{id}/files`, and `GET /api/source-documents/{id}/files` form the Stage 10 surface. Successful rows have stable `source-file-<uuid>` IDs and reference both `wu_source_documents` and `wu_object_metadata`. Do not add hash deduplication prompts, version relationships, or concurrency uniqueness here; those belong to Stage 11. Upload completion also does not imply OCR, indexing, review, authorization, or publication.
+
+**Source file deduplication**: Stage 11 extends the same multipart endpoint with `duplicate_policy=report|reference_existing|new_version` and optional `version_of_file_id`. The default never creates a second binding for identical bytes and returns `existing_file`. `reference_existing` creates a binding that shares the canonical object; `new_version` requires an existing file ID and records lineage, storing new bytes only when the hash differs. Same filename with different bytes returns `same_name_different_content` until the caller chooses a version action. Do not infer semantic versions or run OCR here.
+
+**Digital document parsing**: `POST /api/source-documents/{document_id}/files/{file_id}/parse` parses and atomically stores the canonical file's structured result; `GET` returns it. PDF uses PDFium for physical pages and declared Info metadata; DOCX reads OpenXML body order, explicit page breaks, tables, footnotes, and core properties; TXT/Markdown use encoding detection and logical page 1. Stable 422 codes include `invalid_pdf`, `password_protected_pdf`, `no_extractable_text`, `invalid_docx`, `text_encoding_unknown`, and `unsupported_document_type`. Stage 12 does not OCR, normalize raw text, split retrieval chunks, or index content.
+
+**Scanned-source OCR**: `POST/GET /api/source-documents/{document_id}/files/{file_id}/ocr` starts or reads canonical page OCR, `POST .../ocr/pages/{page_number}/retry` retries only a latest failed page, and `GET /api/source-documents/ocr/review-queue` lists latest low-confidence pages. All routes are admin-only. `config.yaml -> ocr.model_name` references `models[]`, must support vision, and reuses that model's API key plus `base_url`, `openai_api_base`, or `api_base`; `ocr.api_mode` selects standard `chat_completions` or `/responses` payloads. Stage 13 stores append-only attempts and page images; it does not normalize OCR text, split chunks, or index results.
+
+**Raw/clean text generations**: `POST/GET /api/source-documents/{document_id}/files/{file_id}/clean` generates or reads the latest canonical page clean text; `GET .../clean/pages/{page_number}/generations` returns the audit history. POST accepts only `TextCleaningPolicy`, obtains raw from latest persisted OCR, and atomically appends one generation per available page. Responses include both texts, hashes, the policy snapshot, and every change. Stage 14 does not create `TextChunk`, search indexes, or review approvals.
+
+**Versioned structure chunks**: `POST/GET /api/source-documents/{document_id}/files/{file_id}/chunks` creates or lists canonical ChunkSets; `GET .../chunks/{split_version}` reads one version. POST accepts only `ChunkingPolicy` and hashes the latest clean page IDs plus raw/clean hashes. Same version + same policy/input is idempotent; same version + changed policy/input returns `split_version_conflict`. New versions coexist. Chunk rows carry structure, raw/clean projection, page range, window offsets, and clean page references, but remain unindexed and pending review.
+
+**Persistent ingestion jobs**: successful source uploads return an initial Job. `POST/GET .../ingestion-jobs`, job detail/events, step start/complete/fail/retry, lease renewal, and cancel endpoints are admin-only. Start is a database claim, not a cosmetic status update: it checks the global running count, stores `owner_worker_id` and `lease_expires_at`, and appends `step_started`. Workers renew before lease expiry and complete/fail using the latest optimistic version. A failed step retains prior outputs; only that step can retry. Chunk completion enters `awaiting_review`; Stage 16 must not synthesize review/index completion.
+
+**Human text review**: `GET .../review/queue?chunk_set_id=...` returns exact page generations and Chunks with raw/clean text plus processing metadata. `POST .../review/decisions` writes up to 100 unique page/Chunk decisions atomically; `GET .../review/history` returns immutable revisions. `GET .../review/chunks/{id}/gate` explains publication eligibility. `POST .../review/finalize` requires the whole ChunkSet gate and an awaiting-review ingestion Job, then completes only its review step. All routes are admin-only; do not reuse deletable chat feedback rows for corpus review.
+
 Configuration priority:
 1. Explicit `config_path` argument
 2. `DEER_FLOW_CONFIG_PATH` environment variable
@@ -324,6 +380,7 @@ CORS is same-origin by default when requests enter through nginx on port 2026. S
 | **MCP** (`/api/mcp`) | `GET /config` - get config; `PUT /config` - update config (saves to extensions_config.json) |
 | **Skills** (`/api/skills`) | `GET /` - list skills; `GET /{name}` - details; `PUT /{name}` - update enabled; `POST /install` - install from .skill archive (accepts standard optional frontmatter like `version`, `author`, `compatibility`); `POST /reload` - admin-only process-local prompt-cache invalidation after trusted external filesystem changes |
 | **Memory** (`/api/memory`) | `GET /` - memory data; `POST /reload` - force reload; `GET /config` - config; `GET /status` - config + data |
+| **Research Projects** (`/api/research-projects`) | Current-user project CRUD, archive state, attached documents, and research records. List/detail/create/update project payloads use one typed response model; `archived` must be a JSON boolean at the HTTP boundary even when a SQL driver returns `0`/`1`. `tests/test_research_projects_router.py` owns this serialization regression. |
 | **Uploads** (`/api/threads/{id}/uploads`) | `POST /` - upload files (auto-converts PDF/PPT/Excel/Word); `GET /list` - list; `DELETE /{filename}` - delete |
 | **Threads** (`/api/threads/{id}`) | `DELETE /` - remove DeerFlow-managed local thread data after LangGraph thread deletion; `POST /branches` - create a new main-thread branch from a completed assistant turn checkpoint. Workspace files are not checkpointed, so the branch only best-effort copies the current workspace when branching from the **latest** turn (`workspace_clone_mode="current_thread_best_effort"`); branching from an older/historical turn skips the copy (`workspace_clone_mode="skipped_historical_turn"`) so the branch never inherits files that only exist in a later timeline; `GET /goal`, `PUT /goal`, `DELETE /goal` - read, set, and clear the active thread goal; `POST /compact` - manually summarize older active context into `summary_text` and retain the recent message window, blocked while a run is in flight; unexpected failures are logged server-side and return a generic 500 detail |
 | **Artifacts** (`/api/threads/{id}/artifacts`) | `GET /{path}` - serve artifacts; active content types (`text/html`, `application/xhtml+xml`, `image/svg+xml`) are always forced as download attachments to reduce XSS risk; `?download=true` still forces download for other file types |
@@ -573,6 +630,7 @@ The cached value is reused for both the blocking (`runs.wait`) and streaming (`_
 - Custom agent definitions (`SOUL.md` + `config.yaml`) are also per-user at `{base_dir}/users/{user_id}/agents/{agent_name}/`. The legacy shared layout `{base_dir}/agents/{agent_name}/` remains read-only fallback for unmigrated installations
 - Middleware mode captures `user_id` via `get_effective_user_id()` at enqueue time; tool mode resolves `user_id` and `agent_name` from `ToolRuntime.context` via `resolve_runtime_user_id(runtime)` so tool calls stay scoped to the authenticated user and active custom agent
 - The `/api/memory*` endpoints resolve the owner through `_resolve_memory_user_id(request)`: trusted internal callers (IM channel workers carrying the `X-DeerFlow-Owner-User-Id` header, e.g. a bound `/memory` command) act for the connection owner; browser/API callers fall back to `get_effective_user_id()`. The header is only honored after `AuthMiddleware` validated the internal token, mirroring `get_trusted_internal_owner_user_id` used by the threads router
+- `memory.excluded_users` accepts exact user IDs or email addresses (trimmed, case-insensitive). Excluded accounts do not load, inject, extract, refresh, search, or mutate durable memory in either mode; the Gateway owns the effective runtime flag, and API writes return 403. Operational, error, run-event, and audit logging are independent of this policy.
 - In no-auth mode, `user_id` defaults to `"default"` (constant `DEFAULT_USER_ID`)
 - Absolute `storage_path` in config opts out of per-user isolation
 - **Migration**: Run `PYTHONPATH=. python scripts/migrate_user_isolation.py` to move legacy `memory.json`, `threads/`, and `agents/` into per-user layout. Supports `--dry-run` (preview changes) and `--user-id USER_ID` (assign unowned legacy data to a user, defaults to `default`).
@@ -607,6 +665,7 @@ Focused regression coverage for the updater lives in `backend/tests/test_memory_
 **Configuration** (`config.yaml` → `memory`):
 - `enabled` / `injection_enabled` - Master switches
 - `mode` - Operation mode: `middleware` (default passive background extraction) or `tool` (experimental model-driven memory tools). Modes are mutually exclusive.
+- `excluded_users` - Exact user IDs/emails for test or automation accounts that must bypass all durable-memory behavior without disabling logging.
 - `storage_path` - Path to memory.json (absolute path opts out of per-user isolation)
 - `debounce_seconds` - Wait time before processing (default: 30)
 - `shutdown_flush_timeout_seconds` - Host-shared hard budget (seconds) to drain the memory backend's pending-update buffer on Gateway graceful shutdown (default: 30; 1–300). Each pending item does one LLM call, so large IM batches may need more. The Gateway lifespan calls `MemoryManager.shutdown_flush(timeout)` after channels/scheduler stop; the backend short-circuits on an idle buffer, so the host calls it unconditionally (no pending/processing gate). Must fit inside the pod's K8s `terminationGracePeriodSeconds` (gateway Helm chart sets this; default 45s) or K8s SIGKILLs the drain mid-flight.
@@ -633,7 +692,7 @@ Focused regression coverage for the updater lives in `backend/tests/test_memory_
 
 ### Schema Migrations (`packages/harness/deerflow/persistence/migrations/`)
 
-DeerFlow's application tables (`runs`, `threads_meta`, `feedback`, `users`, `run_events`, plus the four `channel_*` tables) are owned by alembic via a **hybrid bootstrap** strategy. LangGraph's checkpointer tables (`checkpoints`, `checkpoint_blobs`, `checkpoint_writes`, `checkpoint_migrations`) live in the same database but are owned by LangGraph and excluded from alembic's view via `migrations/_env_filters.py::include_object`.
+DeerFlow's application tables (`runs`, `threads_meta`, `feedback`, `users`, `run_events`, the four `channel_*` tables, and Xingxi's `wu_source_documents`, `wu_text_chunks`, `wu_evidence`) are owned by alembic via a **hybrid bootstrap** strategy. LangGraph's checkpointer tables (`checkpoints`, `checkpoint_blobs`, `checkpoint_writes`, `checkpoint_migrations`) live in the same database but are owned by LangGraph and excluded from alembic's view via `migrations/_env_filters.py::include_object`.
 
 **Convention**: every ORM model change (new column, new table, new index) MUST ship as an alembic revision under `migrations/versions/`. The Gateway runs `alembic upgrade head` automatically on startup; users do not run `alembic` manually in production.
 
@@ -793,6 +852,32 @@ Both can be modified at runtime via Gateway API endpoints or `DeerFlowClient` me
 
 **Gateway Conformance Tests** (`TestGatewayConformance`): Validate that every dict-returning client method conforms to the corresponding Gateway Pydantic response model. Each test parses the client output through the Gateway model — if Gateway adds a required field that the client doesn't provide, Pydantic raises `ValidationError` and CI catches the drift. Covers: `ModelsListResponse`, `ModelResponse`, `SkillsListResponse`, `SkillResponse`, `SkillInstallResponse`, `McpConfigResponse`, `UploadResponse`, `MemoryConfigResponse`, `MemoryStatusResponse`.
 
+### Release-scoped semantic search
+
+Stage 20 keeps semantic indexes separate from Stage 19 lexical indexes. `VectorIndexService` owns provider calls and embedding identity checks; `SqlVectorRepository` owns persisted lifecycle, KNN storage adapters, current authorization checks, and atomic active-index switching. Persistent vector indexing requires an explicit `embedding.dimensions` value. A change to `embedding.model`, `embedding.version`, or dimensions makes the old index incompatible until an administrator rebuilds it. Never combine lexical and vector rankings in these adapters; Stage 21 owns fusion.
+
+SQLite loads sqlite-vec per aiosqlite connection and creates dimension-specific `vec0` tables on demand. PostgreSQL installs the optional `postgres` dependency extra, declares a pgvector column in migration `0020_vector_search`, and creates dimension-specific partial HNSW cosine indexes when a build completes. Intermediate development uses temporary SQLite; Docker/PostgreSQL runtime verification is intentionally deferred to the final deployment stage.
+
+Stage 21 fusion lives in `wu_culture.hybrid`. It resolves one Release before launching both retrieval coroutines, gives each the configured independent timeout, rejects response Release mismatches, and fuses ranks with RRF. The adapter must retain native channel ranks/scores and RRF contributions and deduplicate by immutable Chunk ID. Channel errors are summarized without returning provider details. One usable channel is a degraded success; neither usable channel is an availability error. `search_sources` uses this service, while the existing reranker remains outside the stage because trust-aware ordering belongs to Stage 22.
+
+Stage 22 trust reranking lives in `wu_culture.ranking` and is distinct from the optional network `RerankerService`. It runs over `candidate_k` before `top_k` truncation, uses a versioned weight policy whose relevance/authority/review/temporal weights sum to one, and applies document diversity greedily. Ranking explanations are part of each hybrid hit. Temporal signals are server-owned validated inputs; absent signals remain `unknown`. Never parse dates or dynasties from citation strings in this layer. Do not filter D/E or disputed evidence here; keep it with warnings and set the aggregate evidence status correctly.
+
+Stage 23 owns `wu_culture.filters` and `wu_culture.structured_search`. Use `StructuredSearchFilters` directly in API/tool boundaries; do not accept arbitrary field/operator dictionaries. SQL adapters join `wu_search_filter_metadata` and compile normalized dynasty/entity facets through correlated `EXISTS`. Publication writes only known edition/source/review fields; absent spatial/entity/dynasty data remains null/empty. Migration `0021_structured_search_filters` backfills older full-text Releases. Cursor paging is capped to the deterministic candidate window and binds Release plus request fingerprint. The frontend contract is checked against backend field/enumeration values.
+
+Stage 24 alias expansion lives in `wu_culture.aliases`. Persist candidates through `SqlAliasRepository`; evidence IDs are foreign keys to `wu_evidence`, not unverified strings. Expansion uses NFKC/casefold matching, explicit dynasty overlap, review status, evidence presence, and a bounded deterministic order. A normalized alias with more than one eligible entity is ambiguous and must not produce `resolved_query`. `StructuredSearchService` searches the evidence-backed resolved query only when unambiguous and includes the full expansion trace. There is intentionally no public alias mutation API before the later entity extraction/review stages.
+
+### Fuxianzhi corpus import
+
+`wu_culture.corpus_import` owns the intake boundary for fixed seven-file fuxianzhi bundles. `scan_corpus` discovers complete bundles without copying source assets, streams SHA-256, requires strict UTF-8, and verifies identical continuous physical-page/folio locators. Manifests use deterministic IDs, relative paths, and safe authorization defaults; validation rejects duplicate identities, path traversal, absolute/backslash paths, and identity drift.
+
+The CLI exposes `scan`, `validate`, and `import`. Dry-run verifies every reviewed asset and reports governance blockers. Strict formal import requires source level, source institution, and holder, then atomically persists a mounted SourceFile, precomputed OCR attempts with unknown image/confidence provenance left null, clean pages, deterministic ChunkSet, quality issues, and an Ingestion Job stopped at `awaiting_review`. `SqlCorpusImportRepository` resumes by deterministic item ID.
+
+`--allow-unconfirmed-internal` is the explicit development-only exception: it records unrated sources as level `U`, grants only `internal_processing`, and keeps visibility internal. `--publish-working-release` requires that flag, imports or reuses every selected bundle, creates or reuses a scope=`internal` Release for the exact ChunkSet set, activates it, and builds the full-text index. Public Releases keep the complete review gate. Search, Agent tools, and run metadata must resolve `internal_processing` only from the server-owned Release scope; callers cannot use request fields to upgrade access.
+
+Full-text publication also materializes stable `wu_evidence` rows for every indexed Release item. Evidence IDs must continue to open through the domain Evidence endpoint and retain exact document, source file, physical-page, folio, Chunk and review metadata. Rebuilding an index must remain idempotent and must not create duplicate Evidence records.
+
+Mounted originals resolve only through configured `corpus_import.roots` and `corpus://` URIs. `GET /api/source-documents/{document_id}/files/{file_id}/content` enforces source-management permission, root containment, no symlinks, and recorded file size. `GET /api/corpus-imports` plus item/quality routes power the admin import view. Review and search citations preserve physical page plus optional folio and source file ID. Real corpus roots must be mounted read-only; tests use synthetic temporary files only.
+
 ## Development Workflow
 
 ### Test-Driven Development (TDD) — MANDATORY
@@ -907,6 +992,16 @@ For models with `supports_vision: true`:
 - `view_image_tool` added to agent's toolset
 - Images automatically converted to base64 and injected into state
 
+### User-content safety
+
+The Xingxi lead-agent prompt defines the public response policy for harmful
+requests. It refuses actionable assistance for violence, self-harm, sexual
+exploitation, cyber abuse, fraud, illegal drug manufacture, privacy invasion,
+and hateful violence, without blocking neutral historical, academic,
+journalistic, legal, prevention, or recovery-oriented discussion. Provider-side
+safety terminations remain a separate defense: `SafetyFinishReasonMiddleware`
+suppresses any tool calls returned with a provider safety stop signal.
+
 ## Code Style
 
 - Uses `ruff` for linting and formatting
@@ -925,3 +1020,19 @@ See `docs/` directory for detailed documentation:
 - [PATH_EXAMPLES.md](docs/PATH_EXAMPLES.md) - Path types and usage
 - [summarization.md](docs/summarization.md) - Context summarization
 - [plan_mode_usage.md](docs/plan_mode_usage.md) - Plan mode with TodoList
+
+## Mudu Map Catalog
+
+`app/gateway/routers/map_points.py` owns the read-only `/api/map` catalog for the Xingxi two-dimensional map. Every point must retain WGS84 coordinates, an explicit spatial confidence, a human-readable location basis, and HTTPS provenance records. Current-map sources such as OpenStreetMap must not be treated as historical proof. Cross-source coordinate correlations remain `approximate` or `speculative`; never promote them to `exact` without survey data.
+
+The catalog merges the curated static modern layer with Evidence-bound SQL entities, GeoFeatures, events, and relations from the active Release. Reviewed rows are formal records; non-rejected `pending`/`disputed` rows may appear only as an explicitly labelled corpus-draft layer. Missing Evidence, cross-Release rows, rejected rows, and places without defensible coordinates stay out. `knowledge_seed.py` validates every seed Evidence against the target Release and never resets a human-reviewed row back to `pending`.
+
+The catalog also owns controlled layer availability, timeline events, evidence-constrained person activity nodes, and study-route suggestions. Person trajectories are derived from event participants plus person-to-place `born_in`, `lived_in`, `visited`, `worked_at`, and `studied_at` relations; their ordering is documentary chronology, never route interpolation. Historical imagery without coverage, rights, and calibration metadata is reference-only and must not be exposed as a MapLibre overlay. Person nodes never imply a reconstructed continuous route, and study routes never claim real-time navigation or current access conditions.
+
+## Operations Loop
+
+`app/gateway/routers/operations.py` and `deerflow.persistence.operations` own the governance dashboard, append-only interaction events, correction records, regression cases/runs, and immutable knowledge/graph/map asset snapshots. Client answer events may report counts and refusal state, but only administrators may submit accuracy or refusal-compliance judgements. `event_key` is the idempotency boundary for rendered answer events. Three-dimensional load metrics remain `null` until an actual GLB delivery pipeline exists.
+
+## Xingxi Knowledge Graph Tool
+
+`query_knowledge_graph` is a public Xingxi tool in every research mode. It resolves an entity by stable ID, canonical name, or a reviewed alias, then performs a bounded one-to-three-hop traversal through `wu_relations`. The traversal returns typed entities, directed relations, confidence, review and inference state, relation Evidence IDs, and available source locators. A missing entity or an empty relation table is a valid empty result, not proof of historical nonexistence. Relations without Evidence are permitted only as explicitly inferred working hypotheses and must be described as awaiting source verification. The graph query is scoped to the knowledge Release frozen into Run metadata while allowing release-neutral seed entities and edges.

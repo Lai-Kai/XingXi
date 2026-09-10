@@ -79,6 +79,11 @@ class UserRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    async def list_users(self, *, limit: int = 200) -> list[User]:
+        """List registered users for administrator role management."""
+        raise NotImplementedError
+
+    @abstractmethod
     async def count_users(self) -> int:
         """Return total number of registered users."""
         raise NotImplementedError

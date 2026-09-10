@@ -104,6 +104,9 @@ async def init_engine(
         # checkpointer's ``ensure_sqlite_parent_dir``.
         await asyncio.to_thread(os.makedirs, sqlite_dir or ".", exist_ok=True)
         _engine = create_async_engine(url, echo=echo, json_serializer=_json_serializer)
+        from deerflow.persistence.vector_extension import register_sqlite_vec
+
+        register_sqlite_vec(_engine)
 
         # Enable WAL on every new connection. SQLite PRAGMA settings are
         # per-connection, so we wire the listener instead of running PRAGMA

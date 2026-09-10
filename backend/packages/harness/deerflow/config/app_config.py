@@ -9,6 +9,7 @@ from typing import Any, Literal, Self
 import yaml
 from dotenv import load_dotenv
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
+from wu_culture.ranking import TrustRerankConfig
 
 from deerflow.config.acp_config import ACPAgentConfig, load_acp_config_from_dict
 from deerflow.config.agents_api_config import AgentsApiConfig, load_agents_api_config_from_dict
@@ -16,15 +17,23 @@ from deerflow.config.auth_config import AuthAppConfig
 from deerflow.config.authorization_config import AuthorizationConfig, load_authorization_config_from_dict
 from deerflow.config.channel_connections_config import ChannelConnectionsConfig
 from deerflow.config.checkpointer_config import CheckpointerConfig, load_checkpointer_config_from_dict
+from deerflow.config.corpus_import_config import CorpusImportConfig
 from deerflow.config.database_config import DatabaseConfig
+from deerflow.config.embedding_config import EmbeddingConfig
+from deerflow.config.evidence_pack_config import EvidencePackAppConfig
 from deerflow.config.extensions_config import ExtensionsConfig
 from deerflow.config.guardrails_config import GuardrailsConfig, load_guardrails_config_from_dict
+from deerflow.config.hybrid_search_config import HybridSearchConfig
+from deerflow.config.ingestion_config import IngestionConfig
 from deerflow.config.input_polish_config import InputPolishConfig
 from deerflow.config.loop_detection_config import LoopDetectionConfig
 from deerflow.config.memory_config import MemoryConfig, load_memory_config_from_dict
 from deerflow.config.model_config import ModelConfig
+from deerflow.config.object_storage_config import ObjectStorageConfig
+from deerflow.config.ocr_config import OcrConfig
 from deerflow.config.read_before_write_config import ReadBeforeWriteConfig
 from deerflow.config.reload_boundary import format_field_description
+from deerflow.config.reranker_config import RerankerConfig
 from deerflow.config.run_events_config import RunEventsConfig
 from deerflow.config.run_ownership_config import RunOwnershipConfig
 from deerflow.config.runtime_paths import existing_project_file
@@ -149,6 +158,15 @@ class AppConfig(BaseModel):
         description="Hard server-side ceiling for a client-supplied run recursion_limit. Client values above this are clamped; prevents runaway LangGraph super-steps (LLM cost / DoS).",
     )
     models: list[ModelConfig] = Field(default_factory=list, description="Available models")
+    embedding: EmbeddingConfig = Field(default_factory=EmbeddingConfig, description="Embedding provider configuration")
+    evidence_pack: EvidencePackAppConfig = Field(default_factory=EvidencePackAppConfig, description="Prompt-facing historical evidence pack configuration")
+    hybrid_search: HybridSearchConfig = Field(default_factory=HybridSearchConfig, description="Lexical/vector fusion configuration")
+    trust_rerank: TrustRerankConfig = Field(default_factory=TrustRerankConfig, description="Trust-aware retrieval reranking configuration")
+    reranker: RerankerConfig = Field(default_factory=RerankerConfig, description="Candidate reranker configuration")
+    object_storage: ObjectStorageConfig = Field(default_factory=ObjectStorageConfig, description="Historical-source object storage configuration")
+    corpus_import: CorpusImportConfig = Field(default_factory=CorpusImportConfig, description="Allowlisted read-only corpus roots")
+    ocr: OcrConfig = Field(default_factory=OcrConfig, description="Scanned source OCR configuration")
+    ingestion: IngestionConfig = Field(default_factory=IngestionConfig, description="Historical-source ingestion job configuration")
     sandbox: SandboxConfig = Field(
         description=format_field_description(
             "sandbox",
@@ -474,6 +492,14 @@ class AppConfig(BaseModel):
         self._models_by_name = models_by_name
         self._tools_by_name = tools_by_name
         self._tool_groups_by_name = tool_groups_by_name
+        if self.ocr.enabled:
+            if self.ocr.model_name is None:
+                raise ValueError("Enabled OCR requires ocr.model_name")
+            ocr_model = models_by_name.get(self.ocr.model_name)
+            if ocr_model is None:
+                raise ValueError(f"OCR model {self.ocr.model_name!r} is not configured in models[]")
+            if not ocr_model.supports_vision:
+                raise ValueError(f"OCR model {self.ocr.model_name!r} must support vision")
         return self
 
     def get_model_config(self, name: str) -> ModelConfig | None:

@@ -476,6 +476,17 @@ def test_system_prompt_template_contains_file_editing_workflow_rule():
     assert "append=True" in template
 
 
+def test_system_prompt_template_contains_user_safety_refusal_policy():
+    template = prompt_module.SYSTEM_PROMPT_TEMPLATE
+
+    assert "Safety and Refusal Policy" in template
+    assert "Do not use tools while fulfilling a disallowed request" in template
+    assert "Historical, academic, journalistic, legal, or prevention-focused" in template
+    assert "Sensitive subject matter alone is not a reason to refuse" in template
+    assert "self-harm" in template
+    assert "credential theft" in template
+
+
 def test_system_prompt_template_requires_virtual_paths_for_output_images():
     template = prompt_module.SYSTEM_PROMPT_TEMPLATE
 

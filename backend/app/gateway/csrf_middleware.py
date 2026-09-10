@@ -11,11 +11,11 @@ from urllib.parse import urlsplit
 
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import JSONResponse
 from starlette.types import ASGIApp
 
 from app.gateway.auth.config import get_auth_config
 from app.gateway.auth_disabled import is_auth_disabled
+from app.gateway.errors import gateway_error_response
 
 CSRF_COOKIE_NAME = "csrf_token"
 CSRF_HEADER_NAME = "X-CSRF-Token"
@@ -191,26 +191,17 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         _is_auth = is_auth_endpoint(request)
 
         if should_check_csrf(request) and _is_auth and not is_allowed_auth_origin(request):
-            return JSONResponse(
-                status_code=403,
-                content={"detail": "Cross-site auth request denied."},
-            )
+            return gateway_error_response(403, "Cross-site auth request denied.")
 
         if should_check_csrf(request) and not _is_auth:
             cookie_token = request.cookies.get(CSRF_COOKIE_NAME)
             header_token = request.headers.get(CSRF_HEADER_NAME)
 
             if not cookie_token or not header_token:
-                return JSONResponse(
-                    status_code=403,
-                    content={"detail": "CSRF token missing. Include X-CSRF-Token header."},
-                )
+                return gateway_error_response(403, "CSRF token missing. Include X-CSRF-Token header.")
 
             if not secrets.compare_digest(cookie_token, header_token):
-                return JSONResponse(
-                    status_code=403,
-                    content={"detail": "CSRF token mismatch."},
-                )
+                return gateway_error_response(403, "CSRF token mismatch.")
 
         response = await call_next(request)
 

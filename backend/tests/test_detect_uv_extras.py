@@ -149,6 +149,12 @@ def test_detect_from_config_redis_via_stream_bridge(tmp_path):
     assert detect.detect_from_config(cfg) == ["redis"]
 
 
+def test_detect_from_config_s3_object_storage(tmp_path):
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("object_storage:\n  backend: s3\n  bucket: historical-sources\n")
+    assert detect.detect_from_config(cfg) == ["s3"]
+
+
 def test_detect_from_config_memory_stream_bridge_returns_no_extras(tmp_path):
     cfg = tmp_path / "config.yaml"
     cfg.write_text("stream_bridge:\n  type: memory\n  queue_maxsize: 256\n")

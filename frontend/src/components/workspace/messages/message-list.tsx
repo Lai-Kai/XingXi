@@ -28,6 +28,7 @@ import {
   ReasoningTrigger,
 } from "@/components/ai-elements/reasoning";
 import { Button } from "@/components/ui/button";
+import type { FeedbackData } from "@/core/api/feedback";
 import { extractArtifactsFromThread } from "@/core/artifacts/utils";
 import { useI18n } from "@/core/i18n/hooks";
 import {
@@ -81,7 +82,7 @@ import {
 } from "./human-input-card";
 import { MarkdownContent } from "./markdown-content";
 import { MessageGroup } from "./message-group";
-import { MessageListItem } from "./message-list-item";
+import { FeedbackButtons, MessageListItem } from "./message-list-item";
 import {
   MessageTokenUsageDebugList,
   MessageTokenUsageList,
@@ -560,83 +561,104 @@ export function MessageList({
         .filter((message) => message.type === "ai" && message.id)
         .map((message) => message.id)
         .filter((id): id is string => typeof id === "string");
+      const runId = (actionTarget as { run_id?: string } | undefined)?.run_id;
+      const feedback = (
+        actionTarget as
+          | (Message & { feedback?: FeedbackData | null })
+          | undefined
+      )?.feedback;
       if (!clipboardData && !actionTarget) {
         return null;
       }
 
       return (
-        <div className="mt-2 flex justify-start gap-1 opacity-0 transition-opacity delay-200 duration-300 group-hover/assistant-turn:opacity-100">
-          {clipboardData && <CopyButton clipboardData={clipboardData} />}
-          {enableBranchForTurn &&
-            !isStreaming &&
-            actionTarget?.id &&
-            onBranchTurn && (
-              <Tooltip content={t.common.branch}>
-                <Button
-                  aria-label={t.common.branch}
-                  size="icon-sm"
-                  type="button"
-                  variant="ghost"
-                  disabled={
-                    !canBranch || branchingMessageId === actionTarget.id
-                  }
-                  onClick={() => {
-                    const targetId = actionTarget.id;
-                    if (!targetId) {
-                      return;
-                    }
-                    setBranchingMessageId(targetId);
-                    void Promise.resolve(
-                      onBranchTurn(targetId, assistantMessageIds),
-                    ).finally(() => {
-                      setBranchingMessageId(null);
-                    });
-                  }}
-                >
-                  <GitBranchPlusIcon
-                    className={cn(
-                      "size-4",
-                      branchingMessageId === actionTarget.id && "animate-pulse",
-                    )}
-                  />
-                </Button>
-              </Tooltip>
+        <div className="mt-3 flex min-h-10 flex-wrap items-center justify-between gap-2 border-t border-[#e1e8e9] pt-2">
+          <div>
+            {!isStreaming && actionTarget && runId && (
+              <FeedbackButtons
+                key={`${threadId}:${runId}`}
+                threadId={threadId}
+                runId={runId}
+                initialFeedback={feedback ?? null}
+                showPrompt
+              />
             )}
-          {enableRegenerateForTurn &&
-            actionTarget?.id &&
-            onRegenerateMessage && (
-              <Tooltip content={t.common.regenerate}>
-                <Button
-                  aria-label={t.common.regenerate}
-                  size="icon-sm"
-                  type="button"
-                  variant="ghost"
-                  disabled={
-                    !canRegenerate || regeneratingMessageId === actionTarget.id
-                  }
-                  onClick={() => {
-                    const targetId = actionTarget.id;
-                    if (!targetId) {
-                      return;
+          </div>
+          <div className="flex items-center gap-1">
+            {clipboardData && <CopyButton clipboardData={clipboardData} />}
+            {enableBranchForTurn &&
+              !isStreaming &&
+              actionTarget?.id &&
+              onBranchTurn && (
+                <Tooltip content={t.common.branch}>
+                  <Button
+                    aria-label={t.common.branch}
+                    size="icon-sm"
+                    type="button"
+                    variant="ghost"
+                    disabled={
+                      !canBranch || branchingMessageId === actionTarget.id
                     }
-                    setRegeneratingMessageId(targetId);
-                    void Promise.resolve(
-                      onRegenerateMessage?.(targetId, assistantMessageIds),
-                    ).finally(() => {
-                      setRegeneratingMessageId(null);
-                    });
-                  }}
-                >
-                  <RefreshCcwIcon
-                    className={cn(
-                      "size-3",
-                      regeneratingMessageId === actionTarget.id &&
-                        "animate-spin",
-                    )}
-                  />
-                </Button>
-              </Tooltip>
-            )}
+                    onClick={() => {
+                      const targetId = actionTarget.id;
+                      if (!targetId) {
+                        return;
+                      }
+                      setBranchingMessageId(targetId);
+                      void Promise.resolve(
+                        onBranchTurn(targetId, assistantMessageIds),
+                      ).finally(() => {
+                        setBranchingMessageId(null);
+                      });
+                    }}
+                  >
+                    <GitBranchPlusIcon
+                      className={cn(
+                        "size-4",
+                        branchingMessageId === actionTarget.id &&
+                          "animate-pulse",
+                      )}
+                    />
+                  </Button>
+                </Tooltip>
+              )}
+            {enableRegenerateForTurn &&
+              actionTarget?.id &&
+              onRegenerateMessage && (
+                <Tooltip content={t.common.regenerate}>
+                  <Button
+                    aria-label={t.common.regenerate}
+                    size="icon-sm"
+                    type="button"
+                    variant="ghost"
+                    disabled={
+                      !canRegenerate ||
+                      regeneratingMessageId === actionTarget.id
+                    }
+                    onClick={() => {
+                      const targetId = actionTarget.id;
+                      if (!targetId) {
+                        return;
+                      }
+                      setRegeneratingMessageId(targetId);
+                      void Promise.resolve(
+                        onRegenerateMessage?.(targetId, assistantMessageIds),
+                      ).finally(() => {
+                        setRegeneratingMessageId(null);
+                      });
+                    }}
+                  >
+                    <RefreshCcwIcon
+                      className={cn(
+                        "size-3",
+                        regeneratingMessageId === actionTarget.id &&
+                          "animate-spin",
+                      )}
+                    />
+                  </Button>
+                </Tooltip>
+              )}
+          </div>
         </div>
       );
     },
@@ -649,6 +671,7 @@ export function MessageList({
       regeneratingMessageId,
       t.common.branch,
       t.common.regenerate,
+      threadId,
     ],
   );
 

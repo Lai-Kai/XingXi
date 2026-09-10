@@ -640,7 +640,7 @@ export function InputBox({
         mode: getResolvedMode(mode, supportThinking),
         reasoning_effort:
           mode === "ultra"
-            ? "high"
+            ? "medium"
             : mode === "pro"
               ? "medium"
               : mode === "thinking"
@@ -2351,7 +2351,8 @@ export function InputBox({
                 >
                   <div className="flex min-w-0 flex-col items-start text-left">
                     <ModelSelectorName className="text-xs font-normal">
-                      {selectedModel?.display_name}
+                      {selectedModel?.display_name ??
+                        t.inputBox.modelUnavailableShort}
                     </ModelSelectorName>
                   </div>
                 </PromptInputButton>

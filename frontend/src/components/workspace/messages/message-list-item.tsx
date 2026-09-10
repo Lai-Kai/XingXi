@@ -27,8 +27,17 @@ import {
 import { Task, TaskTrigger } from "@/components/ai-elements/task";
 import { Badge } from "@/components/ui/badge";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   deleteFeedback,
   upsertFeedback,
+  type FeedbackCategory,
   type FeedbackData,
 } from "@/core/api/feedback";
 import {
@@ -45,6 +54,7 @@ import {
   stripUploadedFilesTag,
   type FileInMessage,
 } from "@/core/messages/utils";
+import { recordOperationEvent } from "@/core/operations/api";
 import { useRehypeSplitWordsIntoSpans } from "@/core/rehype";
 import { readReferenceMessageContexts } from "@/core/sidecar";
 import {
@@ -64,34 +74,56 @@ import { SlashSkillChip } from "../slash-skill-chip";
 import { MarkdownContent } from "./markdown-content";
 import { createMarkdownLinkComponent } from "./markdown-link";
 
-function FeedbackButtons({
+export function FeedbackButtons({
   threadId,
   runId,
   initialFeedback,
+  showPrompt = false,
 }: {
   threadId: string;
   runId: string;
   initialFeedback: FeedbackData | null;
+  showPrompt?: boolean;
 }) {
   const [feedback, setFeedback] = useState<FeedbackData | null>(
     initialFeedback,
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [category, setCategory] = useState<FeedbackCategory>("factual_error");
+  const [comment, setComment] = useState("");
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setFeedback(initialFeedback);
+  }, [initialFeedback]);
 
   const handleClick = useCallback(
-    async (rating: number) => {
+    async (
+      rating: number,
+      detail?: { category: FeedbackCategory; comment: string },
+    ) => {
       if (isSubmitting) return;
+      setSubmitError(null);
       setIsSubmitting(true);
       try {
         if (feedback?.rating === rating) {
           await deleteFeedback(threadId, runId);
           setFeedback(null);
         } else {
-          const result = await upsertFeedback(threadId, runId, rating);
+          const result = await upsertFeedback(
+            threadId,
+            runId,
+            rating,
+            detail?.comment,
+            detail?.category,
+          );
           setFeedback(result);
         }
+        return true;
       } catch {
-        // Revert on error — feedback state unchanged on catch
+        setSubmitError("反馈提交失败，请稍后重试");
+        return false;
       } finally {
         setIsSubmitting(false);
       }
@@ -100,33 +132,130 @@ function FeedbackButtons({
   );
 
   return (
-    <div className="flex gap-1">
+    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+      {showPrompt && (
+        <span className="mr-1 text-xs text-[#718186]">这个回答有帮助吗？</span>
+      )}
       <button
         type="button"
         className={cn(
-          "text-muted-foreground hover:text-foreground rounded-md p-1 transition-colors",
-          feedback?.rating === 1 && "text-foreground",
+          "flex size-8 items-center justify-center rounded-md border border-transparent text-[#718186] transition-colors hover:border-[#c8d9db] hover:bg-[#edf5f5] hover:text-[#276f79]",
+          feedback?.rating === 1 &&
+            "border-[#8fbcc2] bg-[#e5f1f2] text-[#1f6973]",
         )}
-        onClick={() => handleClick(1)}
+        onClick={() => void handleClick(1)}
         disabled={isSubmitting}
+        aria-label="回答有帮助"
+        aria-pressed={feedback?.rating === 1}
+        title={feedback?.rating === 1 ? "取消有帮助" : "回答有帮助"}
       >
-        <ThumbsUpIcon
-          className={cn("size-4", feedback?.rating === 1 && "fill-current")}
-        />
+        {isSubmitting && feedback?.rating !== -1 ? (
+          <Loader2Icon className="size-4 animate-spin" />
+        ) : (
+          <ThumbsUpIcon
+            className={cn("size-4", feedback?.rating === 1 && "fill-current")}
+          />
+        )}
       </button>
       <button
         type="button"
         className={cn(
-          "text-muted-foreground hover:text-foreground rounded-md p-1 transition-colors",
-          feedback?.rating === -1 && "text-foreground",
+          "flex size-8 items-center justify-center rounded-md border border-transparent text-[#718186] transition-colors hover:border-[#dfb8b8] hover:bg-[#fbefef] hover:text-[#a34343]",
+          feedback?.rating === -1 &&
+            "border-[#d8aaaa] bg-[#f8eaea] text-[#a33d3d]",
         )}
-        onClick={() => handleClick(-1)}
+        onClick={() => {
+          if (feedback?.rating === -1) void handleClick(-1);
+          else setDetailOpen(true);
+        }}
         disabled={isSubmitting}
+        aria-label="反馈回答问题"
+        aria-pressed={feedback?.rating === -1}
+        title={feedback?.rating === -1 ? "取消问题反馈" : "反馈回答问题"}
       >
-        <ThumbsDownIcon
-          className={cn("size-4", feedback?.rating === -1 && "fill-current")}
-        />
+        {isSubmitting && feedback?.rating === -1 ? (
+          <Loader2Icon className="size-4 animate-spin" />
+        ) : (
+          <ThumbsDownIcon
+            className={cn("size-4", feedback?.rating === -1 && "fill-current")}
+          />
+        )}
       </button>
+      {feedback && (
+        <span className="text-xs text-[#4d747a]" role="status">
+          已记录
+        </span>
+      )}
+      {submitError && !detailOpen && (
+        <span className="text-xs text-red-700" role="alert">
+          {submitError}
+        </span>
+      )}
+      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>反馈回答问题</DialogTitle>
+            <DialogDescription>
+              反馈会进入质量审核队列，并关联当前会话与回答。
+            </DialogDescription>
+          </DialogHeader>
+          <label className="grid gap-2 text-sm">
+            <span className="font-medium">问题类型</span>
+            <select
+              value={category}
+              onChange={(event) =>
+                setCategory(event.target.value as FeedbackCategory)
+              }
+              className="h-10 rounded-md border border-[#d2dddf] bg-white px-3"
+            >
+              <option value="citation_error">引用错误</option>
+              <option value="factual_error">事实错误</option>
+              <option value="missing_source">资料缺失</option>
+              <option value="expression_issue">表达问题</option>
+              <option value="other">其他问题</option>
+            </select>
+          </label>
+          <label className="grid gap-2 text-sm">
+            <span className="font-medium">问题说明</span>
+            <textarea
+              value={comment}
+              onChange={(event) => setComment(event.target.value)}
+              rows={4}
+              maxLength={2000}
+              placeholder="请说明哪一处需要核对"
+              className="resize-none rounded-md border border-[#d2dddf] px-3 py-2 outline-none focus:border-[#6ea7af]"
+            />
+          </label>
+          {submitError && <p className="text-sm text-red-700">{submitError}</p>}
+          <DialogFooter>
+            <button
+              type="button"
+              onClick={() => setDetailOpen(false)}
+              className="h-9 rounded-md border px-4 text-sm"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              disabled={isSubmitting || !comment.trim()}
+              onClick={async () => {
+                setSubmitError(null);
+                const submitted = await handleClick(-1, {
+                  category,
+                  comment: comment.trim(),
+                });
+                if (submitted) {
+                  setDetailOpen(false);
+                  setComment("");
+                }
+              }}
+              className="h-9 rounded-md bg-[#276f79] px-4 text-sm text-white disabled:opacity-40"
+            >
+              {isSubmitting ? "提交中…" : "提交反馈"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -164,6 +293,7 @@ export function MessageListItem({
         isLoading={isLoading}
         threadId={threadId}
         artifactPaths={artifactPaths}
+        feedback={feedback}
         runId={runId}
         turnStartTime={turnStartTime}
       />
@@ -268,6 +398,7 @@ function MessageContent_({
   isLoading = false,
   threadId,
   artifactPaths,
+  feedback,
   runId,
   turnStartTime,
 }: {
@@ -276,6 +407,7 @@ function MessageContent_({
   isLoading?: boolean;
   threadId: string;
   artifactPaths: readonly string[];
+  feedback?: FeedbackData | null;
   runId?: string;
   turnStartTime?: number | null;
 }) {
@@ -374,6 +506,47 @@ function MessageContent_({
     () => (isHuman ? [] : extractCitationSources(contentToDisplay)),
     [contentToDisplay, isHuman],
   );
+
+  useEffect(() => {
+    if (
+      isHuman ||
+      isLoading ||
+      feedback === undefined ||
+      !runId ||
+      !contentToDisplay.trim()
+    ) {
+      return;
+    }
+    const messageId = String(message.id ?? "final");
+    const refused = contentToDisplay.includes("当前检索范围内暂无明确记载");
+    recordOperationEvent({
+      event_type: "answer_completed",
+      event_key: `answer:${runId}:${messageId}`,
+      thread_id: threadId,
+      run_id: runId,
+      citation_count: citationSources.length,
+      refused,
+      metadata: { message_id: messageId },
+    });
+    if (refused) {
+      recordOperationEvent({
+        event_type: "search_miss",
+        event_key: `miss:${runId}:${messageId}`,
+        thread_id: threadId,
+        run_id: runId,
+        metadata: { message_id: messageId },
+      });
+    }
+  }, [
+    citationSources.length,
+    contentToDisplay,
+    feedback,
+    isHuman,
+    isLoading,
+    message.id,
+    runId,
+    threadId,
+  ]);
 
   const filesList =
     files && files.length > 0 ? (

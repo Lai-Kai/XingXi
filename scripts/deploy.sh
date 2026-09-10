@@ -71,7 +71,36 @@ load_uv_extras_from_dotenv() {
     export UV_EXTRAS="$value"
 }
 
+read_dotenv_value() {
+    local key="$1"
+    local line=""
+    local value=""
+
+    [ -f "$ENV_FILE" ] || return 0
+    line="$(grep -E "^[[:space:]]*(export[[:space:]]+)?${key}[[:space:]]*=" "$ENV_FILE" | tail -n 1 || true)"
+    [ -n "$line" ] || return 0
+
+    value="${line#*=}"
+    value="${value%$'\r'}"
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
+    case "$value" in
+        \"*\") value="${value#\"}"; value="${value%\"}" ;;
+        \'*\') value="${value#\'}"; value="${value%\'}" ;;
+    esac
+    printf '%s' "$value"
+}
+
 load_uv_extras_from_dotenv
+
+if [ -z "${PORT:-}" ]; then
+    PORT="$(read_dotenv_value PORT)"
+fi
+if [ -z "${BIND_ADDRESS:-}" ]; then
+    BIND_ADDRESS="$(read_dotenv_value BIND_ADDRESS)"
+fi
+export PORT="${PORT:-2026}"
+export BIND_ADDRESS="${BIND_ADDRESS:-0.0.0.0}"
 
 # ── Colors ────────────────────────────────────────────────────────────────────
 
@@ -273,6 +302,86 @@ detect_sandbox_mode() {
     fi
 }
 
+detect_database_backend() {
+    local database_backend=""
+
+    [ -f "$DEER_FLOW_CONFIG_PATH" ] || { echo "sqlite"; return; }
+
+    database_backend=$(awk '
+        /^[[:space:]]*database:[[:space:]]*$/ { in_database=1; next }
+        in_database && /^[^[:space:]#]/ { in_database=0 }
+        in_database && /^[[:space:]]*backend:[[:space:]]*/ {
+            line=$0; sub(/^[[:space:]]*backend:[[:space:]]*/, "", line); print line; exit
+        }
+    ' "$DEER_FLOW_CONFIG_PATH")
+
+    echo "${database_backend:-sqlite}"
+}
+
+detect_database_postgres_url() {
+    local postgres_url=""
+
+    [ -f "$DEER_FLOW_CONFIG_PATH" ] || return 0
+
+    postgres_url=$(awk '
+        /^[[:space:]]*database:[[:space:]]*$/ { in_database=1; next }
+        in_database && /^[^[:space:]#]/ { in_database=0 }
+        in_database && /^[[:space:]]*postgres_url:[[:space:]]*/ {
+            line=$0; sub(/^[[:space:]]*postgres_url:[[:space:]]*/, "", line); print line; exit
+        }
+    ' "$DEER_FLOW_CONFIG_PATH")
+
+    printf '%s' "$postgres_url"
+}
+
+database_backend="$(detect_database_backend)"
+if [ "$database_backend" = "postgres" ]; then
+    database_postgres_url="$(detect_database_postgres_url)"
+    if [ -z "$database_postgres_url" ]; then
+        echo -e "${RED}✗ database.postgres_url is required when database.backend is postgres.${NC}" >&2
+        echo "  Add 'postgres_url: \$DATABASE_URL' under database: in $DEER_FLOW_CONFIG_PATH" >&2
+        exit 1
+    fi
+    COMPOSE_CMD+=(-f "$DOCKER_DIR/docker-compose.postgres.yaml")
+
+    if [ -z "${POSTGRES_USER:-}" ]; then
+        POSTGRES_USER="$(read_dotenv_value POSTGRES_USER)"
+    fi
+    if [ -z "${POSTGRES_DB:-}" ]; then
+        POSTGRES_DB="$(read_dotenv_value POSTGRES_DB)"
+    fi
+    if [ -z "${POSTGRES_PASSWORD:-}" ]; then
+        POSTGRES_PASSWORD="$(read_dotenv_value POSTGRES_PASSWORD)"
+    fi
+
+    export POSTGRES_USER="${POSTGRES_USER:-deerflow}"
+    export POSTGRES_DB="${POSTGRES_DB:-deerflow}"
+
+    _postgres_password_file="$DEER_FLOW_HOME/.postgres-password"
+    if [ -z "${POSTGRES_PASSWORD:-}" ] && [ -f "$_postgres_password_file" ]; then
+        POSTGRES_PASSWORD="$(cat "$_postgres_password_file")"
+    fi
+    if [ -z "${POSTGRES_PASSWORD:-}" ] && [ "$CMD" != "down" ]; then
+        if command -v python3 > /dev/null 2>&1 && \
+            POSTGRES_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_hex(32))' 2>/dev/null)"; then
+            true
+        elif command -v python > /dev/null 2>&1 && \
+            POSTGRES_PASSWORD="$(python -c 'import secrets; print(secrets.token_hex(32))' 2>/dev/null)"; then
+            true
+        elif command -v openssl > /dev/null 2>&1 && \
+            POSTGRES_PASSWORD="$(openssl rand -hex 32)"; then
+            true
+        else
+            echo -e "${RED}✗ Cannot generate POSTGRES_PASSWORD: python3, python, and openssl are unavailable.${NC}" >&2
+            exit 1
+        fi
+        echo "$POSTGRES_PASSWORD" > "$_postgres_password_file"
+        chmod 600 "$_postgres_password_file"
+        echo -e "${GREEN}✓ POSTGRES_PASSWORD generated → $_postgres_password_file${NC}"
+    fi
+    export POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-placeholder-for-compose-down}"
+fi
+
 # ── down ──────────────────────────────────────────────────────────────────────
 
 if [ "$CMD" = "down" ]; then
@@ -321,10 +430,15 @@ echo ""
 
 sandbox_mode="$(detect_sandbox_mode)"
 echo -e "${BLUE}Sandbox mode: $sandbox_mode${NC}"
+echo -e "${BLUE}Database backend: $database_backend${NC}"
 
 echo -e "${BLUE}Runtime: Gateway embedded agent runtime${NC}"
 
 services="redis frontend gateway nginx"
+
+if [ "$database_backend" = "postgres" ]; then
+    services="redis postgres frontend gateway nginx"
+fi
 
 if [ "$sandbox_mode" = "provisioner" ]; then
     services="$services provisioner"

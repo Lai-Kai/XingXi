@@ -1,17 +1,38 @@
-/**
- * Throw an Error from a failed Gateway REST response.
- *
- * Parses the FastAPI error envelope (`{ detail: string }`) and falls back to
- * the caller-provided message when the body is missing or not that shape.
- * Shared by the domain API modules (channels, scheduled tasks) so the envelope
- * format is interpreted in exactly one place.
- */
+export class GatewayApiError extends Error {
+  readonly code: string;
+  readonly traceId: string | null;
+  readonly retryable: boolean;
+  readonly status: number;
+
+  constructor(
+    message: string,
+    details: { code?: string; trace_id?: string; retryable?: boolean },
+    status: number,
+  ) {
+    super(message);
+    this.name = "GatewayApiError";
+    this.code = details.code ?? "request_failed";
+    this.traceId = details.trace_id ?? null;
+    this.retryable = details.retryable ?? status >= 500;
+    this.status = status;
+  }
+}
+
 export async function throwGatewayApiError(
   response: Response,
   fallback: string,
 ): Promise<never> {
   const body = (await response.json().catch(() => ({}))) as {
     detail?: unknown;
+    error?: {
+      code?: string;
+      message?: string;
+      trace_id?: string;
+      retryable?: boolean;
+    };
   };
-  throw new Error(typeof body.detail === "string" ? body.detail : fallback);
+  const message =
+    body.error?.message ??
+    (typeof body.detail === "string" ? body.detail : fallback);
+  throw new GatewayApiError(message, body.error ?? {}, response.status);
 }

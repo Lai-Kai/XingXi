@@ -1041,7 +1041,7 @@ export function useThreadStream({
 
   const thread = useStream<AgentThreadState>({
     client: getAPIClient(isMock),
-    assistantId: "lead_agent",
+    assistantId: "xingxi",
     threadId: onStreamThreadId,
     reconnectOnMount: true,
     fetchStateHistory: { limit: 1 },
@@ -1536,7 +1536,7 @@ export function useThreadStream({
               reasoning_effort:
                 context.reasoning_effort ??
                 (context.mode === "ultra"
-                  ? "high"
+                  ? "medium"
                   : context.mode === "pro"
                     ? "medium"
                     : context.mode === "thinking"
@@ -1641,7 +1641,7 @@ export function useThreadStream({
             reasoning_effort:
               context.reasoning_effort ??
               (context.mode === "ultra"
-                ? "high"
+                ? "medium"
                 : context.mode === "pro"
                   ? "medium"
                   : context.mode === "thinking"

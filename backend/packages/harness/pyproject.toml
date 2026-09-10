@@ -36,7 +36,9 @@ dependencies = [
     "langgraph-sdk>=0.1.51",
     "sqlalchemy[asyncio]>=2.0,<3.0",
     "aiosqlite>=0.19",
+    "sqlite-vec>=0.1.9",
     "alembic>=1.13",
+    "wu-culture",
     "cryptography>=48.0.1",
     "e2b-code-interpreter>=2.8.0",
 ]
@@ -58,11 +60,13 @@ postgres = [
     "langgraph-checkpoint-postgres>=3.0.5",
     "psycopg[binary]>=3.3.3",
     "psycopg-pool>=3.3.0",
+    "pgvector>=0.4.2",
 ]
 # Cross-process SSE stream bridge (stream_bridge.type: redis). Optional so
 # single-process / memory-bridge installs do not pull redis. The Docker image
 # always installs this extra because Docker defaults to the redis bridge.
 redis = ["redis>=5.0.0"]
+s3 = ["boto3>=1.35.0"]
 pymupdf = ["pymupdf4llm>=0.0.17"]
 boxlite = ["boxlite>=0.9.7"]
 # Agent observability (Monocle). Optional so a default install stays free of the

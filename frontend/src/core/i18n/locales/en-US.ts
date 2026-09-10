@@ -63,9 +63,9 @@ export const enUS: Translations = {
 
   // Welcome
   welcome: {
-    greeting: "Hello, again!",
+    greeting: "Xingxi",
     description:
-      "Welcome to 🦌 DeerFlow, an open source super agent. With built-in and custom skills, DeerFlow helps you search on the web, analyze data, and generate artifacts like slides, web pages and do almost anything.",
+      "A traceable research agent for Wu culture and Mudu regional history.",
 
     createYourOwnSkill: "Create Your Own Skill",
     createYourOwnSkillDescription:
@@ -112,7 +112,8 @@ export const enUS: Translations = {
 
   // Input Box
   inputBox: {
-    placeholder: "How can I assist you today?",
+    placeholder:
+      "Ask about Mudu sites, people, gazetteers, or historical change",
     createSkillPrompt:
       "We're going to build a new skill step by step with `skill-creator`. To start, what do you want this skill to do?",
     addAttachments: "Add attachments",
@@ -164,6 +165,8 @@ export const enUS: Translations = {
     reasoningEffortHighDescription:
       "Full-dimensional Logic Deduction + Multi-path Verification + Backward Check",
     searchModels: "Search models...",
+    modelUnavailable: "No chat model is configured",
+    modelUnavailableShort: "No model",
     surpriseMe: "Surprise",
     surpriseMePrompt: "Surprise me",
     followupLoading: "Generating follow-up questions...",
@@ -539,7 +542,7 @@ export const enUS: Translations = {
 
   // Page titles (document title)
   pages: {
-    appName: "DeerFlow",
+    appName: "Xingxi",
     chats: "Chats",
     newChat: "New chat",
     untitled: "Untitled",
@@ -566,6 +569,24 @@ export const enUS: Translations = {
     clickToViewContent: "Click to view file content",
     writeTodos: "Update to-do list",
     skillInstallTooltip: "Install skill and make it available to DeerFlow",
+  },
+
+  researchTrace: {
+    title: "Research process",
+    running: "In progress",
+    complete: "Complete",
+    consolidating: "Verify evidence and organize the conclusion",
+    phases: {
+      planning: "Break down the research question",
+      sources: "Search documentary evidence",
+      graph: "Query people, places, and event relationships",
+      timeline: "Build the historical timeline",
+      map: "Verify map locations",
+      gloss: "Interpret the classical text",
+      names: "Verify historical names and aliases",
+      comparison: "Cross-check historical sources",
+      image: "Inspect the uploaded image",
+    },
   },
 
   humanInput: {
@@ -669,6 +690,12 @@ export const enUS: Translations = {
       description:
         "DeerFlow automatically learns from your conversations in the background. These memories help DeerFlow understand you better and deliver a more personalized experience.",
       empty: "No memory data to display.",
+      accountDisabledTitle:
+        "Long-term memory is disabled for this test account",
+      accountDisabledDescription:
+        "Conversations on this account do not read or write long-term memory, so tests are not influenced by earlier preferences. Operational and error logs remain available.",
+      globallyDisabledDescription:
+        "Long-term memory is currently disabled for the whole system. Conversations do not read or write cross-session memory.",
       rawJson: "Raw JSON",
       exportButton: "Export memory",
       exportSuccess: "Memory exported",

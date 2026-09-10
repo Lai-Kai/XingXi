@@ -29,4 +29,10 @@ class FeedbackRow(Base):
     comment: Mapped[str | None] = mapped_column(Text)
     # Optional text feedback from the user
 
+    category: Mapped[str | None] = mapped_column(String(32), index=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="submitted", index=True)
+    assignee_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    review_note: Mapped[str | None] = mapped_column(Text)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
