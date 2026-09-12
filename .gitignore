@@ -51,6 +51,8 @@ extensions_config.json
 *.pem
 *.p12
 *.pfx
+*.ppk
+*.der
 *.jks
 *.keystore
 *.secret

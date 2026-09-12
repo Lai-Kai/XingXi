@@ -16,10 +16,11 @@ import {
   Zap,
 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { BusinessMobileHeader } from "@/components/workspace/business-page";
+import { useI18n } from "@/core/i18n/hooks";
 import {
   type DailyResearchHistory,
   type DailyResearchFeed,
@@ -32,7 +33,9 @@ import {
   type XingxiEntryMode,
   type XingxiChatScope,
   XINGXI_ENTRY_MODES,
+  parseEntryMode,
   xingxiChatHref,
+  xingxiWorkspaceHref,
 } from "@/core/threads/xingxi-entry";
 import { cn } from "@/lib/utils";
 
@@ -131,8 +134,11 @@ const researchItems: ResearchItem[] = [
 
 export default function XingxiHomePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const { t } = useI18n();
+  const requestedMode = parseEntryMode(searchParams.get("mode")) ?? "pro";
   const [query, setQuery] = useState("");
-  const [mode, setMode] = useState<XingxiEntryMode>("pro");
+  const [mode, setMode] = useState<XingxiEntryMode>(requestedMode);
   const [tab, setTab] = useState<FeedTab>("trends");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [preferences, setPreferences] = useState(["古迹", "方志"]);
@@ -149,6 +155,17 @@ export default function XingxiHomePage() {
     null,
   );
   const [showDailyHistory, setShowDailyHistory] = useState(false);
+
+  useEffect(() => {
+    setMode(requestedMode);
+  }, [requestedMode]);
+
+  useEffect(() => {
+    const modeLabel =
+      XINGXI_ENTRY_MODES.find((item) => item.id === mode)?.label ??
+      t.pages.newChat;
+    document.title = `${modeLabel} - ${t.pages.appName}`;
+  }, [mode, t.pages.appName, t.pages.newChat]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -318,7 +335,12 @@ export default function XingxiHomePage() {
                       key={item.id}
                       type="button"
                       aria-pressed={mode === item.id}
-                      onClick={() => setMode(item.id)}
+                      onClick={() => {
+                        setMode(item.id);
+                        router.replace(xingxiWorkspaceHref(item.id), {
+                          scroll: false,
+                        });
+                      }}
                       className={cn(
                         "flex h-9 items-center gap-1.5 rounded-full border px-3 text-xs transition-colors sm:text-sm",
                         mode === item.id

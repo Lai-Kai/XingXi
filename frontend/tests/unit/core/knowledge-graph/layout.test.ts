@@ -1,6 +1,10 @@
 import { expect, test } from "@rstest/core";
 
-import { layoutGraphEntities } from "@/core/knowledge-graph/layout";
+import {
+  connectedGraphComponents,
+  layoutGraphEntities,
+  layoutGraphOverview,
+} from "@/core/knowledge-graph/layout";
 import type { GraphEntity, GraphRelation } from "@/core/knowledge-graph/types";
 
 function entity(id: string): GraphEntity {
@@ -91,4 +95,23 @@ test("keeps a crowded neighborhood sparse enough for map-style navigation", () =
   );
 
   expect(minimumDistance(positions)).toBeGreaterThanOrEqual(225);
+});
+
+test("separates disconnected networks into independently discoverable components", () => {
+  const entities = ["a", "b", "c", "isolated"].map(entity);
+  const relations = [relation("a", "b"), relation("b", "c")];
+
+  expect(connectedGraphComponents(entities, relations)).toEqual([
+    {
+      id: "a",
+      entityIds: ["a", "b", "c"],
+      relationIds: ["a-b", "b-c"],
+    },
+    { id: "isolated", entityIds: ["isolated"], relationIds: [] },
+  ]);
+
+  const positions = layoutGraphOverview(entities, relations);
+  expect(positions.size).toBe(4);
+  expect(positions.get("a")).not.toEqual(positions.get("isolated"));
+  expect(positions.get("b")).not.toEqual(positions.get("isolated"));
 });

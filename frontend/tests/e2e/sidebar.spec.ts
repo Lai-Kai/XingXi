@@ -74,6 +74,135 @@ test.describe("Sidebar navigation", () => {
     await expect(agentsButton).toBeFocused();
   });
 
+  test("desktop sidebar can be reopened after collapsing", async ({ page }) => {
+    mockLangGraphAPI(page);
+    await page.goto("/workspace/chats/new");
+
+    const sidebar = page.locator("[data-slot='sidebar']").first();
+    const sidebarTrigger = sidebar.locator("[data-sidebar='trigger']");
+
+    await expect(sidebarTrigger).toBeVisible({ timeout: 15_000 });
+    await expect(sidebar).toHaveAttribute("data-state", "expanded");
+
+    await sidebarTrigger.click();
+    await expect(sidebar).toHaveAttribute("data-state", "collapsed");
+    await expect(sidebar.locator("[data-sidebar='trigger']")).toBeVisible();
+
+    await sidebar.locator("[data-sidebar='trigger']").click();
+    await expect(sidebar).toHaveAttribute("data-state", "expanded");
+  });
+
+  test("desktop sidebar can be resized, collapsed, and dragged open repeatedly", async ({
+    page,
+  }) => {
+    mockLangGraphAPI(page);
+    await page.goto("/workspace/chats/new");
+
+    const sidebar = page.locator("[data-slot='sidebar'][data-state]");
+    const rail = sidebar.locator("[data-sidebar='rail']");
+    await expect(rail).toBeVisible({ timeout: 15_000 });
+
+    const dragRailTo = async (targetX: number) => {
+      const railBox = await rail.boundingBox();
+      expect(railBox).not.toBeNull();
+      const y = railBox!.y + Math.min(80, railBox!.height / 2);
+
+      await page.mouse.move(railBox!.x + railBox!.width / 2, y);
+      await page.mouse.down();
+      await expect(rail).toHaveAttribute("data-resizing", "true");
+      await page.mouse.move(targetX, y, { steps: 4 });
+      await page.mouse.up();
+
+      await expect(rail).not.toHaveAttribute("data-resizing", "true");
+      await expect
+        .poll(() =>
+          page.evaluate(() => ({
+            cursor: document.body.style.cursor,
+            userSelect: document.body.style.userSelect,
+          })),
+        )
+        .toEqual({ cursor: "", userSelect: "" });
+    };
+
+    for (let cycle = 0; cycle < 2; cycle += 1) {
+      await dragRailTo(80);
+      await expect(sidebar).toHaveAttribute("data-state", "collapsed");
+
+      const collapsedBox = await rail.boundingBox();
+      expect(collapsedBox).not.toBeNull();
+      expect(collapsedBox!.x + collapsedBox!.width / 2).toBeCloseTo(48, 0);
+
+      await dragRailTo(280);
+      await expect(sidebar).toHaveAttribute("data-state", "expanded");
+      const expandedBox = await sidebar.boundingBox();
+      expect(expandedBox).not.toBeNull();
+      expect(expandedBox!.width).toBeGreaterThanOrEqual(224);
+      expect(expandedBox!.width).toBeLessThanOrEqual(480);
+    }
+
+    const railLineColor = await rail.evaluate(
+      (element) => getComputedStyle(element, "::after").backgroundColor,
+    );
+    expect(railLineColor).toBe("rgba(0, 0, 0, 0)");
+  });
+
+  test("desktop sidebar resize cleans up after outside release, Escape, and blur", async ({
+    page,
+  }) => {
+    mockLangGraphAPI(page);
+    await page.goto("/workspace/chats/new");
+
+    const sidebar = page.locator("[data-slot='sidebar'][data-state]");
+    const rail = sidebar.locator("[data-sidebar='rail']");
+    await expect(rail).toBeVisible({ timeout: 15_000 });
+
+    const pointerDownOnRail = async () => {
+      const railBox = await rail.boundingBox();
+      expect(railBox).not.toBeNull();
+      const point = {
+        x: railBox!.x + railBox!.width / 2,
+        y: railBox!.y + Math.min(80, railBox!.height / 2),
+      };
+      await page.mouse.move(point.x, point.y);
+      await page.mouse.down();
+      await expect(rail).toHaveAttribute("data-resizing", "true");
+      return point;
+    };
+
+    let point = await pointerDownOnRail();
+    await page.mouse.move(700, point.y, { steps: 3 });
+    await page.mouse.up();
+    await expect(sidebar).toHaveAttribute("data-state", "expanded");
+    await expect(rail).not.toHaveAttribute("data-resizing", "true");
+
+    const maxWidthBox = await sidebar.boundingBox();
+    expect(maxWidthBox).not.toBeNull();
+    expect(maxWidthBox!.width).toBeCloseTo(480, 0);
+
+    point = await pointerDownOnRail();
+    await page.mouse.move(360, point.y, { steps: 2 });
+    await page.keyboard.press("Escape");
+    await page.mouse.up();
+    const escapedBox = await sidebar.boundingBox();
+    expect(escapedBox).not.toBeNull();
+    expect(escapedBox!.width).toBeCloseTo(480, 0);
+
+    point = await pointerDownOnRail();
+    await page.mouse.move(80, point.y, { steps: 2 });
+    await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+    await page.mouse.up();
+    await expect(sidebar).toHaveAttribute("data-state", "collapsed");
+    await expect(rail).not.toHaveAttribute("data-resizing", "true");
+    await expect
+      .poll(() =>
+        page.evaluate(() => ({
+          cursor: document.body.style.cursor,
+          userSelect: document.body.style.userSelect,
+        })),
+      )
+      .toEqual({ cursor: "", userSelect: "" });
+  });
+
   test("mobile welcome layout stays within viewport and opens sidebar", async ({
     page,
   }) => {

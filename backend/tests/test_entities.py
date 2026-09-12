@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import asyncio
 
@@ -62,6 +62,31 @@ def test_list_entities_accepts_release_scope() -> None:
         listed = await service.list_entities(release_id="release-1")
 
         assert [item.id for item in listed] == ["entity-release-scoped"]
+
+    asyncio.run(_run())
+
+
+def test_list_entities_paginates_without_dropping_sorted_rows() -> None:
+    async def _run() -> None:
+        repo = InMemoryEntityRepository()
+        service = EntityService(repo)
+        for index in range(3):
+            await service.create(
+                EntityCreate(
+                    id=f"entity-{index}",
+                    canonical_name=f"主体-{index}",
+                    entity_type=EntityType.PLACE,
+                )
+            )
+
+        first_page = await service.list_entities(limit=2)
+        second_page = await service.list_entities(limit=2, offset=2)
+
+        assert [item.id for item in first_page + second_page] == [
+            "entity-0",
+            "entity-1",
+            "entity-2",
+        ]
 
     asyncio.run(_run())
 

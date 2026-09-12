@@ -44,6 +44,7 @@ async def list_entities(
     q: str | None = Query(default=None, max_length=200),
     release_id: str | None = Query(default=None, max_length=255),
     limit: int = Query(default=50, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
     service: EntityService = Depends(get_entity_service),
 ) -> list[EntityRecord]:
     await get_current_user_from_request(request)
@@ -52,6 +53,7 @@ async def list_entities(
         review_status=review_status,
         q=q,
         limit=limit,
+        offset=offset,
         release_id=await _resolve_active_release_id(release_id),
     )
 

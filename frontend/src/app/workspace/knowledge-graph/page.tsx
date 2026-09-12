@@ -57,7 +57,9 @@ import {
 } from "@/core/knowledge-graph/filters";
 import {
   GRAPH_CENTER,
+  connectedGraphComponents,
   layoutGraphEntities,
+  layoutGraphOverview,
   type GraphPosition,
 } from "@/core/knowledge-graph/layout";
 import type {
@@ -73,6 +75,7 @@ import { sortHistoricalEvents } from "@/core/knowledge-graph/types";
 import { createLatestRequestTracker } from "@/core/source-files/latest-request";
 
 type View = "graph" | "events" | "geo";
+type GraphMode = "explore" | "overview";
 const entityTypes: Array<{ value: EntityType; label: string }> = [
   { value: "person", label: "人物" },
   { value: "family", label: "家族" },
@@ -271,6 +274,10 @@ export default function KnowledgeGraphPage() {
   const [selectedRelationId, setSelectedRelationId] = useState<string | null>(
     null,
   );
+  const [graphMode, setGraphMode] = useState<GraphMode>("explore");
+  const graphModeRef = useRef<GraphMode>("explore");
+  const overviewReturnEntityId = useRef<string | null>(null);
+  const overviewReturnReleaseId = useRef<string | null>(null);
   const [graphScope, setGraphScope] = useState<GraphScope>("all");
   const [graphDepth, setGraphDepth] = useState<GraphDepth>(DEFAULT_GRAPH_DEPTH);
   const graphDepthRef = useRef<GraphDepth>(DEFAULT_GRAPH_DEPTH);
@@ -326,6 +333,13 @@ export default function KnowledgeGraphPage() {
           if (!supportDataTracker.current.isCurrent(request.sequence)) return;
           setEntities(nextEntities);
           setRelations(nextRelations);
+          if (graphModeRef.current === "overview") {
+            setFocusedEntityId(null);
+            setFocusHistory([]);
+            setQuery("");
+            setResult(null);
+            return;
+          }
           const degreeByEntity = new Map<string, number>();
           for (const relation of nextRelations) {
             if (relation.relation_type === "documented_in") continue;
@@ -459,39 +473,50 @@ export default function KnowledgeGraphPage() {
       ),
     [relations],
   );
+  const isGraphOverview = graphMode === "overview";
   const baseDisplayedRelations = useMemo(
     () =>
-      result
-        ? result.status === "supported"
-          ? result.edges
-          : []
-        : focusedEntityId
-          ? graphRelations.filter(
-              (relation) =>
-                relation.subject_id === focusedEntityId ||
-                relation.object_id === focusedEntityId,
-            )
-          : graphRelations,
-    [focusedEntityId, graphRelations, result],
+      isGraphOverview
+        ? graphRelations
+        : result
+          ? result.status === "supported"
+            ? result.edges
+            : []
+          : focusedEntityId
+            ? graphRelations.filter(
+                (relation) =>
+                  relation.subject_id === focusedEntityId ||
+                  relation.object_id === focusedEntityId,
+              )
+            : graphRelations,
+    [focusedEntityId, graphRelations, isGraphOverview, result],
   );
   const baseDisplayedEntities = useMemo(
     () =>
-      result
-        ? result.status === "supported"
-          ? result.nodes
-          : []
-        : focusedEntityId
-          ? graphEntities.filter(
-              (entity) =>
-                entity.id === focusedEntityId ||
-                baseDisplayedRelations.some(
-                  (relation) =>
-                    relation.subject_id === entity.id ||
-                    relation.object_id === entity.id,
-                ),
-            )
-          : graphEntities,
-    [baseDisplayedRelations, focusedEntityId, graphEntities, result],
+      isGraphOverview
+        ? graphEntities
+        : result
+          ? result.status === "supported"
+            ? result.nodes
+            : []
+          : focusedEntityId
+            ? graphEntities.filter(
+                (entity) =>
+                  entity.id === focusedEntityId ||
+                  baseDisplayedRelations.some(
+                    (relation) =>
+                      relation.subject_id === entity.id ||
+                      relation.object_id === entity.id,
+                  ),
+              )
+            : graphEntities,
+    [
+      baseDisplayedRelations,
+      focusedEntityId,
+      graphEntities,
+      isGraphOverview,
+      result,
+    ],
   );
   const relationPassesReview = useCallback(
     (relation: GraphRelation) =>
@@ -513,7 +538,8 @@ export default function KnowledgeGraphPage() {
   const displayedRelations = filterRelationsForScope(
     baseDisplayedRelations.filter(
       (relation) =>
-        (graphDepth > 1 ||
+        (isGraphOverview ||
+          graphDepth > 1 ||
           !focusedEntityId ||
           relation.subject_id === focusedEntityId ||
           relation.object_id === focusedEntityId) &&
@@ -544,12 +570,19 @@ export default function KnowledgeGraphPage() {
   }, [graphRelationPage, safeGraphRelationPage]);
   const visibleGraphRelations = useMemo(
     () =>
-      selectVisibleGraphRelations(
-        displayedRelations,
-        visibleRelationLimit,
-        safeGraphRelationPage,
-      ),
-    [displayedRelations, safeGraphRelationPage, visibleRelationLimit],
+      isGraphOverview
+        ? displayedRelations
+        : selectVisibleGraphRelations(
+            displayedRelations,
+            visibleRelationLimit,
+            safeGraphRelationPage,
+          ),
+    [
+      displayedRelations,
+      isGraphOverview,
+      safeGraphRelationPage,
+      visibleRelationLimit,
+    ],
   );
   const visibleGraphEntityIds = new Set(
     visibleGraphRelations.flatMap((relation) => [
@@ -557,16 +590,21 @@ export default function KnowledgeGraphPage() {
       relation.object_id,
     ]),
   );
-  const displayedEntities = baseDisplayedEntities.filter(
-    (entity) =>
-      entity.id === focusedEntityId ||
-      graphScope === "all" ||
-      entity.entity_type === "person" ||
-      visibleGraphEntityIds.has(entity.id),
+  const displayedEntities = baseDisplayedEntities.filter((entity) =>
+    isGraphOverview
+      ? graphScope === "all" ||
+        entity.entity_type === "person" ||
+        visibleGraphEntityIds.has(entity.id)
+      : entity.id === focusedEntityId ||
+        graphScope === "all" ||
+        entity.entity_type === "person" ||
+        visibleGraphEntityIds.has(entity.id),
   );
   const visibleGraphEntities = displayedEntities.filter(
     (entity) =>
-      entity.id === focusedEntityId || visibleGraphEntityIds.has(entity.id),
+      isGraphOverview ||
+      entity.id === focusedEntityId ||
+      visibleGraphEntityIds.has(entity.id),
   );
   const focusedEntity =
     (focusedEntityId &&
@@ -590,8 +628,21 @@ export default function KnowledgeGraphPage() {
         : [],
     [displayedRelations, focusedEntityId],
   );
-  const panelRelations =
-    graphDepth === 1 ? focusedRelations : displayedRelations;
+  const panelRelations = isGraphOverview
+    ? focusedRelations
+    : graphDepth === 1
+      ? focusedRelations
+      : displayedRelations;
+  const graphComponents = useMemo(
+    () => connectedGraphComponents(displayedEntities, displayedRelations),
+    [displayedEntities, displayedRelations],
+  );
+  const connectedComponentCount = graphComponents.filter(
+    (component) => component.relationIds.length > 0,
+  ).length;
+  const isolatedEntityCount = graphComponents.filter(
+    (component) => component.relationIds.length === 0,
+  ).length;
   const evidenceById = useMemo(
     () =>
       new Map(
@@ -602,15 +653,17 @@ export default function KnowledgeGraphPage() {
       ),
     [result?.evidence],
   );
-  const graphShapeKey = `${visibleGraphEntities.map((entity) => entity.id).join(",")}|${visibleGraphRelations.map((relation) => relation.id).join(",")}|${focusedEntityId ?? ""}`;
+  const graphShapeKey = `${graphMode}|${visibleGraphEntities.map((entity) => entity.id).join(",")}|${visibleGraphRelations.map((relation) => relation.id).join(",")}|${focusedEntityId ?? ""}`;
   useEffect(() => {
     const recenter = previousFocusedEntityId.current !== focusedEntityId;
     previousFocusedEntityId.current = focusedEntityId;
-    const defaults = layoutGraphEntities(
-      visibleGraphEntities,
-      visibleGraphRelations,
-      focusedEntityId,
-    );
+    const defaults = isGraphOverview
+      ? layoutGraphOverview(visibleGraphEntities, visibleGraphRelations)
+      : layoutGraphEntities(
+          visibleGraphEntities,
+          visibleGraphRelations,
+          focusedEntityId,
+        );
     setNodePositions((current) => {
       let changed = false;
       const next: Record<string, GraphPosition> = {};
@@ -627,11 +680,13 @@ export default function KnowledgeGraphPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graphShapeKey]);
   const flow = useMemo(() => {
-    const positions = layoutGraphEntities(
-      visibleGraphEntities,
-      visibleGraphRelations,
-      focusedEntityId,
-    );
+    const positions = isGraphOverview
+      ? layoutGraphOverview(visibleGraphEntities, visibleGraphRelations)
+      : layoutGraphEntities(
+          visibleGraphEntities,
+          visibleGraphRelations,
+          focusedEntityId,
+        );
     const nodes: Node[] = visibleGraphEntities.map((entity, index) => {
       const nodeStyle = entityNodeStyles[entity.entity_type];
       return {
@@ -683,6 +738,7 @@ export default function KnowledgeGraphPage() {
     return { nodes, edges };
   }, [
     focusedEntityId,
+    isGraphOverview,
     nodePositions,
     visibleGraphEntities,
     visibleGraphRelations,
@@ -716,9 +772,17 @@ export default function KnowledgeGraphPage() {
   }, []);
 
   useEffect(() => {
-    if (!focusedEntityId) return;
     const frame = window.requestAnimationFrame(() => {
-      if (graphDepth > 1) {
+      if (isGraphOverview) {
+        void flowInstance.current?.fitView({
+          padding: 0.12,
+          minZoom: 0.08,
+          maxZoom: 0.82,
+          duration: 250,
+        });
+      } else if (!focusedEntityId) {
+        return;
+      } else if (graphDepth > 1) {
         void flowInstance.current?.fitView({
           padding: 0.18,
           minZoom: 0.12,
@@ -730,11 +794,51 @@ export default function KnowledgeGraphPage() {
       }
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [centerGraphOn, focusedEntityId, graphShapeKey, graphDepth]);
+  }, [
+    centerGraphOn,
+    focusedEntityId,
+    graphDepth,
+    graphShapeKey,
+    isGraphOverview,
+  ]);
+
+  function showGraphOverview() {
+    queryTracker.current.cancel();
+    focusTracker.current.cancel();
+    resultRequestSequence.current += 1;
+    overviewReturnEntityId.current = focusedEntityId;
+    overviewReturnReleaseId.current = result?.release_id ?? null;
+    graphModeRef.current = "overview";
+    setGraphMode("overview");
+    setResult(null);
+    setFocusedEntityId(null);
+    setFocusHistory([]);
+    setQuery("");
+    setSelectedRelationId(null);
+    setQueryLoading(false);
+    setFocusLoading(false);
+    setError(null);
+  }
+
+  function enterFocusedGraph(options: { restore?: boolean } = {}) {
+    graphModeRef.current = "explore";
+    setGraphMode("explore");
+    if (options.restore && overviewReturnEntityId.current) {
+      const entityId = overviewReturnEntityId.current;
+      const releaseId = overviewReturnReleaseId.current;
+      overviewReturnEntityId.current = null;
+      overviewReturnReleaseId.current = null;
+      void focusEntity(entityId, {
+        addToHistory: false,
+        releaseId: releaseId ?? undefined,
+      });
+    }
+  }
 
   async function runQuery() {
     const normalizedQuery = query.trim();
     if (!normalizedQuery || queryLoading) return;
+    enterFocusedGraph();
     focusTracker.current.cancel();
     setFocusLoading(false);
     const request = queryTracker.current.start();
@@ -803,12 +907,22 @@ export default function KnowledgeGraphPage() {
 
   async function focusEntity(
     entityId: string,
-    options: { addToHistory?: boolean; depth?: GraphDepth } = {},
+    options: {
+      addToHistory?: boolean;
+      depth?: GraphDepth;
+      releaseId?: string;
+    } = {},
   ) {
     if (focusLoading || queryLoading) return;
     const entity = entityById.get(entityId);
     if (!entity) return;
     if (entityId === focusedEntityId && options.depth === undefined) return;
+    const releaseId =
+      options.releaseId ??
+      result?.release_id ??
+      (isGraphOverview ? overviewReturnReleaseId.current : null);
+    if (isGraphOverview) overviewReturnReleaseId.current = null;
+    enterFocusedGraph();
     if (
       options.addToHistory !== false &&
       focusedEntityId &&
@@ -848,7 +962,7 @@ export default function KnowledgeGraphPage() {
         options.depth ?? graphDepthRef.current,
         {
           maxNodes: LOCAL_GRAPH_MAX_NODES,
-          releaseId: result?.release_id ?? undefined,
+          releaseId: releaseId ?? undefined,
           signal: request.signal,
         },
       );
@@ -1014,6 +1128,32 @@ export default function KnowledgeGraphPage() {
           <section className="mt-4">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border-b pb-3">
               <div className="flex flex-wrap items-center gap-2">
+                <div
+                  className="flex rounded-md bg-[#eaf1ef] p-1"
+                  role="group"
+                  aria-label="图谱视图"
+                >
+                  <button
+                    type="button"
+                    aria-pressed={isGraphOverview}
+                    disabled={loading || focusLoading || queryLoading}
+                    onClick={showGraphOverview}
+                    title="查看当前知识版本中的所有独立关系网"
+                    className={`h-8 rounded px-3 text-xs disabled:cursor-wait disabled:opacity-60 ${isGraphOverview ? "bg-white font-medium text-[#225b5f] shadow-sm" : "text-[#68797a]"}`}
+                  >
+                    全图总览
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={!isGraphOverview}
+                    disabled={loading || focusLoading || queryLoading}
+                    onClick={() => enterFocusedGraph({ restore: true })}
+                    title="返回当前主体的多跳关系探索"
+                    className={`h-8 rounded px-3 text-xs disabled:cursor-wait disabled:opacity-60 ${!isGraphOverview ? "bg-white font-medium text-[#225b5f] shadow-sm" : "text-[#68797a]"}`}
+                  >
+                    主体探索
+                  </button>
+                </div>
                 {focusHistory.length > 0 && (
                   <button
                     type="button"
@@ -1042,7 +1182,12 @@ export default function KnowledgeGraphPage() {
                       key={depth}
                       type="button"
                       aria-pressed={graphDepth === depth}
-                      disabled={loading || focusLoading || queryLoading}
+                      disabled={
+                        isGraphOverview ||
+                        loading ||
+                        focusLoading ||
+                        queryLoading
+                      }
                       onClick={() => changeGraphDepth(depth)}
                       className={`h-8 rounded px-3 text-xs disabled:cursor-wait disabled:opacity-60 ${graphDepth === depth ? "bg-white font-medium text-[#225b5f] shadow-sm" : "text-[#68797a]"}`}
                     >
@@ -1081,9 +1226,11 @@ export default function KnowledgeGraphPage() {
             </div>
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-[#dbe5e2] pb-3 text-xs text-[#68797a]">
               <span>
-                {focusedEntity
-                  ? `以“${focusedEntity.canonical_name}”为中心 · 已载入 ${result?.max_depth ?? 1} 层关系`
-                  : "从搜索或图中节点开始探索"}
+                {isGraphOverview
+                  ? `全图总览 · ${connectedComponentCount} 个独立关系网${isolatedEntityCount ? ` · ${isolatedEntityCount} 个孤立主体` : ""}`
+                  : focusedEntity
+                    ? `以“${focusedEntity.canonical_name}”为中心 · 已载入 ${result?.max_depth ?? 1} 层关系`
+                    : "从搜索或图中节点开始探索"}
                 {(focusLoading || queryLoading) && " · 正在加载关系网…"}
               </span>
               <span>
@@ -1091,7 +1238,7 @@ export default function KnowledgeGraphPage() {
                 {displayedRelations.length} 条关系
               </span>
             </div>
-            {graphRelationPageCount > 1 && (
+            {!isGraphOverview && graphRelationPageCount > 1 && (
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded border border-[#dbe5e2] bg-white px-3 py-2 text-xs text-[#68797a]">
                 <span>
                   地图关系第 {safeGraphRelationPage + 1} /{" "}
@@ -1142,9 +1289,21 @@ export default function KnowledgeGraphPage() {
                     maxZoom={1.6}
                     onInit={(instance) => {
                       flowInstance.current = instance;
-                      void instance.setCenter(GRAPH_CENTER.x, GRAPH_CENTER.y, {
-                        zoom: 0.82,
-                      });
+                      if (isGraphOverview) {
+                        void instance.fitView({
+                          padding: 0.12,
+                          minZoom: 0.08,
+                          maxZoom: 0.82,
+                        });
+                      } else {
+                        void instance.setCenter(
+                          GRAPH_CENTER.x,
+                          GRAPH_CENTER.y,
+                          {
+                            zoom: 0.82,
+                          },
+                        );
+                      }
                     }}
                     onNodesChange={handleNodesChange}
                     nodesDraggable
@@ -1383,6 +1542,64 @@ export default function KnowledgeGraphPage() {
                           当前范围还没有可展示的关系。
                         </li>
                       )}
+                    </ul>
+                  </>
+                ) : isGraphOverview ? (
+                  <>
+                    <h2 className="text-sm font-semibold">
+                      关系网总览（{connectedComponentCount}）
+                    </h2>
+                    <p className="mt-1 text-xs leading-5 text-[#718082]">
+                      当前知识版本中有 {connectedComponentCount}{" "}
+                      个互不相连的关系网。点击任意关系网的主体，即可进入对应的多跳探索。
+                      {isolatedEntityCount
+                        ? `另有 ${isolatedEntityCount} 个暂未形成关系的孤立主体。`
+                        : ""}
+                    </p>
+                    <ul className="mt-3 space-y-3">
+                      {graphComponents.map((component, index) => {
+                        const firstEntityId = component.entityIds[0];
+                        if (!firstEntityId) return null;
+                        const names = component.entityIds
+                          .map(
+                            (entityId) =>
+                              entityById.get(entityId)?.canonical_name,
+                          )
+                          .filter((name): name is string => Boolean(name));
+                        const isIsolated = component.relationIds.length === 0;
+                        return (
+                          <li
+                            key={component.id}
+                            className="border-b border-[#e4ebea] pb-3 text-xs leading-5"
+                          >
+                            <div className="font-medium">
+                              {isIsolated ? "孤立主体" : `关系网 ${index + 1}`}
+                            </div>
+                            <div className="mt-1 text-[#748385]">
+                              {component.entityIds.length} 个主体 ·{" "}
+                              {component.relationIds.length} 条关系
+                            </div>
+                            <p className="mt-1 text-[#315f64]">
+                              {names.slice(0, 5).join("、")}
+                              {names.length > 5
+                                ? ` 等 ${names.length} 个主体`
+                                : ""}
+                            </p>
+                            <button
+                              type="button"
+                              disabled={focusLoading || queryLoading}
+                              onClick={() =>
+                                void focusEntity(firstEntityId, {
+                                  addToHistory: false,
+                                })
+                              }
+                              className="mt-1 font-semibold text-[#24676c] hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              从此关系网开始探索
+                            </button>
+                          </li>
+                        );
+                      })}
                     </ul>
                   </>
                 ) : (

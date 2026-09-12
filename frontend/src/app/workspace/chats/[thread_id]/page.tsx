@@ -61,6 +61,7 @@ import {
   modeContextForEntry,
   parseEntryMode,
   parseXingxiChatScope,
+  XINGXI_ENTRY_MODES,
 } from "@/core/threads/xingxi-entry";
 import { env } from "@/env";
 import { cn } from "@/lib/utils";
@@ -82,12 +83,18 @@ export default function ChatPage() {
   // `isNewThread` stays true until the backend actually creates the thread.
   const [isWelcomeMode, setIsWelcomeMode] = useState(isNewThread);
   const [settings, setSettings] = useThreadSettings(threadId);
-  const entryModeContext = useMemo(() => {
-    const entryMode = isNewThread
-      ? parseEntryMode(searchParams.get("mode"))
-      : undefined;
-    return entryMode ? modeContextForEntry(entryMode) : null;
-  }, [isNewThread, searchParams]);
+  const entryMode = useMemo(
+    () => (isNewThread ? parseEntryMode(searchParams.get("mode")) : undefined),
+    [isNewThread, searchParams],
+  );
+  const entryModeContext = useMemo(
+    () => (entryMode ? modeContextForEntry(entryMode) : null),
+    [entryMode],
+  );
+  const entryModeTitle = useMemo(
+    () => XINGXI_ENTRY_MODES.find((item) => item.id === entryMode)?.label,
+    [entryMode],
+  );
   const entryTopicContext = useMemo(
     () =>
       isNewThread
@@ -417,7 +424,11 @@ export default function ChatPage() {
             >
               <SidebarTrigger className="md:hidden" />
               <div className="flex min-w-0 flex-1 items-center text-sm font-medium">
-                <ThreadTitle threadId={threadId} thread={thread} />
+                <ThreadTitle
+                  threadId={threadId}
+                  thread={thread}
+                  newThreadTitle={entryModeTitle}
+                />
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 {!isNewThread && (

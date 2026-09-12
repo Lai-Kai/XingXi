@@ -25,6 +25,7 @@ class EntityRepository(Protocol):
         review_status: ReviewStatus | None = None,
         q: str | None = None,
         limit: int = 50,
+        offset: int = 0,
         release_id: str | None = None,
     ) -> list[EntityRecord]: ...
 
@@ -66,6 +67,7 @@ class InMemoryEntityRepository:
         review_status: ReviewStatus | None = None,
         q: str | None = None,
         limit: int = 50,
+        offset: int = 0,
         release_id: str | None = None,
     ) -> list[EntityRecord]:
         rows = list(self._items.values())
@@ -77,7 +79,7 @@ class InMemoryEntityRepository:
             needle = q.casefold()
             rows = [row for row in rows if needle in row.canonical_name.casefold() or needle in (row.summary or "").casefold()]
         rows.sort(key=lambda row: (row.canonical_name, row.id))
-        return rows[:limit]
+        return rows[offset : offset + limit]
 
     async def get(self, entity_id: str) -> EntityRecord | None:
         return self._items.get(entity_id)
@@ -118,6 +120,7 @@ class EntityService:
         review_status: ReviewStatus | None = None,
         q: str | None = None,
         limit: int = 50,
+        offset: int = 0,
         release_id: str | None = None,
     ) -> list[EntityRecord]:
         return await self._repository.list(
@@ -125,6 +128,7 @@ class EntityService:
             review_status=review_status,
             q=q,
             limit=limit,
+            offset=offset,
             release_id=release_id,
         )
 

@@ -66,6 +66,66 @@ test("graph catalog shares an in-flight load", async () => {
   expect(requests).toHaveLength(2);
 });
 
+test("graph catalog follows entity and relation pages until both catalogs are complete", async () => {
+  const requests: string[] = [];
+  rs.stubGlobal("fetch", async (url: string) => {
+    const parsed = new URL(url, "http://localhost");
+    const offset = Number(parsed.searchParams.get("offset"));
+    requests.push(`${parsed.pathname}:${offset}`);
+    if (parsed.pathname.endsWith("/api/entities")) {
+      const count = offset === 0 ? 1000 : offset === 1000 ? 1 : 0;
+      return new Response(
+        JSON.stringify(
+          Array.from({ length: count }, (_, index) => ({
+            id: `entity-${offset + index}`,
+            canonical_name: `主体${offset + index}`,
+            entity_type: "place",
+            dynasty: null,
+            extant_status: null,
+            summary: null,
+            review_status: "reviewed",
+            release_id: null,
+            evidence_ids: [],
+          })),
+        ),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    const count = offset === 0 ? 2000 : offset === 2000 ? 1 : 0;
+    return new Response(
+      JSON.stringify(
+        Array.from({ length: count }, (_, index) => ({
+          id: `relation-${offset + index}`,
+          subject_id: "entity-0",
+          relation_type: "related_to",
+          object_id: "entity-1",
+          start_time: null,
+          end_time: null,
+          confidence: 1,
+          evidence_ids: [],
+          is_inferred: true,
+          review_status: "pending",
+          release_id: null,
+        })),
+      ),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  });
+
+  const catalog = await fetchGraphCatalog();
+
+  expect(catalog.entities).toHaveLength(1001);
+  expect(catalog.relations).toHaveLength(2001);
+  expect(catalog.entities.at(-1)?.id).toBe("entity-1000");
+  expect(catalog.relations.at(-1)?.id).toBe("relation-2000");
+  expect([...requests].sort()).toEqual([
+    "/api/entities:0",
+    "/api/entities:1000",
+    "/api/knowledge-graph/relations:0",
+    "/api/knowledge-graph/relations:2000",
+  ]);
+});
+
 test("graph depth changes stay in the requested Release and use separate cache entries", async () => {
   const requests: URL[] = [];
   rs.stubGlobal("fetch", async (url: string) => {

@@ -6,6 +6,7 @@ import {
   parseXingxiChatScope,
   parseEntryMode,
   xingxiChatHref,
+  xingxiWorkspaceHref,
   XINGXI_ENTRY_MODES,
 } from "@/core/threads/xingxi-entry";
 
@@ -18,6 +19,14 @@ test("deep exploration selects the real ultra model mode", () => {
   expect(url.searchParams.get("prompt")).toBe("核验木渎商号");
   expect(url.searchParams.has("research_mode")).toBe(false);
   expect(url.searchParams.has("agent_name")).toBe(false);
+});
+
+test("mode entry opens the existing workspace before creating a chat", () => {
+  expect(xingxiWorkspaceHref("pro")).toBe("/workspace?mode=pro");
+  expect(xingxiWorkspaceHref("flash")).toBe("/workspace?mode=flash");
+  expect(xingxiChatHref("   ", "flash")).toBe(
+    "/workspace/chats/new?mode=flash",
+  );
 });
 
 test("agent identity is not exposed as a selectable research mode", () => {

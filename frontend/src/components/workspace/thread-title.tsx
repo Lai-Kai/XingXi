@@ -10,10 +10,12 @@ import { FlipDisplay } from "./flip-display";
 export function ThreadTitle({
   threadId,
   thread,
+  newThreadTitle,
 }: {
   className?: string;
   threadId: string;
   thread: BaseStream<AgentThreadState>;
+  newThreadTitle?: string;
 }) {
   const { t } = useI18n();
   const { isNewThread } = useThreadChat();
@@ -23,7 +25,7 @@ export function ThreadTitle({
     if (thread.values?.title) {
       _title = thread.values.title;
     } else if (isNewThread) {
-      _title = t.pages.newChat;
+      _title = newThreadTitle ?? t.pages.newChat;
     }
     if (thread.isThreadLoading) {
       document.title = `Loading... - ${t.pages.appName}`;
@@ -32,6 +34,7 @@ export function ThreadTitle({
     }
   }, [
     isNewThread,
+    newThreadTitle,
     t.pages.newChat,
     t.pages.untitled,
     t.pages.appName,
@@ -40,7 +43,7 @@ export function ThreadTitle({
   ]);
 
   if (!thread.values?.title) {
-    return null;
+    return newThreadTitle ? <span>{newThreadTitle}</span> : null;
   }
   return (
     <FlipDisplay uniqueKey={threadId}>

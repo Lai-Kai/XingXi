@@ -210,6 +210,14 @@ test("explores one-hop relationships from a clicked subject", async ({
 
   await page.getByRole("button", { name: "查看资料出处" }).first().click();
   await expect(page.getByText("木渎人物谱")).toBeVisible();
+
+  await page.getByRole("button", { name: "全图总览", exact: true }).click();
+  await expect(
+    page.locator('.react-flow__node[data-id="person-far"]'),
+  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: /关系网总览/ })).toBeVisible();
+  await page.getByRole("button", { name: "主体探索", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "李明" })).toBeVisible();
 });
 
 test("loads peripheral relationships and evidence beyond the local catalog", async ({

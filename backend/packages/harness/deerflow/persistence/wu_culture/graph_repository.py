@@ -320,6 +320,7 @@ class SqlKnowledgeGraphRepository:
         release_id: str | None = None,
         relation_types: Sequence[str] | None = None,
         limit: int = 200,
+        offset: int = 0,
     ) -> list[RelationRecord]:
         if not entity_ids:
             return []
@@ -350,7 +351,7 @@ class SqlKnowledgeGraphRepository:
                         ).asc(),
                         WuRelationRow.is_inferred.asc(),
                         WuRelationRow.id.asc(),
-                    ).limit(limit)
+                    ).offset(offset).limit(limit)
                 )
             ).scalars().all()
             if not rows:
@@ -441,9 +442,16 @@ class SqlKnowledgeGraphRepository:
         relation_types: Sequence[str] | None = None,
         release_id: str | None = None,
         limit: int = 200,
+        offset: int = 0,
     ) -> list[RelationRecord]:
         if entity_id:
-            return await self.relations_for_entities((entity_id,), relation_types=relation_types, release_id=release_id, limit=limit)
+            return await self.relations_for_entities(
+                (entity_id,),
+                relation_types=relation_types,
+                release_id=release_id,
+                limit=limit,
+                offset=offset,
+            )
         async with self._session_factory() as session:
             stmt = select(WuRelationRow).where(
                 WuRelationRow.review_status != ReviewStatus.REJECTED.value,
@@ -467,6 +475,7 @@ class SqlKnowledgeGraphRepository:
                         WuRelationRow.is_inferred.asc(),
                         WuRelationRow.id.asc(),
                     )
+                    .offset(offset)
                     .limit(limit)
                     .with_only_columns(WuRelationRow.id)
                 )

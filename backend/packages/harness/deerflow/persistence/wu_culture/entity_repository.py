@@ -46,6 +46,7 @@ class SqlEntityRepository:
         review_status: ReviewStatus | None = None,
         q: str | None = None,
         limit: int = 50,
+        offset: int = 0,
         release_id: str | None = None,
     ) -> list[EntityRecord]:
         async with self._session_factory() as session:
@@ -79,7 +80,7 @@ class SqlEntityRepository:
                     .where(WuEntityEvidenceRow.entity_id == WuEntityRow.id)
                     .exists(),
                 )
-            stmt = stmt.order_by(WuEntityRow.canonical_name.asc(), WuEntityRow.id.asc()).limit(limit)
+            stmt = stmt.order_by(WuEntityRow.canonical_name.asc(), WuEntityRow.id.asc()).offset(offset).limit(limit)
             rows = (await session.execute(stmt)).scalars().all()
             result: list[EntityRecord] = []
             for row in rows:

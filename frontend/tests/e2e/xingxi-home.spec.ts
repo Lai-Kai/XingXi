@@ -2,6 +2,31 @@ import { expect, test } from "@playwright/test";
 
 import { mockLangGraphAPI } from "./utils/mock-api";
 
+const agentEntryCases = [
+  {
+    button: "启动专业研究",
+    mode: "pro",
+    modeControl: "专业研究",
+    title: "专业研究",
+    context: {
+      mode: "pro",
+      thinking_enabled: true,
+      reasoning_effort: "medium",
+    },
+  },
+  {
+    button: "启动轻量问答",
+    mode: "flash",
+    modeControl: "快速问答",
+    title: "快速问答",
+    context: {
+      mode: "flash",
+      thinking_enabled: false,
+      reasoning_effort: "minimal",
+    },
+  },
+] as const;
+
 test.describe("Xingxi home", () => {
   test.beforeEach(async ({ page }) => {
     mockLangGraphAPI(page);
@@ -66,6 +91,101 @@ test.describe("Xingxi home", () => {
       }),
     ).toBeVisible();
   });
+
+  for (const entry of agentEntryCases) {
+    test(`${entry.button} uses in-app navigation and preserves ${entry.mode} mode`, async ({
+      page,
+    }) => {
+      let submittedContext: Record<string, unknown> | undefined;
+      page.on("request", (request) => {
+        if (
+          request.method() === "POST" &&
+          request.url().includes("/runs/stream")
+        ) {
+          submittedContext = (
+            request.postDataJSON() as {
+              context?: Record<string, unknown>;
+            }
+          ).context;
+        }
+      });
+      await page.route("**/api/models", (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            models: [
+              {
+                id: "xingxi-test-model",
+                name: "xingxi-test-model",
+                model: "xingxi-test-model",
+                display_name: "Xingxi Test Model",
+                supports_thinking: true,
+                supports_reasoning_effort: true,
+              },
+            ],
+            token_usage: { enabled: false },
+          }),
+        }),
+      );
+      await page.goto("/workspace/agent");
+
+      await expect(page.getByRole("link", { name: entry.button })).toHaveCount(
+        0,
+      );
+      const entryButton = page.getByRole("button", { name: entry.button });
+      await expect(entryButton).toBeVisible({ timeout: 15_000 });
+      await page.evaluate(() => {
+        (
+          window as typeof window & { __xingxiClientNavigation?: string }
+        ).__xingxiClientNavigation = "preserved";
+      });
+
+      await entryButton.click();
+
+      await expect(page).toHaveURL(
+        new RegExp(`/workspace\\?mode=${entry.mode}$`),
+      );
+      await expect(
+        page.getByRole("button", { name: entry.modeControl, exact: true }),
+      ).toHaveAttribute("aria-pressed", "true");
+      await expect(page).toHaveTitle(new RegExp(`^${entry.title} - `));
+
+      const textarea = page.getByLabel("研究问题");
+      await textarea.fill("验证入口模式参数");
+      await page.getByRole("button", { name: "开始研究" }).click();
+      await expect(page).toHaveURL(
+        new RegExp(`/workspace/chats/new\\?mode=${entry.mode}&prompt=`),
+      );
+      await expect(page.getByText("Hello from DeerFlow!")).toBeVisible({
+        timeout: 10_000,
+      });
+      await expect
+        .poll(() => submittedContext)
+        .toMatchObject({
+          ...entry.context,
+          is_plan_mode: entry.mode === "pro",
+          subagent_enabled: false,
+        });
+      expect(
+        await page.evaluate(
+          () =>
+            (window as typeof window & { __xingxiClientNavigation?: string })
+              .__xingxiClientNavigation,
+        ),
+      ).toBe("preserved");
+
+      await page.goBack();
+      await expect(page).toHaveURL(
+        new RegExp(`/workspace\\?mode=${entry.mode}$`),
+      );
+      await page.goBack();
+      await expect(page).toHaveURL(/\/workspace\/agent$/);
+      await expect(
+        page.getByRole("button", { name: entry.button }),
+      ).toBeVisible();
+    });
+  }
 
   test("deep exploration keeps Xingxi fixed and selects ultra mode", async ({
     page,

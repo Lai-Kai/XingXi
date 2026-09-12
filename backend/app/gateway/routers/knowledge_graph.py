@@ -267,6 +267,7 @@ async def list_relations(
     relation_types: list[str] | None = Query(default=None),
     release_id: str | None = Query(default=None, max_length=255),
     limit: int = Query(default=100, ge=1, le=2000),
+    offset: int = Query(default=0, ge=0),
     repository: SqlKnowledgeGraphRepository = Depends(get_graph_repository),
 ) -> list[RelationRecord]:
     await get_current_user_from_request(request)
@@ -276,6 +277,7 @@ async def list_relations(
         relation_types=relation_types,
         release_id=release_id,
         limit=limit,
+        offset=offset,
     )
 
 

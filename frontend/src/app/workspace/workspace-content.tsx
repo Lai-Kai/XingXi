@@ -2,9 +2,10 @@ import { cookies } from "next/headers";
 import { Toaster } from "sonner";
 
 import { QueryClientProvider } from "@/components/query-client-provider";
-import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { SidebarInset } from "@/components/ui/sidebar";
 import { CommandPalette } from "@/components/workspace/command-palette";
 import { GatewayOfflineBanner } from "@/components/workspace/gateway-offline-banner";
+import { WorkspaceSidebarProvider } from "@/components/workspace/resizable-sidebar";
 import { WorkspaceSidebar } from "@/components/workspace/workspace-sidebar";
 
 function parseSidebarOpenCookie(
@@ -29,13 +30,16 @@ export async function WorkspaceContent({
 
   return (
     <QueryClientProvider>
-      <SidebarProvider className="h-screen" defaultOpen={initialSidebarOpen}>
+      <WorkspaceSidebarProvider
+        className="h-screen"
+        defaultOpen={initialSidebarOpen}
+      >
         <WorkspaceSidebar />
         <SidebarInset className="min-w-0">
           <GatewayOfflineBanner gatewayUnavailable={gatewayUnavailable} />
           {children}
         </SidebarInset>
-      </SidebarProvider>
+      </WorkspaceSidebarProvider>
       <CommandPalette />
       <Toaster position="top-center" />
     </QueryClientProvider>

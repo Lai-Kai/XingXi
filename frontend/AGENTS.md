@@ -106,6 +106,14 @@ Tool-calling AI messages can contain user-visible text as well as `tool_calls`. 
 
 ### Interaction Ownership
 
+- `src/app/workspace/agent/page.tsx` owns the two primary Xingxi mode-entry
+  commands. They must navigate with the App Router to the existing `/workspace`
+  composer, passing its validated mode through `core/threads/xingxi-entry.ts`;
+  only a real prompt submission opens `/workspace/chats/new`. Do not add anchor
+  fallbacks or a second mode-to-URL mapping.
+- `src/components/workspace/resizable-sidebar.tsx` owns desktop workspace sidebar
+  width limits and the Pointer Events resize lifecycle. Keep its rail mounted in
+  icon mode and keep resize behavior out of the generated `components/ui/sidebar.tsx`.
 - `src/app/workspace/chats/[thread_id]/page.tsx` owns composer busy-state wiring.
 - `src/app/workspace/chats/[thread_id]/page.tsx` owns branch-from-turn submission and navigation; sidecar `MessageList` instances do not receive the branch action.
 - `src/app/workspace/chats/[thread_id]/page.tsx` and `src/app/workspace/agents/[agent_name]/chats/[thread_id]/page.tsx` own active-goal display state for their composer overlays.
@@ -148,6 +156,18 @@ When adding features:
 3. Write unit tests under `tests/unit/` (`pnpm test`) and E2E tests under `tests/e2e/` (`pnpm test:e2e`)
 4. Run `pnpm check` before committing
 5. Update this `AGENTS.md` when architecture, commands, or conventions change
+
+## Xingxi Knowledge Graph Surface
+
+`src/app/workspace/knowledge-graph/page.tsx` has two graph modes: bounded
+subject exploration and a full catalog overview. The overview must use the
+release-scoped catalog already loaded by `core/knowledge-graph/api.ts`, retain
+every visible connected component, and lay disconnected components out in
+separate regions. Clicking a node or an overview entry returns to bounded
+multi-hop exploration; preserve the returned Release ID, Evidence locators,
+review labels, and server truncation state while doing so. The `all`/`people`
+control filters relationship scope inside either mode and must not be treated
+as a control for selecting connected components.
 
 ## Xingxi Map Surface
 

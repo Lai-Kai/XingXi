@@ -30,6 +30,10 @@ export function modeContextForEntry(mode: XingxiEntryMode) {
   };
 }
 
+export function xingxiWorkspaceHref(mode: XingxiEntryMode) {
+  return `/workspace?${new URLSearchParams({ mode }).toString()}`;
+}
+
 export type XingxiChatScope = {
   documentIds?: string[];
   evidenceIds?: string[];
@@ -42,7 +46,8 @@ export function xingxiChatHref(
   mode: XingxiEntryMode,
   scope?: XingxiChatScope,
 ) {
-  const params = new URLSearchParams({ mode, prompt });
+  const params = new URLSearchParams({ mode });
+  if (prompt.trim()) params.set("prompt", prompt);
   for (const documentId of new Set(scope?.documentIds ?? [])) {
     if (documentId) params.append("document_id", documentId);
   }

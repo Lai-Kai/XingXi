@@ -32,6 +32,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 type ListOptions = {
   entityId?: string;
   limit?: number;
+  offset?: number;
   signal?: AbortSignal;
 };
 
@@ -84,17 +85,36 @@ export function invalidateGraphCatalogCache() {
 }
 
 export const listEntities = (options: ListOptions = {}) =>
-  request<GraphEntity[]>(`/api/entities?limit=${options.limit ?? 50}`, {
-    signal: options.signal,
-  });
+  request<GraphEntity[]>(
+    `/api/entities?${new URLSearchParams({
+      limit: String(options.limit ?? 50),
+      offset: String(options.offset ?? 0),
+    })}`,
+    { signal: options.signal },
+  );
 export const listRelations = (options: ListOptions = {}) =>
   request<GraphRelation[]>(
     `/api/knowledge-graph/relations?${new URLSearchParams({
       ...(options.entityId ? { entity_id: options.entityId } : {}),
       limit: String(options.limit ?? 100),
+      offset: String(options.offset ?? 0),
     })}`,
     { signal: options.signal },
   );
+
+async function listAllPages<T>(
+  pageSize: number,
+  fetchPage: (offset: number) => Promise<T[]>,
+): Promise<T[]> {
+  const items: T[] = [];
+  let offset = 0;
+  while (true) {
+    const page = await fetchPage(offset);
+    items.push(...page);
+    if (page.length < pageSize) return items;
+    offset += page.length;
+  }
+}
 
 export async function fetchGraphCatalog(
   options: { force?: boolean; signal?: AbortSignal } = {},
@@ -102,8 +122,12 @@ export async function fetchGraphCatalog(
   const cached = readCachedGraphCatalog();
   if (cached && !options.force) return cached;
   graphCatalogInFlight ??= Promise.all([
-    listEntities({ limit: 1000 }),
-    listRelations({ limit: 2000 }),
+    listAllPages(1000, (offset) =>
+      listEntities({ limit: 1000, offset, signal: options.signal }),
+    ),
+    listAllPages(2000, (offset) =>
+      listRelations({ limit: 2000, offset, signal: options.signal }),
+    ),
   ])
     .then(([entities, relations]) => {
       const value = { entities, relations };
