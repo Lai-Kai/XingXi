@@ -1,38 +1,4 @@
-export type XingxiEntryMode = "flash" | "pro" | "ultra";
-
-export const XINGXI_ENTRY_MODES: ReadonlyArray<{
-  id: XingxiEntryMode;
-  label: string;
-}> = [
-  { id: "flash", label: "快速问答" },
-  { id: "pro", label: "专业研究" },
-  { id: "ultra", label: "深度求索" },
-];
-
-export function parseEntryMode(
-  value: string | null,
-): XingxiEntryMode | undefined {
-  return value === "flash" || value === "pro" || value === "ultra"
-    ? value
-    : undefined;
-}
-
-export function modeContextForEntry(mode: XingxiEntryMode) {
-  return {
-    mode,
-    thinking_enabled: mode !== "flash",
-    reasoning_effort:
-      mode === "ultra"
-        ? ("medium" as const)
-        : mode === "pro"
-          ? ("medium" as const)
-          : ("minimal" as const),
-  };
-}
-
-export function xingxiWorkspaceHref(mode: XingxiEntryMode) {
-  return `/workspace?${new URLSearchParams({ mode }).toString()}`;
-}
+export const XINGXI_CHAT_PATH = "/workspace/chats/new";
 
 export type XingxiChatScope = {
   documentIds?: string[];
@@ -41,12 +7,8 @@ export type XingxiChatScope = {
   retrievalQuery?: string;
 };
 
-export function xingxiChatHref(
-  prompt: string,
-  mode: XingxiEntryMode,
-  scope?: XingxiChatScope,
-) {
-  const params = new URLSearchParams({ mode });
+export function xingxiChatHref(prompt: string, scope?: XingxiChatScope) {
+  const params = new URLSearchParams();
   if (prompt.trim()) params.set("prompt", prompt);
   for (const documentId of new Set(scope?.documentIds ?? [])) {
     if (documentId) params.append("document_id", documentId);
@@ -58,7 +20,29 @@ export function xingxiChatHref(
   if (scope?.retrievalQuery) {
     params.set("topic_query", scope.retrievalQuery);
   }
-  return `/workspace/chats/new?${params.toString()}`;
+  const query = params.toString();
+  return `${XINGXI_CHAT_PATH}${query ? `?${query}` : ""}`;
+}
+
+type NextSearchParams = Readonly<Record<string, string | string[] | undefined>>;
+
+const LEGACY_ENTRY_MODES = new Set(["flash", "pro", "ultra"]);
+
+export function legacyModeRedirectHref(
+  searchParams: NextSearchParams,
+): string | null {
+  const rawMode = searchParams.mode;
+  const mode = Array.isArray(rawMode) ? rawMode[0] : rawMode;
+  if (!mode || !LEGACY_ENTRY_MODES.has(mode)) return null;
+
+  const normalized = new URLSearchParams();
+  for (const [key, rawValue] of Object.entries(searchParams)) {
+    if (key === "mode" || rawValue === undefined) continue;
+    const values = Array.isArray(rawValue) ? rawValue : [rawValue];
+    for (const value of values) normalized.append(key, value);
+  }
+  const query = normalized.toString();
+  return `${XINGXI_CHAT_PATH}${query ? `?${query}` : ""}`;
 }
 
 type SearchParamsReader = Pick<URLSearchParams, "get" | "getAll">;

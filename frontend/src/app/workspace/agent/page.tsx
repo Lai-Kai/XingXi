@@ -12,17 +12,13 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
 import {
   BusinessMobileHeader,
   BusinessStatusBadge,
 } from "@/components/workspace/business-page";
-import {
-  xingxiChatHref,
-  xingxiWorkspaceHref,
-} from "@/core/threads/xingxi-entry";
+import { xingxiChatHref } from "@/core/threads/xingxi-entry";
 import { cn } from "@/lib/utils";
 
 type CaseTab = "featured" | "inspiration" | "verification" | "review";
@@ -88,7 +84,6 @@ const cases = [
 ];
 
 export default function XingxiAgentPage() {
-  const router = useRouter();
   const [tab, setTab] = useState<CaseTab>("featured");
   const visibleCases = useMemo(() => {
     if (tab === "featured") return cases.filter((item) => item.tab === tab);
@@ -112,27 +107,15 @@ export default function XingxiAgentPage() {
             面向吴文化与木渎地域文史的可信研究助手
           </p>
 
-          <div className="mx-auto mt-8 grid max-w-2xl gap-3 sm:grid-cols-2">
-            <button
-              type="button"
-              onClick={() => router.push(xingxiWorkspaceHref("pro"))}
-              className="flex h-14 items-center justify-center gap-2 rounded-md bg-[#202b2e] px-5 text-sm font-medium text-white transition hover:bg-[#344145] sm:text-base"
+          <div className="mx-auto mt-8 max-w-sm">
+            <Link
+              href={xingxiChatHref("")}
+              className="flex h-14 w-full items-center justify-center gap-2 rounded-md bg-[#202b2e] px-5 text-sm font-medium text-white transition hover:bg-[#344145] sm:text-base"
             >
               <Sparkles className="size-4" />
-              启动专业研究
-            </button>
-            <button
-              type="button"
-              onClick={() => router.push(xingxiWorkspaceHref("flash"))}
-              className="flex h-14 items-center justify-center gap-2 rounded-md bg-[#247f8c] px-5 text-sm font-medium text-white transition hover:bg-[#1d6d78] sm:text-base"
-            >
-              <Sparkles className="size-4" />
-              启动轻量问答
-            </button>
+              开始对话
+            </Link>
           </div>
-          <p className="mt-4 text-xs text-[#6a7b80] sm:text-sm">
-            专业模式会持续检索、交叉核验并整理出处，直至形成可追溯结论
-          </p>
         </div>
       </section>
 
@@ -193,7 +176,6 @@ export default function XingxiAgentPage() {
                   <Link
                     href={xingxiChatHref(
                       `请围绕“${item.title}”开展研究，并提供可核验的史料出处。`,
-                      "pro",
                     )}
                     className="mt-5 flex items-center justify-between border-t border-[#e1e8e9] pt-4 text-sm font-medium text-[#276f79] hover:text-[#174f57]"
                   >

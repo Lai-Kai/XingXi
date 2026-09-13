@@ -2,21 +2,18 @@
 
 import {
   ArrowUp,
-  BrainCircuit,
   Bot,
   CalendarDays,
   Check,
   ChevronDown,
   ChevronUp,
   FileText,
-  GraduationCap,
   Settings2,
   ThumbsDown,
   ThumbsUp,
-  Zap,
 } from "lucide-react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { BusinessMobileHeader } from "@/components/workspace/business-page";
@@ -30,22 +27,12 @@ import {
 } from "@/core/research-feed/api";
 import { buildLocalFallbackDailyResearchFeed } from "@/core/research-feed/fallback";
 import {
-  type XingxiEntryMode,
   type XingxiChatScope,
-  XINGXI_ENTRY_MODES,
-  parseEntryMode,
   xingxiChatHref,
-  xingxiWorkspaceHref,
 } from "@/core/threads/xingxi-entry";
 import { cn } from "@/lib/utils";
 
 type FeedTab = "trends" | "latest" | "collections";
-
-const modeIcons = {
-  flash: Zap,
-  pro: GraduationCap,
-  ultra: BrainCircuit,
-} satisfies Record<XingxiEntryMode, typeof Zap>;
 
 const tabs = [
   { id: "trends" as const, label: "今日选题" },
@@ -134,11 +121,8 @@ const researchItems: ResearchItem[] = [
 
 export default function XingxiHomePage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const { t } = useI18n();
-  const requestedMode = parseEntryMode(searchParams.get("mode")) ?? "pro";
   const [query, setQuery] = useState("");
-  const [mode, setMode] = useState<XingxiEntryMode>(requestedMode);
   const [tab, setTab] = useState<FeedTab>("trends");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [preferences, setPreferences] = useState(["古迹", "方志"]);
@@ -157,15 +141,8 @@ export default function XingxiHomePage() {
   const [showDailyHistory, setShowDailyHistory] = useState(false);
 
   useEffect(() => {
-    setMode(requestedMode);
-  }, [requestedMode]);
-
-  useEffect(() => {
-    const modeLabel =
-      XINGXI_ENTRY_MODES.find((item) => item.id === mode)?.label ??
-      t.pages.newChat;
-    document.title = `${modeLabel} - ${t.pages.appName}`;
-  }, [mode, t.pages.appName, t.pages.newChat]);
+    document.title = `${t.pages.newChat} - ${t.pages.appName}`;
+  }, [t.pages.appName, t.pages.newChat]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -275,7 +252,7 @@ export default function XingxiHomePage() {
   function submitResearch(prompt = query) {
     const value = prompt.trim();
     if (!value) return;
-    router.push(xingxiChatHref(value, mode));
+    router.push(xingxiChatHref(value));
   }
 
   function togglePreference(value: string) {
@@ -327,32 +304,6 @@ export default function XingxiHomePage() {
                   <Bot className="size-4 text-[#247f8c]" />
                   星羲
                 </span>
-                <span className="h-5 w-px bg-[#d6e1e2]" aria-hidden="true" />
-                {XINGXI_ENTRY_MODES.map((item) => {
-                  const Icon = modeIcons[item.id];
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      aria-pressed={mode === item.id}
-                      onClick={() => {
-                        setMode(item.id);
-                        router.replace(xingxiWorkspaceHref(item.id), {
-                          scroll: false,
-                        });
-                      }}
-                      className={cn(
-                        "flex h-9 items-center gap-1.5 rounded-full border px-3 text-xs transition-colors sm:text-sm",
-                        mode === item.id
-                          ? "border-[#70aeb7] bg-[#e5f1f2] text-[#175e68]"
-                          : "border-[#dce5e6] text-[#607176] hover:bg-[#f3f7f7]",
-                      )}
-                    >
-                      <Icon className="size-4" />
-                      {item.label}
-                    </button>
-                  );
-                })}
                 <button
                   type="submit"
                   aria-label="开始研究"
@@ -504,7 +455,6 @@ export default function XingxiHomePage() {
                     href={xingxiChatHref(
                       item.prompt ??
                         `请围绕“${item.title}”开展研究，并列出可核验的原始出处。`,
-                      "ultra",
                       item.scope,
                     )}
                     className="mt-3 block text-lg leading-7 font-semibold hover:text-[#176d79] sm:text-xl"
@@ -535,7 +485,6 @@ export default function XingxiHomePage() {
                       href={xingxiChatHref(
                         item.prompt ??
                           `请介绍“${item.title}”，并引用本地资料。`,
-                        "pro",
                         item.scope,
                       )}
                       className="inline-flex h-9 items-center rounded-md bg-[#1f696f] px-3 text-sm font-medium text-white hover:bg-[#18565c]"
@@ -587,7 +536,6 @@ export default function XingxiHomePage() {
                 <Link
                   href={xingxiChatHref(
                     `查找“${item.title}”对应的原始文献和页码。`,
-                    "ultra",
                     item.scope,
                   )}
                   aria-label={`查看 ${item.title} 的文献线索`}

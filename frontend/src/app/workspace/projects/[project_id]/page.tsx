@@ -291,7 +291,6 @@ export default function ResearchProjectWorkspacePage() {
   }
 
   const agentParams = new URLSearchParams({
-    mode: "pro",
     project_id: project.id,
     prompt: `请围绕“${project.name}”开展研究，仅使用本项目关联文献检索资料出处。`,
   });

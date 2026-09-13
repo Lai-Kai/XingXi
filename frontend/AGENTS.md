@@ -6,7 +6,7 @@ This file provides guidance to AI coding agents (Claude Code, Codex, and others)
 
 The Xingxi frontend is a Next.js 16 interface for the Wu-culture and Mudu regional-history agent. It reuses DeerFlow's thread streaming, artifacts, sidecar, and settings infrastructure internally. Product routes must present Xingxi directly; do not expose the generic Agent gallery/creation flow or DeerFlow branding.
 
-The three chat entry modes are owned by `core/threads/xingxi-entry.ts`. They send both the validated Xingxi mode and an explicit thinking profile: flash/minimal/off, pro/medium/on, and ultra/high/on. The Gateway revalidates these values, so “深度求索” is a real high-reasoning historical-research mode rather than a generic-agent prompt switch.
+Xingxi uses one canonical new-chat route. `core/threads/xingxi-entry.ts` carries optional prompt and evidence scope, but it does not encode model strength as a route mode. The shared composer loads configured models, persists the selected `model_name`, and sends it in run context. Reasoning controls remain composer state rather than separate product pages. Entry context synchronization on the new-chat page must clear stale project scope when no `project_id` is present and must update settings only when the targeted project or topic fields differ.
 
 The workspace “今日选题” tab loads `/api/research-feed/daily` through `core/research-feed/api.ts`, renders the backend generation date, and schedules a refresh at the returned Shanghai midnight. The backend feed is evidence-gated: yesterday's aggregated real-query popularity is preferred and current-Release RAG topics fill missing slots. A card carries its server-verified retrieval query, document IDs, Evidence IDs, and informational Release ID through `xingxiChatHref`; the new-chat page converts those values into `daily_topic_*` runtime context, while the Gateway remains authoritative for the active Release. `search_sources` loads authorized attached Evidence first and otherwise constrains retrieval to the verified query and document scope. It must show loading/error/retry/empty states; the bundled degraded seed pool is allowed only because every entry names a real local document, Chunk, and Evidence identity, and it must never contain zero-evidence demo cards. Its “more” action expands in place through `/api/research-feed/history`, showing current and previous-day grounded feeds; it must not navigate or switch to another workspace tab.
 
@@ -66,7 +66,7 @@ The frontend is a stateful chat application. Users create **threads** (conversat
 
 ### Source Layout (`src/`)
 
-- **`app/`** — Next.js App Router. Routes include `/` (landing), `/workspace/chats/[thread_id]` (chat), `/workspace/agents/[agent_name]` and `/workspace/agents/new` (custom agents), `/blog/…`, the `(auth)/{login,setup,auth/callback}` flow, `/[lang]/docs/…`, and `/api/…` route handlers (e.g. `/api/memory`).
+- **`app/`** — Next.js App Router. Routes include `/` (landing), `/workspace/chats/new` and `/workspace/chats/[thread_id]` (the shared chat page), `/workspace/agents/[agent_name]` and `/workspace/agents/new` (custom agents), `/blog/…`, the `(auth)/{login,setup,auth/callback}` flow, `/[lang]/docs/…`, and `/api/…` route handlers (e.g. `/api/memory`).
 - **`components/`** — React components:
   - `ui/` — Shadcn UI primitives (auto-generated, ESLint-ignored)
   - `ai-elements/` — Vercel AI SDK elements (auto-generated, ESLint-ignored)
@@ -106,11 +106,10 @@ Tool-calling AI messages can contain user-visible text as well as `tool_calls`. 
 
 ### Interaction Ownership
 
-- `src/app/workspace/agent/page.tsx` owns the two primary Xingxi mode-entry
-  commands. They must navigate with the App Router to the existing `/workspace`
-  composer, passing its validated mode through `core/threads/xingxi-entry.ts`;
-  only a real prompt submission opens `/workspace/chats/new`. Do not add anchor
-  fallbacks or a second mode-to-URL mapping.
+- `src/app/workspace/agent/page.tsx` owns the primary Xingxi chat-entry link.
+  It opens the existing `/workspace/chats/new` composer without encoding model
+  strength in the URL. The configured model selector in `input-box.tsx` owns
+  `model_name`; do not add model-specific product routes.
 - `src/components/workspace/resizable-sidebar.tsx` owns desktop workspace sidebar
   width limits and the Pointer Events resize lifecycle. Keep its rail mounted in
   icon mode and keep resize behavior out of the generated `components/ui/sidebar.tsx`.

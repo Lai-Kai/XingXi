@@ -699,7 +699,6 @@ function PointDetails({
         <Link
           href={xingxiChatHref(
             `请围绕地图实体“${point.name}”开展考证。先核对地图所列来源，再说明历史沿革、定位可靠程度与可核验出处；资料出处不足的部分明确保留。`,
-            "pro",
           )}
           className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-md bg-[#183f42] px-3 text-sm text-white hover:bg-[#28575b]"
         >

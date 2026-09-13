@@ -58,13 +58,21 @@ import { threadTokenUsageToTokenUsage } from "@/core/threads/token-usage";
 import { textOfMessage } from "@/core/threads/utils";
 import {
   dailyTopicContextForEntry,
-  modeContextForEntry,
-  parseEntryMode,
   parseXingxiChatScope,
-  XINGXI_ENTRY_MODES,
 } from "@/core/threads/xingxi-entry";
 import { env } from "@/env";
 import { cn } from "@/lib/utils";
+
+function sameStringArray(left: unknown, right: string[] | undefined) {
+  if (left === undefined || right === undefined) {
+    return left === right;
+  }
+  return (
+    Array.isArray(left) &&
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
+}
 
 export default function ChatPage() {
   const { t } = useI18n();
@@ -83,18 +91,6 @@ export default function ChatPage() {
   // `isNewThread` stays true until the backend actually creates the thread.
   const [isWelcomeMode, setIsWelcomeMode] = useState(isNewThread);
   const [settings, setSettings] = useThreadSettings(threadId);
-  const entryMode = useMemo(
-    () => (isNewThread ? parseEntryMode(searchParams.get("mode")) : undefined),
-    [isNewThread, searchParams],
-  );
-  const entryModeContext = useMemo(
-    () => (entryMode ? modeContextForEntry(entryMode) : null),
-    [entryMode],
-  );
-  const entryModeTitle = useMemo(
-    () => XINGXI_ENTRY_MODES.find((item) => item.id === entryMode)?.label,
-    [entryMode],
-  );
   const entryTopicContext = useMemo(
     () =>
       isNewThread
@@ -141,20 +137,38 @@ export default function ChatPage() {
       active = false;
     };
   }, [starterProjectId]);
+  const projectContextForEntry = useMemo(
+    () =>
+      isNewThread
+        ? {
+            research_project_id: projectScope?.id,
+            research_project_name: projectScope?.name,
+            research_project_document_ids: projectScope?.documentIds,
+          }
+        : null,
+    [isNewThread, projectScope],
+  );
+  const topicContextForEntry = useMemo(
+    () =>
+      isNewThread
+        ? {
+            daily_topic_query: entryTopicContext.daily_topic_query,
+            daily_topic_document_ids:
+              entryTopicContext.daily_topic_document_ids,
+            daily_topic_evidence_ids:
+              entryTopicContext.daily_topic_evidence_ids,
+            daily_topic_release_id: entryTopicContext.daily_topic_release_id,
+          }
+        : null,
+    [entryTopicContext, isNewThread],
+  );
   const runtimeContext = useMemo(
     () => ({
       ...settings.context,
-      ...(entryModeContext ?? {}),
-      ...entryTopicContext,
-      ...(projectScope
-        ? {
-            research_project_id: projectScope.id,
-            research_project_name: projectScope.name,
-            research_project_document_ids: projectScope.documentIds,
-          }
-        : {}),
+      ...(topicContextForEntry ?? {}),
+      ...(projectContextForEntry ?? {}),
     }),
-    [entryModeContext, entryTopicContext, projectScope, settings.context],
+    [projectContextForEntry, settings.context, topicContextForEntry],
   );
   const [localSettings, setLocalSettings] = useLocalSettings();
   const { models, tokenUsageEnabled, isLoading: modelsLoading } = useModels();
@@ -231,31 +245,50 @@ export default function ChatPage() {
   });
 
   useEffect(() => {
-    if (
-      (!entryModeContext &&
-        !projectScope &&
-        !entryTopicContext.daily_topic_query) ||
-      (settings.context.mode === entryModeContext?.mode &&
-        settings.context.reasoning_effort ===
-          entryModeContext?.reasoning_effort &&
-        settings.context.research_project_id === projectScope?.id &&
-        JSON.stringify(settings.context.research_project_document_ids ?? []) ===
-          JSON.stringify(projectScope?.documentIds ?? []) &&
-        settings.context.daily_topic_query ===
-          entryTopicContext.daily_topic_query &&
-        JSON.stringify(settings.context.daily_topic_document_ids ?? []) ===
-          JSON.stringify(entryTopicContext.daily_topic_document_ids ?? []))
-    ) {
+    if (!isNewThread || projectScopeLoading) {
       return;
     }
-    setSettings("context", runtimeContext);
+
+    const projectChanged =
+      projectContextForEntry !== null &&
+      (settings.context.research_project_id !==
+        projectContextForEntry.research_project_id ||
+        settings.context.research_project_name !==
+          projectContextForEntry.research_project_name ||
+        !sameStringArray(
+          settings.context.research_project_document_ids,
+          projectContextForEntry.research_project_document_ids,
+        ));
+    const topicChanged =
+      topicContextForEntry !== null &&
+      (settings.context.daily_topic_query !==
+        topicContextForEntry.daily_topic_query ||
+        !sameStringArray(
+          settings.context.daily_topic_document_ids,
+          topicContextForEntry.daily_topic_document_ids,
+        ) ||
+        !sameStringArray(
+          settings.context.daily_topic_evidence_ids,
+          topicContextForEntry.daily_topic_evidence_ids,
+        ) ||
+        settings.context.daily_topic_release_id !==
+          topicContextForEntry.daily_topic_release_id);
+
+    if (!projectChanged && !topicChanged) {
+      return;
+    }
+
+    setSettings("context", {
+      ...(projectChanged ? projectContextForEntry : {}),
+      ...(topicChanged ? topicContextForEntry : {}),
+    });
   }, [
-    entryModeContext,
-    entryTopicContext,
-    projectScope,
-    runtimeContext,
+    isNewThread,
+    projectContextForEntry,
+    projectScopeLoading,
     setSettings,
     settings.context,
+    topicContextForEntry,
   ]);
 
   useEffect(() => {
@@ -301,7 +334,8 @@ export default function ChatPage() {
       !hasMoreHistory &&
       !hasThreadMessages
     ) {
-      router.replace("/workspace/chats/new");
+      const query = searchParams.toString();
+      router.replace(`/workspace/chats/new${query ? `?${query}` : ""}`);
     }
   }, [
     hasMoreHistory,
@@ -310,6 +344,7 @@ export default function ChatPage() {
     isMock,
     isNewThread,
     router,
+    searchParams,
     threadMetadata.data,
     threadMetadata.isFetching,
     threadMetadata.isLoading,
@@ -424,11 +459,7 @@ export default function ChatPage() {
             >
               <SidebarTrigger className="md:hidden" />
               <div className="flex min-w-0 flex-1 items-center text-sm font-medium">
-                <ThreadTitle
-                  threadId={threadId}
-                  thread={thread}
-                  newThreadTitle={entryModeTitle}
-                />
+                <ThreadTitle threadId={threadId} thread={thread} />
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 {!isNewThread && (

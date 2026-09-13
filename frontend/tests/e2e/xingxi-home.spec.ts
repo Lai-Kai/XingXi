@@ -2,31 +2,6 @@ import { expect, test } from "@playwright/test";
 
 import { mockLangGraphAPI } from "./utils/mock-api";
 
-const agentEntryCases = [
-  {
-    button: "启动专业研究",
-    mode: "pro",
-    modeControl: "专业研究",
-    title: "专业研究",
-    context: {
-      mode: "pro",
-      thinking_enabled: true,
-      reasoning_effort: "medium",
-    },
-  },
-  {
-    button: "启动轻量问答",
-    mode: "flash",
-    modeControl: "快速问答",
-    title: "快速问答",
-    context: {
-      mode: "flash",
-      thinking_enabled: false,
-      reasoning_effort: "minimal",
-    },
-  },
-] as const;
-
 test.describe("Xingxi home", () => {
   test.beforeEach(async ({ page }) => {
     mockLangGraphAPI(page);
@@ -78,8 +53,10 @@ test.describe("Xingxi home", () => {
     await page.getByLabel("研究问题").fill("香溪沿岸有哪些古桥？");
     await page.getByRole("button", { name: "开始研究" }).click();
 
-    await expect(page).toHaveURL(/\/workspace\/chats\/new\?mode=pro/);
-    await expect(page).toHaveURL(/prompt=/);
+    const destination = new URL(page.url());
+    expect(destination.pathname).toBe("/workspace/chats/new");
+    expect(destination.searchParams.has("mode")).toBe(false);
+    expect(destination.searchParams.get("prompt")).toBe("香溪沿岸有哪些古桥？");
     await expect(
       page.getByRole("textbox", {
         name: /询问木渎古迹、人物、方志出处或历史沿革|Ask about Mudu sites, people, gazetteers, or historical change/,
@@ -92,118 +69,208 @@ test.describe("Xingxi home", () => {
     ).toBeVisible();
   });
 
-  for (const entry of agentEntryCases) {
-    test(`${entry.button} uses in-app navigation and preserves ${entry.mode} mode`, async ({
+  for (const legacyMode of ["pro", "flash", "ultra"] as const) {
+    test(`legacy ${legacyMode} URL opens the canonical chat page`, async ({
       page,
     }) => {
-      let submittedContext: Record<string, unknown> | undefined;
-      page.on("request", (request) => {
-        if (
-          request.method() === "POST" &&
-          request.url().includes("/runs/stream")
-        ) {
-          submittedContext = (
-            request.postDataJSON() as {
-              context?: Record<string, unknown>;
-            }
-          ).context;
-        }
-      });
-      await page.route("**/api/models", (route) =>
-        route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({
-            models: [
-              {
-                id: "xingxi-test-model",
-                name: "xingxi-test-model",
-                model: "xingxi-test-model",
-                display_name: "Xingxi Test Model",
-                supports_thinking: true,
-                supports_reasoning_effort: true,
-              },
-            ],
-            token_usage: { enabled: false },
-          }),
+      await page.goto(
+        `/workspace/chats/new?mode=${legacyMode}&prompt=%E6%A0%B8%E9%AA%8C%E6%9C%A8%E6%B8%8E%E5%95%86%E5%8F%B7`,
+      );
+
+      const destination = new URL(page.url());
+      expect(destination.pathname).toBe("/workspace/chats/new");
+      expect(destination.searchParams.has("mode")).toBe(false);
+      expect(destination.searchParams.get("prompt")).toBe("核验木渎商号");
+      await expect(
+        page.getByRole("textbox", {
+          name: /询问木渎古迹、人物、方志出处或历史沿革|Ask about Mudu sites, people, gazetteers, or historical change/,
         }),
-      );
-      await page.goto("/workspace/agent");
-
-      await expect(page.getByRole("link", { name: entry.button })).toHaveCount(
-        0,
-      );
-      const entryButton = page.getByRole("button", { name: entry.button });
-      await expect(entryButton).toBeVisible({ timeout: 15_000 });
-      await page.evaluate(() => {
-        (
-          window as typeof window & { __xingxiClientNavigation?: string }
-        ).__xingxiClientNavigation = "preserved";
-      });
-
-      await entryButton.click();
-
-      await expect(page).toHaveURL(
-        new RegExp(`/workspace\\?mode=${entry.mode}$`),
-      );
-      await expect(
-        page.getByRole("button", { name: entry.modeControl, exact: true }),
-      ).toHaveAttribute("aria-pressed", "true");
-      await expect(page).toHaveTitle(new RegExp(`^${entry.title} - `));
-
-      const textarea = page.getByLabel("研究问题");
-      await textarea.fill("验证入口模式参数");
-      await page.getByRole("button", { name: "开始研究" }).click();
-      await expect(page).toHaveURL(
-        new RegExp(`/workspace/chats/new\\?mode=${entry.mode}&prompt=`),
-      );
-      await expect(page.getByText("Hello from DeerFlow!")).toBeVisible({
-        timeout: 10_000,
-      });
-      await expect
-        .poll(() => submittedContext)
-        .toMatchObject({
-          ...entry.context,
-          is_plan_mode: entry.mode === "pro",
-          subagent_enabled: false,
-        });
-      expect(
-        await page.evaluate(
-          () =>
-            (window as typeof window & { __xingxiClientNavigation?: string })
-              .__xingxiClientNavigation,
-        ),
-      ).toBe("preserved");
-
-      await page.goBack();
-      await expect(page).toHaveURL(
-        new RegExp(`/workspace\\?mode=${entry.mode}$`),
-      );
-      await page.goBack();
-      await expect(page).toHaveURL(/\/workspace\/agent$/);
-      await expect(
-        page.getByRole("button", { name: entry.button }),
-      ).toBeVisible();
+      ).toBeVisible({ timeout: 15_000 });
     });
   }
 
-  test("deep exploration keeps Xingxi fixed and selects ultra mode", async ({
+  test("the canonical agent entry clears stale project scope", async ({
     page,
   }) => {
-    await page.goto("/workspace");
+    const pageErrors: string[] = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+    await page.addInitScript(() => {
+      window.localStorage.setItem(
+        "deerflow.local-settings",
+        JSON.stringify({
+          context: {
+            mode: "ultra",
+            reasoning_effort: "high",
+            research_project_id: "stale-project",
+            research_project_name: "旧研究项目",
+            research_project_document_ids: ["stale-document"],
+          },
+        }),
+      );
+    });
 
-    await expect(page.getByText("星羲", { exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: "星羲智能体" })).toHaveCount(
+    await page.goto("/workspace/agent");
+    await expect(page.getByRole("link", { name: "启动专业研究" })).toHaveCount(
       0,
     );
-    await page.getByRole("button", { name: "深度求索" }).click();
-    await page.getByLabel("研究问题").fill("核验木渎商号");
-    await page.getByRole("button", { name: "开始研究" }).click();
+    await expect(page.getByRole("link", { name: "启动轻量问答" })).toHaveCount(
+      0,
+    );
+    const entryLink = page.getByRole("link", { name: "开始对话" });
+    await expect(entryLink).toHaveAttribute("href", "/workspace/chats/new");
+    await entryLink.click();
 
-    await expect(page).toHaveURL(/\/workspace\/chats\/new\?mode=ultra/, {
-      timeout: 15_000,
+    await expect(page).toHaveURL(/\/workspace\/chats\/new$/);
+    await expect(
+      page.getByRole("textbox", {
+        name: /询问木渎古迹、人物、方志出处或历史沿革|Ask about Mudu sites, people, gazetteers, or historical change/,
+      }),
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("对话页面暂时无法加载")).toHaveCount(0);
+
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const stored = window.localStorage.getItem("deerflow.local-settings");
+          return stored
+            ? (JSON.parse(stored) as { context?: Record<string, unknown> })
+                .context
+            : undefined;
+        }),
+      )
+      .toEqual({
+        mode: "ultra",
+        reasoning_effort: "high",
+      });
+    expect(pageErrors).toEqual([]);
+  });
+
+  test("the configured model selector owns the model difference", async ({
+    page,
+  }) => {
+    let submittedContext: Record<string, unknown> | undefined;
+    page.on("request", (request) => {
+      if (
+        request.method() === "POST" &&
+        request.url().includes("/runs/stream")
+      ) {
+        submittedContext = (
+          request.postDataJSON() as {
+            context?: Record<string, unknown>;
+          }
+        ).context;
+      }
     });
-    expect(new URL(page.url()).searchParams.has("research_mode")).toBe(false);
+    await page.route("**/api/models", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          models: [
+            {
+              id: "quick-model",
+              name: "quick-model",
+              model: "quick-model",
+              display_name: "轻量模型",
+              supports_thinking: false,
+              supports_reasoning_effort: false,
+            },
+            {
+              id: "research-model",
+              name: "research-model",
+              model: "research-model",
+              display_name: "研究模型",
+              supports_thinking: true,
+              supports_reasoning_effort: true,
+            },
+          ],
+          token_usage: { enabled: false },
+        }),
+      }),
+    );
+
+    await page.goto("/workspace/agent");
+    await page.getByRole("link", { name: "开始对话" }).click();
+    await expect(page).toHaveURL(/\/workspace\/chats\/new$/);
+    await page.getByRole("button", { name: "轻量模型" }).click();
+    await page.getByRole("option", { name: /研究模型/ }).click();
+
+    const textarea = page.getByRole("textbox", {
+      name: /询问木渎古迹、人物、方志出处或历史沿革|Ask about Mudu sites, people, gazetteers, or historical change/,
+    });
+    await textarea.fill("验证模型选择");
+    await textarea.press("Enter");
+
+    await expect(page.getByText("Hello from DeerFlow!")).toBeVisible({
+      timeout: 10_000,
+    });
+    await expect
+      .poll(() => submittedContext)
+      .toMatchObject({
+        model_name: "research-model",
+      });
+  });
+
+  test("a current research project replaces the previously stored scope", async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      window.localStorage.setItem(
+        "deerflow.local-settings",
+        JSON.stringify({
+          context: {
+            research_project_id: "stale-project",
+            research_project_name: "旧研究项目",
+            research_project_document_ids: ["stale-document"],
+          },
+        }),
+      );
+    });
+    await page.route("**/api/research-projects/current-project", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: "current-project",
+          name: "当前研究项目",
+          archived: false,
+          document_count: 1,
+          created_at: "2026-09-13T00:00:00+08:00",
+          updated_at: "2026-09-13T00:00:00+08:00",
+        }),
+      }),
+    );
+    await page.route(
+      "**/api/research-projects/current-project/documents",
+      (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify([{ id: "current-document" }]),
+        }),
+    );
+
+    await page.goto("/workspace/chats/new?project_id=current-project");
+    await expect(
+      page.getByRole("textbox", {
+        name: /询问木渎古迹、人物、方志出处或历史沿革|Ask about Mudu sites, people, gazetteers, or historical change/,
+      }),
+    ).toBeVisible({ timeout: 15_000 });
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const stored = window.localStorage.getItem("deerflow.local-settings");
+          return stored
+            ? (JSON.parse(stored) as { context?: Record<string, unknown> })
+                .context
+            : undefined;
+        }),
+      )
+      .toMatchObject({
+        research_project_id: "current-project",
+        research_project_name: "当前研究项目",
+        research_project_document_ids: ["current-document"],
+      });
   });
 
   test("feed tabs and personalization settings are interactive", async ({

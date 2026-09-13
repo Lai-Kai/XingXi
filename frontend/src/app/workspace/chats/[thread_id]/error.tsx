@@ -14,7 +14,7 @@ export default function ChatError({ reset }: { reset: () => void }) {
       <div className="w-full max-w-md text-center">
         <h1 className="text-xl font-semibold">对话页面暂时无法加载</h1>
         <p className="mt-3 text-sm leading-6 text-[#61757a]">
-          当前页面发生异常。可以重试加载，或返回星羲智能体重新选择研究模式。
+          当前页面发生异常。可以重试加载，或返回星羲智能体重新进入对话。
         </p>
         <div className="mt-6 flex flex-wrap justify-center gap-3">
           <button
@@ -31,7 +31,7 @@ export default function ChatError({ reset }: { reset: () => void }) {
             className="flex h-10 items-center gap-2 rounded-md border border-[#c7d7da] bg-white px-4 text-sm font-medium text-[#285f68] hover:bg-[#f7fbfb]"
           >
             <ArrowLeft className="size-4" />
-            返回模式选择
+            返回星羲智能体
           </button>
         </div>
       </div>
