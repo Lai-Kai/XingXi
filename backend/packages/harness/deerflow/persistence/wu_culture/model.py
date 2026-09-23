@@ -353,6 +353,35 @@ class ReviewRecordRow(Base):
     reviewed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
 
 
+class GraphReviewRecordRow(Base):
+    __tablename__ = "wu_graph_review_records"
+    __table_args__ = (
+        UniqueConstraint("object_type", "object_id", "revision", name="uq_wu_graph_review_revision"),
+        CheckConstraint("object_type IN ('relation', 'event')", name="ck_wu_graph_review_object"),
+        CheckConstraint("revision >= 1", name="ck_wu_graph_review_revision"),
+        CheckConstraint("previous_status IN ('pending','reviewed','disputed','rejected')", name="ck_wu_graph_review_previous"),
+        CheckConstraint("new_status IN ('pending','reviewed','disputed','rejected')", name="ck_wu_graph_review_new"),
+        CheckConstraint("previous_status <> new_status", name="ck_wu_graph_review_changed"),
+    )
+
+    id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    object_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    # No cascading object FK: review history survives working-record deletion.
+    object_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    previous_status: Mapped[str] = mapped_column(String(20), nullable=False)
+    new_status: Mapped[str] = mapped_column(String(20), nullable=False)
+    reviewer_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    review_note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+@event.listens_for(GraphReviewRecordRow, "before_update")
+@event.listens_for(GraphReviewRecordRow, "before_delete")
+def _immutable_graph_review(_mapper, _connection, _target):
+    raise ValueError("Graph review history is immutable")
+
+
 class KnowledgeReleaseRow(Base):
     __tablename__ = "wu_knowledge_releases"
     __table_args__ = (
@@ -711,6 +740,7 @@ WU_CULTURE_TABLES = [
     ChunkSetRow.__table__,
     TextChunkRow.__table__,
     ReviewRecordRow.__table__,
+    GraphReviewRecordRow.__table__,
     KnowledgeReleaseRow.__table__,
     KnowledgeReleaseItemRow.__table__,
     KnowledgeReleaseStateRow.__table__,
@@ -769,7 +799,8 @@ class WuRelationRow(Base):
     __table_args__ = (
         UniqueConstraint("subject_id", "relation_type", "object_id", "release_id", name="uq_wu_relation_edge_release"),
         CheckConstraint(
-            "relation_type IN ('located_in','built_by','repaired_in','crosses','related_to','sibling_of','spouse_of','parent_of','lived_in','visited','born_in','worked_at','studied_at','died_at','composed_at','mentioned_in_poetry','documented_in')",
+            "relation_type IN ('located_in','built_by','repaired_in','crosses','related_to','sibling_of','spouse_of','parent_of',"
+            "'lived_in','visited','born_in','worked_at','studied_at','died_at','composed_at','mentioned_in_poetry','documented_in')",
             name="ck_wu_relations_type",
         ),
         CheckConstraint("confidence >= 0 AND confidence <= 1", name="ck_wu_relations_confidence"),
@@ -909,8 +940,7 @@ class WuGeoFeatureRow(Base):
             name="ck_wu_geo_geometry_type",
         ),
         CheckConstraint(
-            "uncertainty_radius_m IS NULL OR "
-            "(uncertainty_radius_m >= 10 AND uncertainty_radius_m <= 100000)",
+            "uncertainty_radius_m IS NULL OR (uncertainty_radius_m >= 10 AND uncertainty_radius_m <= 100000)",
             name="ck_wu_geo_uncertainty_radius",
         ),
     )

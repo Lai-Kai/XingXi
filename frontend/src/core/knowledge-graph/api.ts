@@ -9,6 +9,7 @@ import type {
   GraphQueryResult,
   GraphRelation,
   HistoricalEvent,
+  ReviewStatus,
 } from "./types";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -34,6 +35,7 @@ type ListOptions = {
   limit?: number;
   offset?: number;
   signal?: AbortSignal;
+  includeRejected?: boolean;
 };
 
 export type GraphCatalog = {
@@ -48,6 +50,7 @@ let graphCatalogCache: {
   value: GraphCatalog;
 } | null = null;
 let graphCatalogInFlight: Promise<GraphCatalog> | null = null;
+let graphCacheGeneration = 0;
 const graphQueryCache = new Map<
   string,
   { expiresAt: number; value: GraphQueryResult }
@@ -80,8 +83,11 @@ export function readCachedGraphCatalog(): GraphCatalog | null {
 }
 
 export function invalidateGraphCatalogCache() {
+  graphCacheGeneration += 1;
   graphCatalogCache = null;
+  graphCatalogInFlight = null;
   graphQueryCache.clear();
+  graphQueryInFlight.clear();
 }
 
 export const listEntities = (options: ListOptions = {}) =>
@@ -98,6 +104,7 @@ export const listRelations = (options: ListOptions = {}) =>
       ...(options.entityId ? { entity_id: options.entityId } : {}),
       limit: String(options.limit ?? 100),
       offset: String(options.offset ?? 0),
+      ...(options.includeRejected ? { include_rejected: "true" } : {}),
     })}`,
     { signal: options.signal },
   );
@@ -117,36 +124,68 @@ async function listAllPages<T>(
 }
 
 export async function fetchGraphCatalog(
-  options: { force?: boolean; signal?: AbortSignal } = {},
+  options: {
+    force?: boolean;
+    signal?: AbortSignal;
+    includeRejected?: boolean;
+  } = {},
 ): Promise<GraphCatalog> {
+  // Privileged review data never enters the shared ordinary graph cache.
+  if (options.includeRejected) {
+    const [entities, relations] = await Promise.all([
+      listAllPages(1000, (offset) =>
+        listEntities({ limit: 1000, offset, signal: options.signal }),
+      ),
+      listAllPages(2000, (offset) =>
+        listRelations({
+          limit: 2000,
+          offset,
+          signal: options.signal,
+          includeRejected: true,
+        }),
+      ),
+    ]);
+    return { entities, relations };
+  }
   const cached = readCachedGraphCatalog();
   if (cached && !options.force) return cached;
-  graphCatalogInFlight ??= Promise.all([
-    listAllPages(1000, (offset) =>
-      listEntities({ limit: 1000, offset, signal: options.signal }),
-    ),
-    listAllPages(2000, (offset) =>
-      listRelations({ limit: 2000, offset, signal: options.signal }),
-    ),
-  ])
-    .then(([entities, relations]) => {
-      const value = { entities, relations };
-      graphCatalogCache = {
-        expiresAt: Date.now() + GRAPH_CATALOG_CACHE_TTL_MS,
-        value,
-      };
-      return value;
-    })
-    .finally(() => {
-      graphCatalogInFlight = null;
-    });
+  const generation = graphCacheGeneration;
+  if (!graphCatalogInFlight) {
+    const pending = Promise.all([
+      listAllPages(1000, (offset) =>
+        listEntities({ limit: 1000, offset, signal: options.signal }),
+      ),
+      listAllPages(2000, (offset) =>
+        listRelations({ limit: 2000, offset, signal: options.signal }),
+      ),
+    ])
+      .then(([entities, relations]) => {
+        const value = { entities, relations };
+        if (generation === graphCacheGeneration)
+          graphCatalogCache = {
+            expiresAt: Date.now() + GRAPH_CATALOG_CACHE_TTL_MS,
+            value,
+          };
+        return value;
+      })
+      .finally(() => {
+        if (graphCatalogInFlight === pending) graphCatalogInFlight = null;
+      });
+    graphCatalogInFlight = pending;
+  }
   return await awaitWithAbort(graphCatalogInFlight, options.signal);
 }
 export const listEvents = (options: ListOptions = {}) =>
   request<HistoricalEvent[]>(
-    `/api/knowledge-graph/events?limit=${options.limit ?? 100}`,
+    `/api/knowledge-graph/events?${new URLSearchParams({
+      limit: String(options.limit ?? 100),
+      offset: String(options.offset ?? 0),
+      ...(options.includeRejected ? { include_rejected: "true" } : {}),
+    })}`,
     { signal: options.signal },
   );
+export const listAllEvents = (options: ListOptions = {}) =>
+  listAllPages(200, (offset) => listEvents({ ...options, limit: 200, offset }));
 export const listGeoFeatures = (options: ListOptions = {}) =>
   request<GeoFeature[]>(
     `/api/knowledge-graph/geo?limit=${options.limit ?? 200}`,
@@ -167,6 +206,7 @@ export async function queryGraph(
   if (cached) graphQueryCache.delete(key);
   let inFlight = graphQueryInFlight.get(key);
   if (!inFlight) {
+    const generation = graphCacheGeneration;
     inFlight = request<GraphQueryResult>(
       `/api/knowledge-graph/query?${new URLSearchParams({
         entity,
@@ -177,14 +217,16 @@ export async function queryGraph(
       { signal: options.signal },
     )
       .then((value) => {
-        graphQueryCache.set(key, {
-          expiresAt: Date.now() + GRAPH_QUERY_CACHE_TTL_MS,
-          value,
-        });
+        if (generation === graphCacheGeneration)
+          graphQueryCache.set(key, {
+            expiresAt: Date.now() + GRAPH_QUERY_CACHE_TTL_MS,
+            value,
+          });
         return value;
       })
       .finally(() => {
-        graphQueryInFlight.delete(key);
+        if (graphQueryInFlight.get(key) === inFlight)
+          graphQueryInFlight.delete(key);
       });
     graphQueryInFlight.set(key, inFlight);
   }
@@ -250,24 +292,36 @@ export const extractTextKnowledge = (
 
 export const reviewRelation = (
   relationId: string,
-  reviewStatus: "reviewed" | "rejected",
+  reviewStatus: ReviewStatus,
+  reviewNote?: string,
+  expectedStatus?: ReviewStatus,
 ) =>
   request<GraphRelation>(
     `/api/knowledge-graph/relations/${encodeURIComponent(relationId)}/review`,
     {
       method: "PATCH",
-      body: JSON.stringify({ review_status: reviewStatus }),
+      body: JSON.stringify({
+        review_status: reviewStatus,
+        review_note: reviewNote,
+        expected_status: expectedStatus,
+      }),
     },
   );
 
 export const reviewEvent = (
   eventId: string,
-  reviewStatus: "reviewed" | "rejected",
+  reviewStatus: ReviewStatus,
+  reviewNote?: string,
+  expectedStatus?: ReviewStatus,
 ) =>
   request<HistoricalEvent>(
     `/api/knowledge-graph/events/${encodeURIComponent(eventId)}/review`,
     {
       method: "PATCH",
-      body: JSON.stringify({ review_status: reviewStatus }),
+      body: JSON.stringify({
+        review_status: reviewStatus,
+        review_note: reviewNote,
+        expected_status: expectedStatus,
+      }),
     },
   );

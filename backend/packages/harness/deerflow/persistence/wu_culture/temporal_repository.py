@@ -5,11 +5,15 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 
 from sqlalchemy import delete, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from wu_culture.events import EventCreate, EventRecord, TimeCertainty
 from wu_culture.geo import GeoFeature, SpatialConfidence, SpatialExtentSource, SpatialGeometryType
 from wu_culture.models import ReviewStatus
+from wu_culture.review import ReviewConflictError
+from wu_culture.review.graph import GraphReviewRecord
 
+from deerflow.persistence.wu_culture.graph_review import append_graph_review, list_graph_reviews
 from deerflow.persistence.wu_culture.model import (
     EvidenceRow,
     WuEntityRow,
@@ -61,19 +65,13 @@ class SqlEventRepository:
                     updated_at=now,
                 )
             )
-            session.add_all(
-                WuEventParticipantRow(event_id=event_id, entity_id=entity_id)
-                for entity_id in payload.participant_entity_ids
-            )
-            session.add_all(
-                WuEventEvidenceRow(event_id=event_id, evidence_id=evidence_id)
-                for evidence_id in payload.evidence_ids
-            )
+            session.add_all(WuEventParticipantRow(event_id=event_id, entity_id=entity_id) for entity_id in payload.participant_entity_ids)
+            session.add_all(WuEventEvidenceRow(event_id=event_id, evidence_id=evidence_id) for evidence_id in payload.evidence_ids)
             await session.commit()
-        return (await self.get(event_id))  # type: ignore[return-value]
+        return await self.get(event_id, include_rejected=True)  # type: ignore[return-value]
 
-    async def get(self, event_id: str) -> EventRecord | None:
-        rows = await self.list(event_ids=(event_id,), limit=1)
+    async def get(self, event_id: str, *, include_rejected: bool = False) -> EventRecord | None:
+        rows = await self.list(event_ids=(event_id,), limit=1, include_rejected=include_rejected)
         return rows[0] if rows else None
 
     async def delete(self, event_id: str) -> bool:
@@ -82,25 +80,26 @@ class SqlEventRepository:
             await session.commit()
             return bool(result.rowcount)
 
-    async def review(self, event_id: str, review_status: ReviewStatus) -> EventRecord:
+    async def review(self, event_id: str, review_status: ReviewStatus, *, reviewer_id: str, review_note: str | None = None, expected_status: ReviewStatus | None = None) -> EventRecord:
         async with self._session_factory() as session:
             row = await session.get(WuHistoricalEventRow, event_id)
             if row is None:
                 raise KeyError(event_id)
-            evidence_count = (
-                await session.execute(
-                    select(func.count()).select_from(WuEventEvidenceRow).where(WuEventEvidenceRow.event_id == event_id)
-                )
-            ).scalar_one()
+            evidence_count = (await session.execute(select(func.count()).select_from(WuEventEvidenceRow).where(WuEventEvidenceRow.event_id == event_id))).scalar_one()
             if review_status is ReviewStatus.REVIEWED and evidence_count == 0:
                 raise ValueError("reviewed events require at least one evidence_id")
-            row.review_status = review_status.value
-            row.updated_at = datetime.now(UTC)
-            await session.commit()
-        record = await self.get(event_id)
+            await append_graph_review(session, row, object_type="event", new_status=review_status, reviewer_id=reviewer_id, review_note=review_note, expected_status=expected_status)
+            try:
+                await session.commit()
+            except IntegrityError as exc:
+                raise ReviewConflictError("审核状态已被其他人修改，请刷新后重试。") from exc
+        record = await self.get(event_id, include_rejected=True)
         if record is None:
             raise KeyError(event_id)
         return record
+
+    async def review_history(self, event_id: str) -> list[GraphReviewRecord]:
+        return await list_graph_reviews(self._session_factory, "event", event_id)
 
     async def list(
         self,
@@ -111,9 +110,13 @@ class SqlEventRepository:
         event_type: str | None = None,
         release_id: str | None = None,
         limit: int = 50,
+        offset: int = 0,
+        include_rejected: bool = False,
     ) -> list[EventRecord]:
         async with self._session_factory() as session:
-            stmt = select(WuHistoricalEventRow).where(WuHistoricalEventRow.review_status != ReviewStatus.REJECTED.value)
+            stmt = select(WuHistoricalEventRow)
+            if not include_rejected:
+                stmt = stmt.where(WuHistoricalEventRow.review_status != ReviewStatus.REJECTED.value)
             if event_ids:
                 stmt = stmt.where(WuHistoricalEventRow.id.in_(set(event_ids)))
             if place_entity_id:
@@ -123,32 +126,18 @@ class SqlEventRepository:
             if release_id:
                 stmt = stmt.where(or_(WuHistoricalEventRow.release_id == release_id, WuHistoricalEventRow.release_id.is_(None)))
             if participant_entity_id:
-                stmt = stmt.where(
-                    WuHistoricalEventRow.id.in_(
-                        select(WuEventParticipantRow.event_id).where(WuEventParticipantRow.entity_id == participant_entity_id)
-                    )
-                )
-            rows = (
-                await session.execute(
-                    stmt.order_by(WuHistoricalEventRow.start_time.asc().nulls_last(), WuHistoricalEventRow.id.asc()).limit(limit)
-                )
-            ).scalars().all()
+                stmt = stmt.where(WuHistoricalEventRow.id.in_(select(WuEventParticipantRow.event_id).where(WuEventParticipantRow.entity_id == participant_entity_id)))
+            rows = (await session.execute(stmt.order_by(WuHistoricalEventRow.start_time.asc().nulls_last(), WuHistoricalEventRow.id.asc()).offset(offset).limit(limit))).scalars().all()
             if not rows:
                 return []
             event_ids_found = [row.id for row in rows]
             participants = (
                 await session.execute(
-                    select(WuEventParticipantRow.event_id, WuEventParticipantRow.entity_id)
-                    .where(WuEventParticipantRow.event_id.in_(event_ids_found))
-                    .order_by(WuEventParticipantRow.event_id, WuEventParticipantRow.entity_id)
+                    select(WuEventParticipantRow.event_id, WuEventParticipantRow.entity_id).where(WuEventParticipantRow.event_id.in_(event_ids_found)).order_by(WuEventParticipantRow.event_id, WuEventParticipantRow.entity_id)
                 )
             ).all()
             evidence = (
-                await session.execute(
-                    select(WuEventEvidenceRow.event_id, WuEventEvidenceRow.evidence_id)
-                    .where(WuEventEvidenceRow.event_id.in_(event_ids_found))
-                    .order_by(WuEventEvidenceRow.event_id, WuEventEvidenceRow.evidence_id)
-                )
+                await session.execute(select(WuEventEvidenceRow.event_id, WuEventEvidenceRow.evidence_id).where(WuEventEvidenceRow.event_id.in_(event_ids_found)).order_by(WuEventEvidenceRow.event_id, WuEventEvidenceRow.evidence_id))
             ).all()
             participants_by_event: dict[str, list[str]] = {}
             evidence_by_event: dict[str, list[str]] = {}
@@ -206,10 +195,7 @@ class SqlGeoRepository:
             row.release_id = feature.release_id
             row.updated_at = now
             await session.execute(delete(WuGeoEvidenceRow).where(WuGeoEvidenceRow.entity_id == feature.entity_id))
-            session.add_all(
-                WuGeoEvidenceRow(entity_id=feature.entity_id, evidence_id=evidence_id)
-                for evidence_id in feature.evidence_ids
-            )
+            session.add_all(WuGeoEvidenceRow(entity_id=feature.entity_id, evidence_id=evidence_id) for evidence_id in feature.evidence_ids)
             await session.commit()
         return feature
 
@@ -241,9 +227,7 @@ class SqlGeoRepository:
                 return []
             evidence = (
                 await session.execute(
-                    select(WuGeoEvidenceRow.entity_id, WuGeoEvidenceRow.evidence_id)
-                    .where(WuGeoEvidenceRow.entity_id.in_([row.entity_id for row in rows]))
-                    .order_by(WuGeoEvidenceRow.entity_id, WuGeoEvidenceRow.evidence_id)
+                    select(WuGeoEvidenceRow.entity_id, WuGeoEvidenceRow.evidence_id).where(WuGeoEvidenceRow.entity_id.in_([row.entity_id for row in rows])).order_by(WuGeoEvidenceRow.entity_id, WuGeoEvidenceRow.evidence_id)
                 )
             ).all()
             evidence_by_entity: dict[str, list[str]] = {}

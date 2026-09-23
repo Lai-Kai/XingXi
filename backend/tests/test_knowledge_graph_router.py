@@ -17,6 +17,7 @@ from app.gateway.routers import knowledge_graph
 @dataclass
 class _User:
     system_role: str
+    id: str = "admin-test"
 
 
 class _GraphRepository:
@@ -36,7 +37,7 @@ class _GraphRepository:
     async def delete_relation(self, relation_id: str) -> bool:
         return self.relations.pop(relation_id, None) is not None
 
-    async def review_relation(self, relation_id: str, review_status: ReviewStatus) -> RelationRecord:
+    async def review_relation(self, relation_id: str, review_status: ReviewStatus, **_kwargs) -> RelationRecord:
         record = self.relations.get(relation_id)
         if record is None:
             raise KeyError(relation_id)
@@ -64,7 +65,7 @@ class _EventRepository:
     async def delete(self, event_id: str) -> bool:
         return self.events.pop(event_id, None) is not None
 
-    async def review(self, event_id: str, review_status: ReviewStatus) -> EventRecord:
+    async def review(self, event_id: str, review_status: ReviewStatus, **_kwargs) -> EventRecord:
         record = self.events.get(event_id)
         if record is None:
             raise KeyError(event_id)
@@ -226,7 +227,7 @@ def test_admin_can_manage_inferred_relation_event_and_geo(monkeypatch) -> None:
     assert (
         client.patch(
             "/api/knowledge-graph/relations/rel-demo/review",
-            json={"review_status": "rejected"},
+            json={"review_status": "rejected", "review_note": "证据不足，退回复核"},
         ).status_code
         == 200
     )
@@ -240,7 +241,7 @@ def test_admin_can_manage_inferred_relation_event_and_geo(monkeypatch) -> None:
     assert (
         client.patch(
             "/api/knowledge-graph/events/event-demo/review",
-            json={"review_status": "rejected"},
+            json={"review_status": "rejected", "review_note": "证据不足，退回复核"},
         ).status_code
         == 200
     )

@@ -5,11 +5,114 @@ import {
   invalidateGraphCatalogCache,
   readCachedGraphCatalog,
   queryGraph,
+  listAllEvents,
+  reviewRelation,
+  reviewEvent,
 } from "@/core/knowledge-graph/api";
 
 afterEach(() => {
   invalidateGraphCatalogCache();
   rs.unstubAllGlobals();
+});
+
+test("admin review catalog is explicit and never contaminates the ordinary cache", async () => {
+  const requests: URL[] = [];
+  rs.stubGlobal("fetch", async (url: string) => {
+    const parsed = new URL(url, "http://localhost");
+    requests.push(parsed);
+    return new Response(
+      JSON.stringify(
+        parsed.searchParams.has("include_rejected")
+          ? [{ id: "rejected", review_status: "rejected" }]
+          : [],
+      ),
+    );
+  });
+  const publicCatalog = await fetchGraphCatalog();
+  const adminCatalog = await fetchGraphCatalog({ includeRejected: true });
+  expect(adminCatalog.relations[0]?.id).toBe("rejected");
+  expect(readCachedGraphCatalog()).toBe(publicCatalog);
+  expect((await fetchGraphCatalog()).relations).toEqual([]);
+  expect(
+    requests.filter(
+      (url) => url.searchParams.get("include_rejected") === "true",
+    ),
+  ).toHaveLength(1);
+  await listAllEvents({ includeRejected: true });
+  expect(requests.at(-1)?.searchParams.get("include_rejected")).toBe("true");
+});
+
+test("review requests send all statuses, the note and the expected status, and return the server record", async () => {
+  const requests: Array<{ url: string; body: unknown }> = [];
+  rs.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+    if (typeof init.body !== "string")
+      throw new Error("Expected JSON request body");
+    const body = JSON.parse(init.body);
+    requests.push({ url, body });
+    return new Response(
+      JSON.stringify({
+        id: "server-record",
+        review_status: body.review_status,
+      }),
+    );
+  });
+  for (const review of [reviewRelation, reviewEvent]) {
+    for (const status of [
+      "pending",
+      "reviewed",
+      "rejected",
+      "disputed",
+    ] as const) {
+      const row = await review("record", status, "核对史料", "pending");
+      expect(row.id).toBe("server-record");
+      expect(row.review_status).toBe(status);
+      expect(requests.at(-1)?.body).toEqual({
+        review_status: status,
+        review_note: "核对史料",
+        expected_status: "pending",
+      });
+    }
+  }
+});
+
+test("failed reviews preserve the explicit server error", async () => {
+  rs.stubGlobal(
+    "fetch",
+    async () =>
+      new Response(JSON.stringify({ detail: "审核状态已改变，请刷新" }), {
+        status: 409,
+      }),
+  );
+  await expect(
+    reviewRelation("record", "pending", "重新核对", "reviewed"),
+  ).rejects.toThrow("审核状态已改变，请刷新");
+  await expect(
+    reviewEvent("record", "disputed", "史料冲突", "reviewed"),
+  ).rejects.toThrow("审核状态已改变，请刷新");
+});
+
+test("a query that started before a review cannot repopulate the invalidated cache", async () => {
+  let finishOld!: (response: Response) => void;
+  let calls = 0;
+  const result = (message: string) =>
+    new Response(
+      JSON.stringify({ message, nodes: [], edges: [], evidence: [] }),
+    );
+  rs.stubGlobal("fetch", async () => {
+    calls += 1;
+    if (calls === 1)
+      return new Promise<Response>((resolve) => {
+        finishOld = resolve;
+      });
+    return result("已更新");
+  });
+  const oldRequest = queryGraph("record");
+  invalidateGraphCatalogCache();
+  expect((await queryGraph("record")).message).toBe("已更新");
+  finishOld(result("旧结果"));
+  await oldRequest;
+  expect((await queryGraph("record")).message).toBe("已更新");
+  expect(calls).toBe(2);
 });
 
 test("graph catalog reuses the latest successful session response", async () => {

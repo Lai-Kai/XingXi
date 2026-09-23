@@ -168,6 +168,8 @@ review labels, and server truncation state while doing so. The `all`/`people`
 control filters relationship scope inside either mode and must not be treated
 as a control for selecting connected components.
 
+Relation/event cards always render the four review labels through `core/knowledge-graph/review.ts`; admins retain `components/workspace/graph-review-controls.tsx` after every decision. The controls hide the current status, disable approval without Evidence, require notes for rejection/dispute or changes from non-pending status, and retain state/note/error on failed requests. PATCH sends `expected_status` and adopts the returned record and invalidates caches; older in-flight responses cannot repopulate an invalidated graph cache. Privileged catalog requests explicitly use `include_rejected` and bypass the ordinary shared cache. The admin-only rejected filter shows a dedicated relation review list without a graph canvas; all/draft filters exclude rejected rows. Review tab/filter choices and the corrected relation's subject persist in URL parameters across reloads. Event lists follow every offset page. `tests/e2e/knowledge-graph-review.spec.ts` uses mutable server mocks to cover repeated decisions and reloads for both object types.
+
 ## Xingxi Map Surface
 
 `src/app/workspace/map/page.tsx` loads the read-only catalog through `src/core/map/api.ts`; product data must never be reintroduced as `DEMO_*` browser constants. `src/core/map/types.ts` owns client filtering and timeline contracts, while `components/workspace/map/maplibre-canvas.tsx` owns the OSM canvas, confidence-distinct markers, study-route lines, and explicitly uncertain trajectory lines.

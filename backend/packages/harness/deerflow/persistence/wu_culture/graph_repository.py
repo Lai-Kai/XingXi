@@ -8,12 +8,16 @@ from datetime import UTC, datetime
 from functools import lru_cache
 
 from sqlalchemy import and_, case, delete, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from wu_culture.entities import EntityRecord
 from wu_culture.extraction import extract_knowledge, is_non_historical_text
 from wu_culture.models import EntityType, ReviewStatus
 from wu_culture.relations import RelationCreate, RelationRecord, RelationType
+from wu_culture.review import ReviewConflictError
+from wu_culture.review.graph import GraphReviewRecord
 
+from deerflow.persistence.wu_culture.graph_review import append_graph_review, list_graph_reviews
 from deerflow.persistence.wu_culture.model import (
     AliasIndexRow,
     EvidenceRow,
@@ -52,12 +56,7 @@ def _script_variants(value: str) -> tuple[str, ...]:
 
 
 def _entity_evidence_expression(entity_id, release_id: str | None):  # noqa: ANN001
-    statement = (
-        select(1)
-        .select_from(WuEntityEvidenceRow)
-        .join(EvidenceRow, EvidenceRow.id == WuEntityEvidenceRow.evidence_id)
-        .where(WuEntityEvidenceRow.entity_id == entity_id)
-    )
+    statement = select(1).select_from(WuEntityEvidenceRow).join(EvidenceRow, EvidenceRow.id == WuEntityEvidenceRow.evidence_id).where(WuEntityEvidenceRow.entity_id == entity_id)
     if release_id is not None:
         statement = statement.join(
             KnowledgeReleaseItemRow,
@@ -90,12 +89,7 @@ def _entity_scope_expression(release_id: str | None, entity_id=None):  # noqa: A
 
 
 def _relation_evidence_expression(relation_id, release_id: str | None):  # noqa: ANN001
-    statement = (
-        select(1)
-        .select_from(WuRelationEvidenceRow)
-        .join(EvidenceRow, EvidenceRow.id == WuRelationEvidenceRow.evidence_id)
-        .where(WuRelationEvidenceRow.relation_id == relation_id)
-    )
+    statement = select(1).select_from(WuRelationEvidenceRow).join(EvidenceRow, EvidenceRow.id == WuRelationEvidenceRow.evidence_id).where(WuRelationEvidenceRow.relation_id == relation_id)
     if release_id is not None:
         statement = statement.join(
             KnowledgeReleaseItemRow,
@@ -120,13 +114,7 @@ def _relation_scope_expression(release_id: str | None):
 
 async def _entity_is_in_scope(session, entity_id: str, release_id: str | None) -> bool:  # noqa: ANN001
     """Check an ID lookup against the same evidence scope as name lookup."""
-    return bool(
-        (
-            await session.execute(
-                select(_entity_scope_expression(release_id, entity_id))
-            )
-        ).scalar()
-    )
+    return bool((await session.execute(select(_entity_scope_expression(release_id, entity_id)))).scalar())
 
 
 class SqlKnowledgeGraphRepository:
@@ -147,13 +135,19 @@ class SqlKnowledgeGraphRepository:
         extracted = extract_knowledge(text)
         async with self._session_factory() as session:
             evidence_ids = (
-                await session.execute(
-                    select(EvidenceRow.id).where(
-                        EvidenceRow.document_id == document_id,
-                        EvidenceRow.chunk_id == chunk_id,
-                    ).order_by(EvidenceRow.id.asc())
+                (
+                    await session.execute(
+                        select(EvidenceRow.id)
+                        .where(
+                            EvidenceRow.document_id == document_id,
+                            EvidenceRow.chunk_id == chunk_id,
+                        )
+                        .order_by(EvidenceRow.id.asc())
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             if not evidence_ids:
                 raise ValueError(f"chunk {chunk_id!r} has no evidence row")
 
@@ -203,16 +197,10 @@ class SqlKnowledgeGraphRepository:
                 created += int(was_created)
 
             for event in extracted.events:
-                event_digest = hashlib.sha256(
-                    f"{document_id}\x1f{chunk_id}\x1f{event.title}".encode()
-                ).hexdigest()[:24]
+                event_digest = hashlib.sha256(f"{document_id}\x1f{chunk_id}\x1f{event.title}".encode()).hexdigest()[:24]
                 event_id = f"event-extracted-{event_digest}"
                 if await session.get(WuHistoricalEventRow, event_id) is None:
-                    participant_ids = [
-                        entity_ids[name]
-                        for name, candidate in extracted_entity_map(extracted, entity_ids)
-                        if candidate.entity_type is EntityType.PERSON and name in event.title
-                    ]
+                    participant_ids = [entity_ids[name] for name, candidate in extracted_entity_map(extracted, entity_ids) if candidate.entity_type is EntityType.PERSON and name in event.title]
                     session.add(
                         WuHistoricalEventRow(
                             id=event_id,
@@ -230,14 +218,8 @@ class SqlKnowledgeGraphRepository:
                             updated_at=now,
                         )
                     )
-                    session.add_all(
-                        WuEventParticipantRow(event_id=event_id, entity_id=entity_id)
-                        for entity_id in dict.fromkeys(participant_ids)
-                    )
-                    session.add_all(
-                        WuEventEvidenceRow(event_id=event_id, evidence_id=evidence_id)
-                        for evidence_id in evidence_ids
-                    )
+                    session.add_all(WuEventParticipantRow(event_id=event_id, entity_id=entity_id) for entity_id in dict.fromkeys(participant_ids))
+                    session.add_all(WuEventEvidenceRow(event_id=event_id, evidence_id=evidence_id) for evidence_id in evidence_ids)
                     created += 1
 
             for entity_id in entity_ids.values():
@@ -252,6 +234,7 @@ class SqlKnowledgeGraphRepository:
                 created += int(was_created)
             await session.commit()
             return created
+
     async def resolve_entities(self, query: str, *, release_id: str | None = None, limit: int = 10) -> list[EntityRecord]:
         async with self._session_factory() as session:
             by_id = await session.get(WuEntityRow, query)
@@ -274,13 +257,7 @@ class SqlKnowledgeGraphRepository:
                 alias_stmt = alias_stmt.where(AliasIndexRow.release_id == release_id)
             alias_entity_ids = (await session.execute(alias_stmt.order_by(AliasIndexRow.entity_id.asc()).limit(limit))).scalars().all()
             if alias_entity_ids:
-                aliases = (
-                    await session.execute(
-                        select(WuEntityRow)
-                        .where(WuEntityRow.id.in_(alias_entity_ids), _entity_scope_expression(release_id))
-                        .order_by(WuEntityRow.entity_type.asc(), WuEntityRow.id.asc())
-                    )
-                ).scalars().all()
+                aliases = (await session.execute(select(WuEntityRow).where(WuEntityRow.id.in_(alias_entity_ids), _entity_scope_expression(release_id)).order_by(WuEntityRow.entity_type.asc(), WuEntityRow.id.asc()))).scalars().all()
                 if aliases:
                     return await self._entity_records(session, aliases, release_id=release_id)
 
@@ -290,11 +267,7 @@ class SqlKnowledgeGraphRepository:
             script_stmt = select(WuEntityRow).where(_entity_scope_expression(release_id))
             script_rows = (await session.execute(script_stmt.order_by(WuEntityRow.entity_type.asc(), WuEntityRow.id.asc()))).scalars().all()
             query_variants = {variant.casefold() for variant in variants}
-            script_matches = [
-                row
-                for row in script_rows
-                if query_variants.intersection(variant.casefold() for variant in _script_variants(row.canonical_name))
-            ]
+            script_matches = [row for row in script_rows if query_variants.intersection(variant.casefold() for variant in _script_variants(row.canonical_name))]
             if script_matches:
                 return await self._entity_records(session, script_matches[:limit], release_id=release_id)
 
@@ -321,6 +294,7 @@ class SqlKnowledgeGraphRepository:
         relation_types: Sequence[str] | None = None,
         limit: int = 200,
         offset: int = 0,
+        include_rejected: bool = False,
     ) -> list[RelationRecord]:
         if not entity_ids:
             return []
@@ -328,38 +302,55 @@ class SqlKnowledgeGraphRepository:
             ids = set(entity_ids)
             stmt = select(WuRelationRow).where(
                 or_(WuRelationRow.subject_id.in_(ids), WuRelationRow.object_id.in_(ids)),
-                WuRelationRow.review_status != ReviewStatus.REJECTED.value,
-                _relation_scope_expression(release_id),
-                _entity_scope_expression(release_id, WuRelationRow.subject_id),
-                _entity_scope_expression(release_id, WuRelationRow.object_id),
             )
+            if not include_rejected:
+                stmt = stmt.where(
+                    _relation_scope_expression(release_id),
+                    WuRelationRow.review_status != ReviewStatus.REJECTED.value,
+                    _entity_scope_expression(release_id, WuRelationRow.subject_id),
+                    _entity_scope_expression(release_id, WuRelationRow.object_id),
+                )
+            else:
+                # The explicit administrator queue must be able to recover
+                # rejected legacy rows even when they have no evidence or
+                # their endpoints no longer satisfy the ordinary graph scope.
+                # Keep an explicit release filter authoritative.
+                rejected_scope = WuRelationRow.review_status == ReviewStatus.REJECTED.value
+                if release_id is not None:
+                    rejected_scope = and_(
+                        rejected_scope,
+                        or_(WuRelationRow.release_id == release_id, WuRelationRow.release_id.is_(None)),
+                    )
+                stmt = stmt.where(or_(_relation_scope_expression(release_id), rejected_scope))
             if relation_types:
                 stmt = stmt.where(WuRelationRow.relation_type.in_(set(relation_types)))
-            else:
+            elif not include_rejected:
                 # The document edge is provenance metadata, not a historical
                 # relationship. Keep it queryable explicitly, but do not let
                 # it crowd the bounded subject neighborhood by default.
-                stmt = stmt.where(
-                    WuRelationRow.relation_type != RelationType.DOCUMENTED_IN.value
-                )
+                stmt = stmt.where(WuRelationRow.relation_type != RelationType.DOCUMENTED_IN.value)
             rows = (
-                await session.execute(
-                    stmt.order_by(
-                        case(
-                            (WuRelationRow.relation_type == RelationType.DOCUMENTED_IN.value, 1),
-                            else_=0,
-                        ).asc(),
-                        WuRelationRow.is_inferred.asc(),
-                        WuRelationRow.id.asc(),
-                    ).offset(offset).limit(limit)
+                (
+                    await session.execute(
+                        stmt.order_by(
+                            case(
+                                (WuRelationRow.relation_type == RelationType.DOCUMENTED_IN.value, 1),
+                                else_=0,
+                            ).asc(),
+                            WuRelationRow.is_inferred.asc(),
+                            WuRelationRow.id.asc(),
+                        )
+                        .offset(offset)
+                        .limit(limit)
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             if not rows:
                 return []
             evidence_statement = (
-                select(WuRelationEvidenceRow.relation_id, WuRelationEvidenceRow.evidence_id)
-                .join(EvidenceRow, EvidenceRow.id == WuRelationEvidenceRow.evidence_id)
-                .where(WuRelationEvidenceRow.relation_id.in_([row.id for row in rows]))
+                select(WuRelationEvidenceRow.relation_id, WuRelationEvidenceRow.evidence_id).join(EvidenceRow, EvidenceRow.id == WuRelationEvidenceRow.evidence_id).where(WuRelationEvidenceRow.relation_id.in_([row.id for row in rows]))
             )
             if release_id is not None:
                 evidence_statement = evidence_statement.join(
@@ -443,6 +434,7 @@ class SqlKnowledgeGraphRepository:
         release_id: str | None = None,
         limit: int = 200,
         offset: int = 0,
+        include_rejected: bool = False,
     ) -> list[RelationRecord]:
         if entity_id:
             return await self.relations_for_entities(
@@ -451,36 +443,49 @@ class SqlKnowledgeGraphRepository:
                 release_id=release_id,
                 limit=limit,
                 offset=offset,
+                include_rejected=include_rejected,
             )
         async with self._session_factory() as session:
-            stmt = select(WuRelationRow).where(
-                WuRelationRow.review_status != ReviewStatus.REJECTED.value,
-                _relation_scope_expression(release_id),
-                _entity_scope_expression(release_id, WuRelationRow.subject_id),
-                _entity_scope_expression(release_id, WuRelationRow.object_id),
-            )
+            stmt = select(WuRelationRow)
+            if not include_rejected:
+                stmt = stmt.where(
+                    _relation_scope_expression(release_id),
+                    WuRelationRow.review_status != ReviewStatus.REJECTED.value,
+                    _entity_scope_expression(release_id, WuRelationRow.subject_id),
+                    _entity_scope_expression(release_id, WuRelationRow.object_id),
+                )
+            else:
+                rejected_scope = WuRelationRow.review_status == ReviewStatus.REJECTED.value
+                if release_id is not None:
+                    rejected_scope = and_(
+                        rejected_scope,
+                        or_(WuRelationRow.release_id == release_id, WuRelationRow.release_id.is_(None)),
+                    )
+                stmt = stmt.where(or_(_relation_scope_expression(release_id), rejected_scope))
             if relation_types:
                 stmt = stmt.where(WuRelationRow.relation_type.in_(set(relation_types)))
-            else:
-                stmt = stmt.where(
-                    WuRelationRow.relation_type != RelationType.DOCUMENTED_IN.value
-                )
+            elif not include_rejected:
+                stmt = stmt.where(WuRelationRow.relation_type != RelationType.DOCUMENTED_IN.value)
             ids = (
-                await session.execute(
-                    stmt.order_by(
-                        case(
-                            (WuRelationRow.relation_type == RelationType.DOCUMENTED_IN.value, 1),
-                            else_=0,
-                        ).asc(),
-                        WuRelationRow.is_inferred.asc(),
-                        WuRelationRow.id.asc(),
+                (
+                    await session.execute(
+                        stmt.order_by(
+                            case(
+                                (WuRelationRow.relation_type == RelationType.DOCUMENTED_IN.value, 1),
+                                else_=0,
+                            ).asc(),
+                            WuRelationRow.is_inferred.asc(),
+                            WuRelationRow.id.asc(),
+                        )
+                        .offset(offset)
+                        .limit(limit)
+                        .with_only_columns(WuRelationRow.id)
                     )
-                    .offset(offset)
-                    .limit(limit)
-                    .with_only_columns(WuRelationRow.id)
                 )
-            ).scalars().all()
-        return await self._relations_by_ids(ids)
+                .scalars()
+                .all()
+            )
+        return await self._relations_by_ids(ids, include_rejected=include_rejected)
 
     async def delete_relation(self, relation_id: str) -> bool:
         async with self._session_factory() as session:
@@ -488,7 +493,7 @@ class SqlKnowledgeGraphRepository:
             await session.commit()
             return bool(result.rowcount)
 
-    async def review_relation(self, relation_id: str, review_status: ReviewStatus) -> RelationRecord:
+    async def review_relation(self, relation_id: str, review_status: ReviewStatus, *, reviewer_id: str, review_note: str | None = None, expected_status: ReviewStatus | None = None) -> RelationRecord:
         async with self._session_factory() as session:
             row = await session.get(WuRelationRow, relation_id)
             if row is None:
@@ -496,16 +501,24 @@ class SqlKnowledgeGraphRepository:
             evidence_count = (await session.execute(select(func.count()).select_from(WuRelationEvidenceRow).where(WuRelationEvidenceRow.relation_id == relation_id))).scalar_one()
             if review_status is ReviewStatus.REVIEWED and evidence_count == 0:
                 raise ValueError("reviewed relations require at least one evidence_id")
-            row.review_status = review_status.value
-            row.updated_at = datetime.now(UTC)
-            await session.commit()
+            await append_graph_review(session, row, object_type="relation", new_status=review_status, reviewer_id=reviewer_id, review_note=review_note, expected_status=expected_status)
+            try:
+                await session.commit()
+            except IntegrityError as exc:
+                raise ReviewConflictError("审核状态已被其他人修改，请刷新后重试。") from exc
         return (await self._relations_by_ids((relation_id,)))[0]
 
-    async def _relations_by_ids(self, relation_ids: Sequence[str]) -> list[RelationRecord]:
+    async def review_history(self, relation_id: str) -> list[GraphReviewRecord]:
+        return await list_graph_reviews(self._session_factory, "relation", relation_id)
+
+    async def _relations_by_ids(self, relation_ids: Sequence[str], *, include_rejected: bool = True) -> list[RelationRecord]:
         if not relation_ids:
             return []
         async with self._session_factory() as session:
-            rows = (await session.execute(select(WuRelationRow).where(WuRelationRow.id.in_(set(relation_ids))).order_by(WuRelationRow.id))).scalars().all()
+            statement = select(WuRelationRow).where(WuRelationRow.id.in_(set(relation_ids)))
+            if not include_rejected:
+                statement = statement.where(WuRelationRow.review_status != ReviewStatus.REJECTED.value)
+            rows = (await session.execute(statement.order_by(WuRelationRow.id))).scalars().all()
             evidence_rows = (
                 await session.execute(
                     select(WuRelationEvidenceRow.relation_id, WuRelationEvidenceRow.evidence_id).where(WuRelationEvidenceRow.relation_id.in_(set(relation_ids))).order_by(WuRelationEvidenceRow.relation_id, WuRelationEvidenceRow.evidence_id)
@@ -582,11 +595,7 @@ class SqlKnowledgeGraphRepository:
     ) -> list[EntityRecord]:
         if not rows:
             return []
-        evidence_statement = (
-            select(WuEntityEvidenceRow.entity_id, WuEntityEvidenceRow.evidence_id)
-            .join(EvidenceRow, EvidenceRow.id == WuEntityEvidenceRow.evidence_id)
-            .where(WuEntityEvidenceRow.entity_id.in_([row.id for row in rows]))
-        )
+        evidence_statement = select(WuEntityEvidenceRow.entity_id, WuEntityEvidenceRow.evidence_id).join(EvidenceRow, EvidenceRow.id == WuEntityEvidenceRow.evidence_id).where(WuEntityEvidenceRow.entity_id.in_([row.id for row in rows]))
         if release_id is not None:
             evidence_statement = evidence_statement.join(
                 KnowledgeReleaseItemRow,
@@ -725,8 +734,4 @@ async def _ensure_relation(
 
 def extracted_entity_map(extracted, entity_ids: dict[str, str]):  # noqa: ANN001
     """Yield extracted names with their persisted records for event linking."""
-    return (
-        (entity.name, entity)
-        for entity in extracted.entities
-        if entity.name in entity_ids
-    )
+    return ((entity.name, entity) for entity in extracted.entities if entity.name in entity_ids)

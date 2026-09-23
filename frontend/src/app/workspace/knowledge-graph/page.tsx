@@ -35,6 +35,8 @@ import {
   BusinessMobileHeader,
   BusinessPageHeader,
 } from "@/components/workspace/business-page";
+import { GraphReviewControls } from "@/components/workspace/graph-review-controls";
+import { GraphOverview } from "@/components/workspace/graph-overview";
 import { useAuth } from "@/core/auth/AuthProvider";
 import {
   createEntity,
@@ -43,7 +45,7 @@ import {
   extractTextKnowledge,
   fetchGraphCatalog,
   invalidateGraphCatalogCache,
-  listEvents,
+  listAllEvents,
   listGeoFeatures,
   queryGraph,
   readCachedGraphCatalog,
@@ -62,6 +64,12 @@ import {
   layoutGraphOverview,
   type GraphPosition,
 } from "@/core/knowledge-graph/layout";
+import {
+  matchesReviewFilter,
+  reviewLabels,
+  type ReviewFilterValue,
+} from "@/core/knowledge-graph/review";
+import { sortHistoricalEvents } from "@/core/knowledge-graph/types";
 import type {
   EntityType,
   ExtractionResponse,
@@ -70,8 +78,8 @@ import type {
   GraphQueryResult,
   GraphRelation,
   HistoricalEvent,
+  ReviewStatus,
 } from "@/core/knowledge-graph/types";
-import { sortHistoricalEvents } from "@/core/knowledge-graph/types";
 import { createLatestRequestTracker } from "@/core/source-files/latest-request";
 
 type View = "graph" | "events" | "geo";
@@ -132,12 +140,6 @@ const VISIBLE_GRAPH_RELATION_LIMIT = 18;
 const VISIBLE_NETWORK_RELATION_LIMIT = 80;
 type GraphDepth = 1 | 2 | 3;
 const DEFAULT_GRAPH_DEPTH: GraphDepth = 2;
-const reviewLabels = {
-  pending: "待复核",
-  reviewed: "已复核",
-  disputed: "有争议",
-  rejected: "已驳回",
-} as const;
 const entityNodeStyles: Record<
   EntityType,
   { border: string; background: string }
@@ -216,6 +218,7 @@ function buildLocalFocusedGraphResult(
   if (!center) return null;
   const groundedRelations = relations.filter(
     (relation) =>
+      relation.review_status !== "rejected" &&
       (relation.evidence_ids.length > 0 || relation.is_inferred) &&
       (relation.subject_id === centerId || relation.object_id === centerId),
   );
@@ -243,8 +246,10 @@ function buildLocalFocusedGraphResult(
 export default function KnowledgeGraphPage() {
   const { user } = useAuth();
   const isAdmin = user?.system_role === "admin";
+  const [manageGraph, setManageGraph] = useState(false);
   const [initialGraphCatalog] = useState(readCachedGraphCatalog);
   const [view, setView] = useState<View>("graph");
+  const discoveryView = view === "graph" && !(isAdmin && manageGraph);
   const [entities, setEntities] = useState<GraphEntity[]>(
     initialGraphCatalog?.entities ?? [],
   );
@@ -282,9 +287,32 @@ export default function KnowledgeGraphPage() {
   const [graphDepth, setGraphDepth] = useState<GraphDepth>(DEFAULT_GRAPH_DEPTH);
   const graphDepthRef = useRef<GraphDepth>(DEFAULT_GRAPH_DEPTH);
   const [graphRelationPage, setGraphRelationPage] = useState(0);
-  const [reviewFilter, setReviewFilter] = useState<
-    "all" | "reviewed" | "draft"
-  >("all");
+  const [reviewFilter, setReviewFilter] = useState<ReviewFilterValue>("all");
+  const rejectedView = isAdmin && reviewFilter === "rejected";
+
+  useEffect(() => {
+    const params = new URL(window.location.href).searchParams;
+    const initialView = params.get("view");
+    if (params.get("manage") === "1") setManageGraph(true);
+    if (initialView === "events" || initialView === "geo") setView(initialView);
+    const filter = params.get("review");
+    if (filter === "reviewed" || filter === "draft" || filter === "rejected")
+      setReviewFilter(filter);
+  }, []);
+
+  function changeReviewFilter(filter: ReviewFilterValue) {
+    setReviewFilter(filter);
+    const url = new URL(window.location.href);
+    url.searchParams.set("review", filter);
+    window.history.replaceState(null, "", url);
+  }
+
+  function changeView(next: View) {
+    setView(next);
+    const url = new URL(window.location.href);
+    url.searchParams.set("view", next);
+    window.history.replaceState(null, "", url);
+  }
   const [entityForm, setEntityForm] = useState({
     canonical_name: "",
     entity_type: "place" as EntityType,
@@ -328,11 +356,17 @@ export default function KnowledgeGraphPage() {
       setError(null);
       try {
         if (view === "graph") {
+          if (discoveryView) return;
           const { entities: nextEntities, relations: nextRelations } =
-            await fetchGraphCatalog({ force, signal: request.signal });
+            await fetchGraphCatalog({
+              force,
+              signal: request.signal,
+              includeRejected: rejectedView,
+            });
           if (!supportDataTracker.current.isCurrent(request.sequence)) return;
           setEntities(nextEntities);
           setRelations(nextRelations);
+          if (rejectedView) return;
           if (graphModeRef.current === "overview") {
             setFocusedEntityId(null);
             setFocusHistory([]);
@@ -352,16 +386,21 @@ export default function KnowledgeGraphPage() {
               (degreeByEntity.get(relation.object_id) ?? 0) + 1,
             );
           }
-          const defaultFocus = [...nextEntities]
-            .filter((entity) => (degreeByEntity.get(entity.id) ?? 0) > 0)
-            .sort(
-              (left, right) =>
-                (degreeByEntity.get(right.id) ?? 0) -
-                  (degreeByEntity.get(left.id) ?? 0) ||
-                Number(right.entity_type === "person") -
-                  Number(left.entity_type === "person") ||
-                left.canonical_name.localeCompare(right.canonical_name),
-            )[0];
+          const savedFocusId = new URL(window.location.href).searchParams.get(
+            "entity",
+          );
+          const defaultFocus =
+            nextEntities.find((entity) => entity.id === savedFocusId) ??
+            [...nextEntities]
+              .filter((entity) => (degreeByEntity.get(entity.id) ?? 0) > 0)
+              .sort(
+                (left, right) =>
+                  (degreeByEntity.get(right.id) ?? 0) -
+                    (degreeByEntity.get(left.id) ?? 0) ||
+                  Number(right.entity_type === "person") -
+                    Number(left.entity_type === "person") ||
+                  left.canonical_name.localeCompare(right.canonical_name),
+              )[0];
           setFocusedEntityId(defaultFocus?.id ?? null);
           setFocusHistory([]);
           setQuery((current) =>
@@ -418,8 +457,8 @@ export default function KnowledgeGraphPage() {
             })();
           }
         } else if (view === "events") {
-          const nextEvents = await listEvents({
-            limit: 100,
+          const nextEvents = await listAllEvents({
+            includeRejected: rejectedView,
             signal: request.signal,
           });
           if (!supportDataTracker.current.isCurrent(request.sequence)) return;
@@ -447,7 +486,7 @@ export default function KnowledgeGraphPage() {
         }
       }
     },
-    [view],
+    [view, rejectedView, discoveryView],
   );
   useEffect(() => {
     const supportTracker = supportDataTracker.current;
@@ -469,7 +508,9 @@ export default function KnowledgeGraphPage() {
   const graphRelations = useMemo(
     () =>
       relations.filter(
-        (relation) => relation.evidence_ids.length > 0 || relation.is_inferred,
+        (relation) =>
+          relation.review_status !== "rejected" &&
+          (relation.evidence_ids.length > 0 || relation.is_inferred),
       ),
     [relations],
   );
@@ -520,11 +561,8 @@ export default function KnowledgeGraphPage() {
   );
   const relationPassesReview = useCallback(
     (relation: GraphRelation) =>
-      reviewFilter === "all" ||
-      (reviewFilter === "reviewed"
-        ? relation.review_status === "reviewed"
-        : relation.review_status !== "reviewed"),
-    [reviewFilter],
+      matchesReviewFilter(relation.review_status, reviewFilter, isAdmin),
+    [reviewFilter, isAdmin],
   );
   const graphEntitiesForScope = useMemo(() => {
     const entitiesById = new Map(
@@ -1027,6 +1065,81 @@ export default function KnowledgeGraphPage() {
     }
   }
 
+  async function changeRelationReview(
+    item: GraphRelation,
+    status: ReviewStatus,
+    note: string,
+  ) {
+    setSaving(true);
+    setError(null);
+    try {
+      const updated = await reviewRelation(
+        item.id,
+        status,
+        note,
+        item.review_status,
+      );
+      const url = new URL(window.location.href);
+      url.searchParams.set("entity", updated.subject_id);
+      window.history.replaceState(null, "", url);
+      invalidateGraphCatalogCache();
+      setRelations((current) =>
+        current.map((row) => (row.id === updated.id ? updated : row)),
+      );
+      // Cancel older traversals before applying the authoritative PATCH result.
+      focusTracker.current.cancel();
+      queryTracker.current.cancel();
+      resultRequestSequence.current += 1;
+      setFocusLoading(false);
+      setQueryLoading(false);
+      setResult((current) =>
+        current
+          ? {
+              ...current,
+              edges: current.edges.map((row) =>
+                row.id === updated.id ? updated : row,
+              ),
+            }
+          : current,
+      );
+      revealReviewResult(updated.review_status);
+      toast.success(`关系审核结果：${reviewLabels[updated.review_status]}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function changeEventReview(
+    item: HistoricalEvent,
+    status: ReviewStatus,
+    note: string,
+  ) {
+    setSaving(true);
+    setError(null);
+    try {
+      const updated = await reviewEvent(
+        item.id,
+        status,
+        note,
+        item.review_status,
+      );
+      invalidateGraphCatalogCache();
+      setEvents((current) =>
+        current.map((row) => (row.id === updated.id ? updated : row)),
+      );
+      revealReviewResult(updated.review_status);
+      toast.success(`事件审核结果：${reviewLabels[updated.review_status]}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function revealReviewResult(status: ReviewStatus) {
+    if (status === "rejected") changeReviewFilter("rejected");
+    else if (!matchesReviewFilter(status, reviewFilter, isAdmin))
+      changeReviewFilter("all");
+  }
+
   async function runExtraction() {
     if (!extractionText.trim()) return;
     setSaving(true);
@@ -1042,9 +1155,9 @@ export default function KnowledgeGraphPage() {
     }
   }
 
-  if (loading && !entities.length)
+  if (!discoveryView && loading && !entities.length)
     return <BusinessLoadingState label="正在读取知识图谱…" />;
-  if (error && !entities.length)
+  if (!discoveryView && error && !entities.length)
     return (
       <BusinessErrorState description={error} onRetry={() => void load(true)} />
     );
@@ -1055,43 +1168,46 @@ export default function KnowledgeGraphPage() {
       <div className="mx-auto max-w-7xl px-4 py-7 sm:px-8 lg:px-10 lg:py-9">
         <BusinessPageHeader
           title="知识图谱"
-          description="从主体出发探索一至三层关系网，并回查人物、地点及外围联系的文献出处"
+          description="从全局总览发现不同关系群组，选择主体探索，并回查文献出处"
           icon={Share2}
         />
 
-        <div className="mt-5 flex flex-col gap-3 border-b border-[#d7e1df] pb-4 md:flex-row">
-          <label className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-md border bg-white px-3">
-            <Search className="size-4 text-[#66797a]" />
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={(event) => event.key === "Enter" && void runQuery()}
-              placeholder="输入实体名称或编号"
-              className="min-w-0 flex-1 bg-transparent text-sm outline-none"
-            />
-          </label>
-          <button
-            type="button"
-            disabled={queryLoading || !query.trim()}
-            onClick={() => void runQuery()}
-            className="h-10 rounded-md bg-[#245f64] px-4 text-sm text-white hover:bg-[#194d51] disabled:cursor-not-allowed disabled:opacity-45"
-          >
-            {queryLoading ? "查询中…" : "查询关系"}
-          </button>
-        </div>
-        {error && (
+        {!discoveryView && (
+          <div className="mt-5 flex flex-col gap-3 border-b border-[#d7e1df] pb-4 md:flex-row">
+            <label className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-md border bg-white px-3">
+              <Search className="size-4 text-[#66797a]" />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={(event) => event.key === "Enter" && void runQuery()}
+                placeholder="输入实体名称或编号"
+                className="min-w-0 flex-1 bg-transparent text-sm outline-none"
+              />
+            </label>
+            <button
+              type="button"
+              disabled={queryLoading || !query.trim()}
+              onClick={() => void runQuery()}
+              className="h-10 rounded-md bg-[#245f64] px-4 text-sm text-white hover:bg-[#194d51] disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              {queryLoading ? "查询中…" : "查询关系"}
+            </button>
+          </div>
+        )}
+        {!discoveryView && error && (
           <p className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
             {error}
           </p>
         )}
-        {result && result.status !== "supported" && (
+        {!discoveryView && result && result.status !== "supported" && (
           <p className="mt-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
             {result.status === "ambiguous"
               ? "名称存在多个候选，请输入更具体的名称。"
               : "当前图谱没有匹配实体；管理员可在下方先建立待审核实体。"}
           </p>
         )}
-        {result?.status === "supported" &&
+        {!discoveryView &&
+          result?.status === "supported" &&
           (result.truncated ||
             displayedRelations.length > visibleGraphRelations.length) && (
             <p className="mt-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
@@ -1115,7 +1231,7 @@ export default function KnowledgeGraphPage() {
             <button
               key={id}
               type="button"
-              onClick={() => setView(id)}
+              onClick={() => changeView(id)}
               className={`inline-flex h-10 items-center gap-2 border-b-2 px-3 text-sm ${view === id ? "border-[#296e72] text-[#225b5f]" : "border-transparent text-[#697b7c]"}`}
             >
               <Icon className="size-4" />
@@ -1124,7 +1240,19 @@ export default function KnowledgeGraphPage() {
           ))}
         </div>
 
-        {view === "graph" && (
+        {view === "graph" && isAdmin && (
+          <button
+            type="button"
+            className="mt-3 rounded border px-3 py-2 text-sm"
+            onClick={() => setManageGraph((value) => !value)}
+          >
+            {manageGraph ? "返回全局浏览" : "打开审核与录入工作台"}
+          </button>
+        )}
+        {discoveryView && (
+          <GraphOverview key={user?.id ?? "anonymous"} isAdmin={isAdmin} />
+        )}
+        {view === "graph" && !discoveryView && (
           <section className="mt-4">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border-b pb-3">
               <div className="flex flex-wrap items-center gap-2">
@@ -1201,7 +1329,7 @@ export default function KnowledgeGraphPage() {
                 >
                   {(
                     [
-                      ["all", "全部关系"],
+                      ["all", "全部关系类型"],
                       ["people", "人物关系"],
                     ] as const
                   ).map(([value, label]) => (
@@ -1222,450 +1350,500 @@ export default function KnowledgeGraphPage() {
                   ))}
                 </div>
               </div>
-              <ReviewFilter value={reviewFilter} onChange={setReviewFilter} />
+              <ReviewFilter
+                value={reviewFilter}
+                onChange={changeReviewFilter}
+                isAdmin={isAdmin}
+              />
             </div>
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-[#dbe5e2] pb-3 text-xs text-[#68797a]">
-              <span>
-                {isGraphOverview
-                  ? `全图总览 · ${connectedComponentCount} 个独立关系网${isolatedEntityCount ? ` · ${isolatedEntityCount} 个孤立主体` : ""}`
-                  : focusedEntity
-                    ? `以“${focusedEntity.canonical_name}”为中心 · 已载入 ${result?.max_depth ?? 1} 层关系`
-                    : "从搜索或图中节点开始探索"}
-                {(focusLoading || queryLoading) && " · 正在加载关系网…"}
-              </span>
-              <span>
-                图中显示 {visibleGraphEntities.length} 个主体 · 已载入{" "}
-                {displayedRelations.length} 条关系
-              </span>
-            </div>
-            {!isGraphOverview && graphRelationPageCount > 1 && (
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded border border-[#dbe5e2] bg-white px-3 py-2 text-xs text-[#68797a]">
-                <span>
-                  地图关系第 {safeGraphRelationPage + 1} /{" "}
-                  {graphRelationPageCount} 组 · 本组{" "}
-                  {visibleGraphRelations.length} 条
-                </span>
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    disabled={safeGraphRelationPage === 0}
-                    onClick={() =>
-                      setGraphRelationPage((current) =>
-                        Math.max(0, current - 1),
-                      )
-                    }
-                    title="查看上一组关系"
-                    className="inline-flex h-7 items-center gap-1 rounded border border-[#cbdad7] bg-white px-2 text-xs text-[#225f64] hover:bg-[#eef5f4] disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    <ChevronLeft className="size-3.5" />
-                    上一组
-                  </button>
-                  <button
-                    type="button"
-                    disabled={
-                      safeGraphRelationPage >= graphRelationPageCount - 1
-                    }
-                    onClick={() =>
-                      setGraphRelationPage((current) =>
-                        Math.min(graphRelationPageCount - 1, current + 1),
-                      )
-                    }
-                    title="查看下一组关系"
-                    className="inline-flex h-7 items-center gap-1 rounded border border-[#cbdad7] bg-white px-2 text-xs text-[#225f64] hover:bg-[#eef5f4] disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    下一组
-                    <ChevronRight className="size-3.5" />
-                  </button>
-                </div>
-              </div>
-            )}
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
-              <div className="h-[680px] overflow-hidden rounded-md border bg-white lg:h-[760px]">
-                {flow.nodes.length ? (
-                  <ReactFlow
-                    nodes={flow.nodes}
-                    edges={flow.edges}
-                    minZoom={0.12}
-                    maxZoom={1.6}
-                    onInit={(instance) => {
-                      flowInstance.current = instance;
-                      if (isGraphOverview) {
-                        void instance.fitView({
-                          padding: 0.12,
-                          minZoom: 0.08,
-                          maxZoom: 0.82,
-                        });
-                      } else {
-                        void instance.setCenter(
-                          GRAPH_CENTER.x,
-                          GRAPH_CENTER.y,
-                          {
-                            zoom: 0.82,
-                          },
-                        );
-                      }
-                    }}
-                    onNodesChange={handleNodesChange}
-                    nodesDraggable
-                    nodesConnectable={false}
-                    panOnDrag
-                    zoomOnScroll
-                    onNodeClick={(_, node) => {
-                      if (
-                        !focusLoading &&
-                        !queryLoading &&
-                        node.id !== focusedEntityId
-                      ) {
-                        void focusEntity(node.id);
-                      }
-                    }}
-                    onEdgeClick={(_, edge) => {
-                      setSelectedRelationId(edge.id);
-                      document
-                        .getElementById(`graph-relation-${edge.id}`)
-                        ?.scrollIntoView({ block: "nearest" });
-                    }}
-                  >
-                    <Background color="#dbe5e2" gap={32} />
-                    <Controls showInteractive={false} />
-                  </ReactFlow>
-                ) : (
-                  <BusinessEmptyState
-                    icon={Share2}
-                    title="图谱尚无实体"
-                    description="当前还没有绑定文献 Evidence 的实体。"
-                    className="h-full"
-                  />
-                )}
-              </div>
-              <aside className="max-h-[680px] overflow-y-auto border-l bg-white p-4 lg:max-h-[760px]">
-                {focusedEntity ? (
-                  <>
-                    <div className="border-b border-[#dbe5e2] pb-3">
-                      <p className="text-xs text-[#718082]">当前探索中心</p>
-                      <h2 className="mt-1 text-base font-semibold">
-                        {focusedEntity.canonical_name}
-                      </h2>
-                      <p className="mt-1 text-xs text-[#718082]">
-                        {entityTypes.find(
-                          (item) => item.value === focusedEntity.entity_type,
-                        )?.label ?? focusedEntity.entity_type}
-                        {focusedEntity.summary
-                          ? ` · ${focusedEntity.summary}`
-                          : ""}
-                      </p>
-                    </div>
-                    <div className="mt-3 flex items-center justify-between gap-2">
-                      <h3 className="text-sm font-semibold">
-                        {graphDepth === 1 ? "关联主体" : "关系记录"}（
-                        {panelRelations.length}）
-                      </h3>
-                      {focusLoading && (
-                        <span className="text-xs text-[#718082]">加载中…</span>
-                      )}
-                    </div>
-                    <p className="mt-1 text-xs leading-5 text-[#718082]">
-                      {graphDepth === 1
-                        ? "当前显示主体的直接关系；切换到两层或三层关系网，可查看关联主体之间及更外围的联系。"
-                        : "关系网包含当前主体及外围主体的联系。点击连线查看出处，点击主体可继续以它为中心探索。"}
-                    </p>
-                    <ul className="mt-3 space-y-3">
-                      {panelRelations.map((relation) => {
-                        const relationCenterId =
-                          relation.subject_id === focusedEntity.id ||
-                          relation.object_id === focusedEntity.id
-                            ? focusedEntity.id
-                            : relation.subject_id;
-                        const otherId =
-                          relation.subject_id === relationCenterId
-                            ? relation.object_id
-                            : relation.subject_id;
-                        const other = entityById.get(otherId);
-                        const evidence = relation.evidence_ids
-                          .map((evidenceId) => evidenceById.get(evidenceId))
-                          .filter((item): item is Record<string, unknown> =>
-                            Boolean(item),
-                          );
-                        const isEvidenceOpen =
-                          selectedRelationId === relation.id;
-                        return (
-                          <li
-                            key={relation.id}
-                            id={`graph-relation-${relation.id}`}
-                            className="border-b border-[#e4ebea] pb-3 text-xs leading-5"
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className="min-w-0 flex-1 truncate font-medium">
-                                {entityById.get(relationCenterId)
-                                  ?.canonical_name ?? relationCenterId}
-                              </span>
-                              <ArrowRight className="size-3.5 shrink-0 text-[#7b9293]" />
-                              <button
-                                type="button"
-                                disabled={focusLoading || queryLoading}
-                                onClick={() => void focusEntity(otherId)}
-                                className="inline-flex min-w-0 items-center gap-1 truncate font-semibold text-[#24676c] hover:underline disabled:cursor-not-allowed disabled:opacity-50"
-                              >
-                                <span className="truncate">
-                                  {other?.canonical_name ?? otherId}
-                                </span>
-                              </button>
-                            </div>
-                            <p className="mt-1 text-[#315f64]">
-                              {relationLabelForCenter(
-                                relation,
-                                relationCenterId,
-                              )}
-                              {relation.start_time || relation.end_time
-                                ? ` · ${relation.start_time ?? ""}${relation.end_time ? `—${relation.end_time}` : ""}`
-                                : ""}
-                            </p>
-                            <div className="mt-1 text-[#748385]">
-                              关系可靠程度{" "}
-                              {Math.round(relation.confidence * 100)}% ·{" "}
-                              {relation.is_inferred
-                                ? "推断/待复核"
-                                : `${relation.evidence_ids.length} 条资料出处`}
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setSelectedRelationId(
-                                  isEvidenceOpen ? null : relation.id,
-                                )
-                              }
-                              className="mt-1 inline-flex items-center gap-1 text-[#24676c] hover:underline"
+            {rejectedView ? (
+              <section aria-label="已驳回关系审核">
+                <p className="mb-3 text-sm text-[#68797a]">
+                  已驳回关系仅在管理员审核列表中显示。改判后仍需通过后续发布流程对外生效。
+                </p>
+                <ul className="space-y-3">
+                  {relations
+                    .filter((item) => item.review_status === "rejected")
+                    .map((item) => (
+                      <li
+                        key={item.id}
+                        id={`graph-relation-${item.id}`}
+                        className="rounded border bg-white p-4 text-sm"
+                      >
+                        <p>
+                          {entityById.get(item.subject_id)?.canonical_name ??
+                            item.subject_id}{" "}
+                          · {relationLabels[item.relation_type]} ·{" "}
+                          {entityById.get(item.object_id)?.canonical_name ??
+                            item.object_id}
+                        </p>
+                        <p className="mt-1 text-amber-800">
+                          审核状态：{reviewLabels[item.review_status]}
+                        </p>
+                        <div className="mt-2 text-xs">
+                          {item.evidence_ids.map((evidenceId, index) => (
+                            <a
+                              key={evidenceId}
+                              href={`/api/knowledge-search/evidence/${encodeURIComponent(evidenceId)}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="mr-3 text-[#24676c] hover:underline"
                             >
-                              <FileSearch className="size-3.5" />
-                              {isEvidenceOpen ? "收起出处" : "查看资料出处"}
-                            </button>
-                            {isEvidenceOpen && (
-                              <div className="mt-2 rounded border border-[#d9e4e2] bg-[#f6faf9] p-2 text-[#627477]">
-                                {evidence.length ? (
-                                  evidence.map((item) => {
-                                    const documentTitle =
-                                      typeof item.document_title === "string"
-                                        ? item.document_title
-                                        : "未命名资料";
-                                    const volume =
-                                      typeof item.volume === "string" ||
-                                      typeof item.volume === "number"
-                                        ? String(item.volume)
-                                        : "";
-                                    const pageStart =
-                                      typeof item.page_start === "string" ||
-                                      typeof item.page_start === "number"
-                                        ? String(item.page_start)
-                                        : "";
-                                    return (
-                                      <p key={String(item.evidence_id)}>
-                                        {documentTitle}
-                                        {volume || pageStart
-                                          ? ` · ${volume}${pageStart ? ` 第${pageStart}页` : ""}`
-                                          : ""}
-                                      </p>
-                                    );
-                                  })
-                                ) : relation.evidence_ids.length ? (
-                                  <div className="space-y-1">
-                                    {relation.evidence_ids.map(
-                                      (evidenceId, index) => (
-                                        <a
-                                          key={evidenceId}
-                                          href={`/api/knowledge-search/evidence/${encodeURIComponent(evidenceId)}`}
-                                          target="_blank"
-                                          rel="noreferrer"
-                                          className="block text-[#24676c] hover:underline"
-                                        >
-                                          查看资料出处 {index + 1}
-                                        </a>
-                                      ),
-                                    )}
-                                  </div>
-                                ) : (
-                                  <p>当前关系尚未绑定资料出处。</p>
-                                )}
-                              </div>
-                            )}
-                            {isAdmin &&
-                              relation.review_status === "pending" && (
-                                <div className="mt-2 flex gap-2">
+                              查看资料出处 {index + 1}
+                            </a>
+                          ))}
+                        </div>
+                        <GraphReviewControls
+                          status={item.review_status}
+                          hasEvidence={item.evidence_ids.length > 0}
+                          disabled={saving}
+                          onReview={(status, note) =>
+                            changeRelationReview(item, status, note)
+                          }
+                        />
+                      </li>
+                    ))}
+                </ul>
+                {!loading &&
+                  !relations.some(
+                    (item) => item.review_status === "rejected",
+                  ) && <p>暂无已驳回关系。</p>}
+              </section>
+            ) : (
+              <>
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-[#dbe5e2] pb-3 text-xs text-[#68797a]">
+                  <span>
+                    {isGraphOverview
+                      ? `全图总览 · ${connectedComponentCount} 个独立关系网${isolatedEntityCount ? ` · ${isolatedEntityCount} 个孤立主体` : ""}`
+                      : focusedEntity
+                        ? `以“${focusedEntity.canonical_name}”为中心 · 已载入 ${result?.max_depth ?? 1} 层关系`
+                        : "从搜索或图中节点开始探索"}
+                    {(focusLoading || queryLoading) && " · 正在加载关系网…"}
+                  </span>
+                  <span>
+                    图中显示 {visibleGraphEntities.length} 个主体 · 已载入{" "}
+                    {displayedRelations.length} 条关系
+                  </span>
+                </div>
+                {!isGraphOverview && graphRelationPageCount > 1 && (
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded border border-[#dbe5e2] bg-white px-3 py-2 text-xs text-[#68797a]">
+                    <span>
+                      地图关系第 {safeGraphRelationPage + 1} /{" "}
+                      {graphRelationPageCount} 组 · 本组{" "}
+                      {visibleGraphRelations.length} 条
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        disabled={safeGraphRelationPage === 0}
+                        onClick={() =>
+                          setGraphRelationPage((current) =>
+                            Math.max(0, current - 1),
+                          )
+                        }
+                        title="查看上一组关系"
+                        className="inline-flex h-7 items-center gap-1 rounded border border-[#cbdad7] bg-white px-2 text-xs text-[#225f64] hover:bg-[#eef5f4] disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <ChevronLeft className="size-3.5" />
+                        上一组
+                      </button>
+                      <button
+                        type="button"
+                        disabled={
+                          safeGraphRelationPage >= graphRelationPageCount - 1
+                        }
+                        onClick={() =>
+                          setGraphRelationPage((current) =>
+                            Math.min(graphRelationPageCount - 1, current + 1),
+                          )
+                        }
+                        title="查看下一组关系"
+                        className="inline-flex h-7 items-center gap-1 rounded border border-[#cbdad7] bg-white px-2 text-xs text-[#225f64] hover:bg-[#eef5f4] disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        下一组
+                        <ChevronRight className="size-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
+                  <div className="h-[680px] overflow-hidden rounded-md border bg-white lg:h-[760px]">
+                    {flow.nodes.length ? (
+                      <ReactFlow
+                        nodes={flow.nodes}
+                        edges={flow.edges}
+                        minZoom={0.12}
+                        maxZoom={1.6}
+                        onInit={(instance) => {
+                          flowInstance.current = instance;
+                          if (isGraphOverview) {
+                            void instance.fitView({
+                              padding: 0.12,
+                              minZoom: 0.08,
+                              maxZoom: 0.82,
+                            });
+                          } else {
+                            void instance.setCenter(
+                              GRAPH_CENTER.x,
+                              GRAPH_CENTER.y,
+                              {
+                                zoom: 0.82,
+                              },
+                            );
+                          }
+                        }}
+                        onNodesChange={handleNodesChange}
+                        nodesDraggable
+                        nodesConnectable={false}
+                        panOnDrag
+                        zoomOnScroll
+                        onNodeClick={(_, node) => {
+                          if (
+                            !focusLoading &&
+                            !queryLoading &&
+                            node.id !== focusedEntityId
+                          ) {
+                            void focusEntity(node.id);
+                          }
+                        }}
+                        onEdgeClick={(_, edge) => {
+                          setSelectedRelationId(edge.id);
+                          document
+                            .getElementById(`graph-relation-${edge.id}`)
+                            ?.scrollIntoView({ block: "nearest" });
+                        }}
+                      >
+                        <Background color="#dbe5e2" gap={32} />
+                        <Controls showInteractive={false} />
+                      </ReactFlow>
+                    ) : (
+                      <BusinessEmptyState
+                        icon={Share2}
+                        title="图谱尚无实体"
+                        description="当前还没有绑定文献 Evidence 的实体。"
+                        className="h-full"
+                      />
+                    )}
+                  </div>
+                  <aside className="max-h-[680px] overflow-y-auto border-l bg-white p-4 lg:max-h-[760px]">
+                    {focusedEntity ? (
+                      <>
+                        <div className="border-b border-[#dbe5e2] pb-3">
+                          <p className="text-xs text-[#718082]">当前探索中心</p>
+                          <h2 className="mt-1 text-base font-semibold">
+                            {focusedEntity.canonical_name}
+                          </h2>
+                          <p className="mt-1 text-xs text-[#718082]">
+                            {entityTypes.find(
+                              (item) =>
+                                item.value === focusedEntity.entity_type,
+                            )?.label ?? focusedEntity.entity_type}
+                            {focusedEntity.summary
+                              ? ` · ${focusedEntity.summary}`
+                              : ""}
+                          </p>
+                        </div>
+                        <div className="mt-3 flex items-center justify-between gap-2">
+                          <h3 className="text-sm font-semibold">
+                            {graphDepth === 1 ? "关联主体" : "关系记录"}（
+                            {panelRelations.length}）
+                          </h3>
+                          {focusLoading && (
+                            <span className="text-xs text-[#718082]">
+                              加载中…
+                            </span>
+                          )}
+                        </div>
+                        <p className="mt-1 text-xs leading-5 text-[#718082]">
+                          {graphDepth === 1
+                            ? "当前显示主体的直接关系；切换到两层或三层关系网，可查看关联主体之间及更外围的联系。"
+                            : "关系网包含当前主体及外围主体的联系。点击连线查看出处，点击主体可继续以它为中心探索。"}
+                        </p>
+                        <ul className="mt-3 space-y-3">
+                          {panelRelations.map((relation) => {
+                            const relationCenterId =
+                              relation.subject_id === focusedEntity.id ||
+                              relation.object_id === focusedEntity.id
+                                ? focusedEntity.id
+                                : relation.subject_id;
+                            const otherId =
+                              relation.subject_id === relationCenterId
+                                ? relation.object_id
+                                : relation.subject_id;
+                            const other = entityById.get(otherId);
+                            const evidence = relation.evidence_ids
+                              .map((evidenceId) => evidenceById.get(evidenceId))
+                              .filter((item): item is Record<string, unknown> =>
+                                Boolean(item),
+                              );
+                            const isEvidenceOpen =
+                              selectedRelationId === relation.id;
+                            return (
+                              <li
+                                key={relation.id}
+                                id={`graph-relation-${relation.id}`}
+                                className="border-b border-[#e4ebea] pb-3 text-xs leading-5"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <span className="min-w-0 flex-1 truncate font-medium">
+                                    {entityById.get(relationCenterId)
+                                      ?.canonical_name ?? relationCenterId}
+                                  </span>
+                                  <ArrowRight className="size-3.5 shrink-0 text-[#7b9293]" />
                                   <button
                                     type="button"
-                                    disabled={
-                                      saving ||
-                                      relation.evidence_ids.length === 0
-                                    }
-                                    title={
-                                      relation.evidence_ids.length
-                                        ? "审核通过"
-                                        : "无资料出处的关系不能审核通过"
-                                    }
-                                    onClick={() =>
-                                      void save(
-                                        () =>
-                                          reviewRelation(
-                                            relation.id,
-                                            "reviewed",
-                                          ),
-                                        "关系已审核通过",
-                                      )
-                                    }
-                                    className="text-emerald-700 disabled:cursor-not-allowed disabled:opacity-35"
+                                    disabled={focusLoading || queryLoading}
+                                    onClick={() => void focusEntity(otherId)}
+                                    className="inline-flex min-w-0 items-center gap-1 truncate font-semibold text-[#24676c] hover:underline disabled:cursor-not-allowed disabled:opacity-50"
                                   >
-                                    通过
-                                  </button>
-                                  <button
-                                    type="button"
-                                    disabled={saving}
-                                    onClick={() =>
-                                      void save(
-                                        () =>
-                                          reviewRelation(
-                                            relation.id,
-                                            "rejected",
-                                          ),
-                                        "关系已驳回",
-                                      )
-                                    }
-                                    className="text-red-700 disabled:opacity-35"
-                                  >
-                                    驳回
+                                    <span className="truncate">
+                                      {other?.canonical_name ?? otherId}
+                                    </span>
                                   </button>
                                 </div>
-                              )}
-                          </li>
-                        );
-                      })}
-                      {!panelRelations.length && (
-                        <li className="text-sm text-[#718082]">
-                          当前范围还没有可展示的关系。
-                        </li>
-                      )}
-                    </ul>
-                  </>
-                ) : isGraphOverview ? (
-                  <>
-                    <h2 className="text-sm font-semibold">
-                      关系网总览（{connectedComponentCount}）
-                    </h2>
-                    <p className="mt-1 text-xs leading-5 text-[#718082]">
-                      当前知识版本中有 {connectedComponentCount}{" "}
-                      个互不相连的关系网。点击任意关系网的主体，即可进入对应的多跳探索。
-                      {isolatedEntityCount
-                        ? `另有 ${isolatedEntityCount} 个暂未形成关系的孤立主体。`
-                        : ""}
-                    </p>
-                    <ul className="mt-3 space-y-3">
-                      {graphComponents.map((component, index) => {
-                        const firstEntityId = component.entityIds[0];
-                        if (!firstEntityId) return null;
-                        const names = component.entityIds
-                          .map(
-                            (entityId) =>
-                              entityById.get(entityId)?.canonical_name,
-                          )
-                          .filter((name): name is string => Boolean(name));
-                        const isIsolated = component.relationIds.length === 0;
-                        return (
-                          <li
-                            key={component.id}
-                            className="border-b border-[#e4ebea] pb-3 text-xs leading-5"
-                          >
-                            <div className="font-medium">
-                              {isIsolated ? "孤立主体" : `关系网 ${index + 1}`}
-                            </div>
-                            <div className="mt-1 text-[#748385]">
-                              {component.entityIds.length} 个主体 ·{" "}
-                              {component.relationIds.length} 条关系
-                            </div>
-                            <p className="mt-1 text-[#315f64]">
-                              {names.slice(0, 5).join("、")}
-                              {names.length > 5
-                                ? ` 等 ${names.length} 个主体`
-                                : ""}
-                            </p>
-                            <button
-                              type="button"
-                              disabled={focusLoading || queryLoading}
-                              onClick={() =>
-                                void focusEntity(firstEntityId, {
-                                  addToHistory: false,
-                                })
-                              }
-                              className="mt-1 font-semibold text-[#24676c] hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+                                <p className="mt-1 text-[#315f64]">
+                                  {relationLabelForCenter(
+                                    relation,
+                                    relationCenterId,
+                                  )}
+                                  {relation.start_time || relation.end_time
+                                    ? ` · ${relation.start_time ?? ""}${relation.end_time ? `—${relation.end_time}` : ""}`
+                                    : ""}
+                                </p>
+                                <div className="mt-1 text-[#748385]">
+                                  关系可靠程度{" "}
+                                  {Math.round(relation.confidence * 100)}% ·{" "}
+                                  {relation.is_inferred
+                                    ? "推断关系"
+                                    : `${relation.evidence_ids.length} 条资料出处`}
+                                </div>
+                                <p className="mt-1 text-amber-800">
+                                  审核状态：
+                                  {reviewLabels[relation.review_status]}
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setSelectedRelationId(
+                                      isEvidenceOpen ? null : relation.id,
+                                    )
+                                  }
+                                  className="mt-1 inline-flex items-center gap-1 text-[#24676c] hover:underline"
+                                >
+                                  <FileSearch className="size-3.5" />
+                                  {isEvidenceOpen ? "收起出处" : "查看资料出处"}
+                                </button>
+                                {isEvidenceOpen && (
+                                  <div className="mt-2 rounded border border-[#d9e4e2] bg-[#f6faf9] p-2 text-[#627477]">
+                                    {evidence.length ? (
+                                      evidence.map((item) => {
+                                        const documentTitle =
+                                          typeof item.document_title ===
+                                          "string"
+                                            ? item.document_title
+                                            : "未命名资料";
+                                        const volume =
+                                          typeof item.volume === "string" ||
+                                          typeof item.volume === "number"
+                                            ? String(item.volume)
+                                            : "";
+                                        const pageStart =
+                                          typeof item.page_start === "string" ||
+                                          typeof item.page_start === "number"
+                                            ? String(item.page_start)
+                                            : "";
+                                        return (
+                                          <p key={String(item.evidence_id)}>
+                                            {documentTitle}
+                                            {volume || pageStart
+                                              ? ` · ${volume}${pageStart ? ` 第${pageStart}页` : ""}`
+                                              : ""}
+                                          </p>
+                                        );
+                                      })
+                                    ) : relation.evidence_ids.length ? (
+                                      <div className="space-y-1">
+                                        {relation.evidence_ids.map(
+                                          (evidenceId, index) => (
+                                            <a
+                                              key={evidenceId}
+                                              href={`/api/knowledge-search/evidence/${encodeURIComponent(evidenceId)}`}
+                                              target="_blank"
+                                              rel="noreferrer"
+                                              className="block text-[#24676c] hover:underline"
+                                            >
+                                              查看资料出处 {index + 1}
+                                            </a>
+                                          ),
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <p>当前关系尚未绑定资料出处。</p>
+                                    )}
+                                  </div>
+                                )}
+                                {isAdmin && (
+                                  <GraphReviewControls
+                                    status={relation.review_status}
+                                    hasEvidence={
+                                      relation.evidence_ids.length > 0
+                                    }
+                                    disabled={saving}
+                                    onReview={(status, note) =>
+                                      changeRelationReview(
+                                        relation,
+                                        status,
+                                        note,
+                                      )
+                                    }
+                                  />
+                                )}
+                              </li>
+                            );
+                          })}
+                          {!panelRelations.length && (
+                            <li className="text-sm text-[#718082]">
+                              当前范围还没有可展示的关系。
+                            </li>
+                          )}
+                        </ul>
+                      </>
+                    ) : isGraphOverview ? (
+                      <>
+                        <h2 className="text-sm font-semibold">
+                          关系网总览（{connectedComponentCount}）
+                        </h2>
+                        <p className="mt-1 text-xs leading-5 text-[#718082]">
+                          当前知识版本中有 {connectedComponentCount}{" "}
+                          个互不相连的关系网。点击任意关系网的主体，即可进入对应的多跳探索。
+                          {isolatedEntityCount
+                            ? `另有 ${isolatedEntityCount} 个暂未形成关系的孤立主体。`
+                            : ""}
+                        </p>
+                        <ul className="mt-3 space-y-3">
+                          {graphComponents.map((component, index) => {
+                            const firstEntityId = component.entityIds[0];
+                            if (!firstEntityId) return null;
+                            const names = component.entityIds
+                              .map(
+                                (entityId) =>
+                                  entityById.get(entityId)?.canonical_name,
+                              )
+                              .filter((name): name is string => Boolean(name));
+                            const isIsolated =
+                              component.relationIds.length === 0;
+                            return (
+                              <li
+                                key={component.id}
+                                className="border-b border-[#e4ebea] pb-3 text-xs leading-5"
+                              >
+                                <div className="font-medium">
+                                  {isIsolated
+                                    ? "孤立主体"
+                                    : `关系网 ${index + 1}`}
+                                </div>
+                                <div className="mt-1 text-[#748385]">
+                                  {component.entityIds.length} 个主体 ·{" "}
+                                  {component.relationIds.length} 条关系
+                                </div>
+                                <p className="mt-1 text-[#315f64]">
+                                  {names.slice(0, 5).join("、")}
+                                  {names.length > 5
+                                    ? ` 等 ${names.length} 个主体`
+                                    : ""}
+                                </p>
+                                <button
+                                  type="button"
+                                  disabled={focusLoading || queryLoading}
+                                  onClick={() =>
+                                    void focusEntity(firstEntityId, {
+                                      addToHistory: false,
+                                    })
+                                  }
+                                  className="mt-1 font-semibold text-[#24676c] hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  从此关系网开始探索
+                                </button>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </>
+                    ) : (
+                      <>
+                        <h2 className="text-sm font-semibold">
+                          关系记录（{displayedRelations.length}）
+                        </h2>
+                        <p className="mt-1 text-xs leading-5 text-[#718082]">
+                          点击图中的任意节点，开始以它为中心探索关系。
+                        </p>
+                        <ul className="mt-3 space-y-3">
+                          {displayedRelations.map((relation) => (
+                            <li
+                              key={relation.id}
+                              id={`graph-relation-${relation.id}`}
+                              className="border-b pb-3 text-xs leading-5"
                             >
-                              从此关系网开始探索
-                            </button>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </>
-                ) : (
-                  <>
-                    <h2 className="text-sm font-semibold">
-                      关系记录（{displayedRelations.length}）
-                    </h2>
-                    <p className="mt-1 text-xs leading-5 text-[#718082]">
-                      点击图中的任意节点，开始以它为中心探索关系。
-                    </p>
-                    <ul className="mt-3 space-y-3">
-                      {displayedRelations.map((relation) => (
-                        <li
-                          key={relation.id}
-                          className="border-b pb-3 text-xs leading-5"
-                        >
-                          <div className="font-medium">
-                            {entityById.get(relation.subject_id)
-                              ?.canonical_name ?? relation.subject_id}{" "}
-                            · {relationLabels[relation.relation_type]} ·{" "}
-                            {entityById.get(relation.object_id)
-                              ?.canonical_name ?? relation.object_id}
-                          </div>
-                          <div className="text-[#748385]">
-                            关系可靠程度 {Math.round(relation.confidence * 100)}
-                            % ·{" "}
-                            {relation.is_inferred
-                              ? "推断/待复核"
-                              : `${relation.evidence_ids.length} 条资料出处`}
-                          </div>
-                        </li>
-                      ))}
-                      {!displayedRelations.length && (
-                        <li className="text-sm text-[#718082]">
-                          当前没有关系记录。
-                        </li>
-                      )}
-                    </ul>
-                  </>
-                )}
-              </aside>
-            </div>
+                              <div className="font-medium">
+                                {entityById.get(relation.subject_id)
+                                  ?.canonical_name ?? relation.subject_id}{" "}
+                                · {relationLabels[relation.relation_type]} ·{" "}
+                                {entityById.get(relation.object_id)
+                                  ?.canonical_name ?? relation.object_id}
+                              </div>
+                              <div className="text-[#748385]">
+                                关系可靠程度{" "}
+                                {Math.round(relation.confidence * 100)}% ·{" "}
+                                {relation.is_inferred
+                                  ? "推断关系"
+                                  : `${relation.evidence_ids.length} 条资料出处`}
+                              </div>
+                              <p className="mt-1 text-amber-800">
+                                审核状态：{reviewLabels[relation.review_status]}
+                              </p>
+                              {isAdmin && (
+                                <GraphReviewControls
+                                  status={relation.review_status}
+                                  hasEvidence={relation.evidence_ids.length > 0}
+                                  disabled={saving}
+                                  onReview={(status, note) =>
+                                    changeRelationReview(relation, status, note)
+                                  }
+                                />
+                              )}
+                            </li>
+                          ))}
+                          {!displayedRelations.length && (
+                            <li className="text-sm text-[#718082]">
+                              当前没有关系记录。
+                            </li>
+                          )}
+                        </ul>
+                      </>
+                    )}
+                  </aside>
+                </div>
+              </>
+            )}
           </section>
         )}
         {view === "events" && (
           <section className="mt-4">
             <div className="mb-3 flex justify-end border-b pb-3">
-              <ReviewFilter value={reviewFilter} onChange={setReviewFilter} />
+              <ReviewFilter
+                value={reviewFilter}
+                onChange={changeReviewFilter}
+                isAdmin={isAdmin}
+              />
             </div>
             <EventTimeline
               events={sortHistoricalEvents(events).filter((item) =>
-                reviewFilter === "all"
-                  ? true
-                  : reviewFilter === "reviewed"
-                    ? item.review_status === "reviewed"
-                    : item.review_status !== "reviewed",
+                matchesReviewFilter(item.review_status, reviewFilter, isAdmin),
               )}
               entityById={entityById}
               isAdmin={isAdmin}
               saving={saving}
-              onReview={(item, status) =>
-                save(
-                  () => reviewEvent(item.id, status),
-                  status === "reviewed" ? "事件已审核通过" : "事件已驳回",
-                )
-              }
+              onReview={changeEventReview}
             />
           </section>
         )}
@@ -2087,17 +2265,20 @@ export default function KnowledgeGraphPage() {
 function ReviewFilter({
   value,
   onChange,
+  isAdmin,
 }: {
-  value: "all" | "reviewed" | "draft";
-  onChange: (value: "all" | "reviewed" | "draft") => void;
+  value: ReviewFilterValue;
+  onChange: (value: ReviewFilterValue) => void;
+  isAdmin: boolean;
 }) {
   return (
     <div className="flex rounded-md bg-[#eaf1ef] p-1" aria-label="审核状态">
       {(
         [
           ["all", "全部状态"],
-          ["reviewed", "已复核"],
+          ["reviewed", "已通过"],
           ["draft", "待复核/争议"],
+          ...(isAdmin ? [["rejected", "已驳回"] as const] : []),
         ] as const
       ).map(([item, label]) => (
         <button
@@ -2127,7 +2308,8 @@ function EventTimeline({
   saving: boolean;
   onReview: (
     event: HistoricalEvent,
-    status: "reviewed" | "rejected",
+    status: ReviewStatus,
+    note: string,
   ) => Promise<void>;
 }) {
   if (!events.length) {
@@ -2152,6 +2334,7 @@ function EventTimeline({
         return (
           <li
             key={item.id}
+            id={`graph-event-${item.id}`}
             className="relative grid gap-3 border-b px-5 py-5 last:border-b-0 md:grid-cols-[150px_minmax(0,1fr)_180px]"
           >
             <span className="absolute top-7 -left-[5px] size-2.5 rounded-full border-2 border-white bg-[#39777a]" />
@@ -2210,25 +2393,13 @@ function EventTimeline({
                   <MapPinned className="size-3" /> 地图查看
                 </Link>
               )}
-              {isAdmin && item.review_status === "pending" && (
-                <div className="mt-3 flex gap-2">
-                  <button
-                    type="button"
-                    disabled={saving || item.evidence_ids.length === 0}
-                    onClick={() => void onReview(item, "reviewed")}
-                    className="text-emerald-700 disabled:opacity-35"
-                  >
-                    通过
-                  </button>
-                  <button
-                    type="button"
-                    disabled={saving}
-                    onClick={() => void onReview(item, "rejected")}
-                    className="text-red-700 disabled:opacity-35"
-                  >
-                    驳回
-                  </button>
-                </div>
+              {isAdmin && (
+                <GraphReviewControls
+                  status={item.review_status}
+                  hasEvidence={item.evidence_ids.length > 0}
+                  disabled={saving}
+                  onReview={(status, note) => onReview(item, status, note)}
+                />
               )}
             </div>
           </li>

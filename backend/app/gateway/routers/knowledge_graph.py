@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 from wu_culture.aliases import NameAuthorityRequest, NameAuthorityResolution, NameAuthorityService
@@ -11,6 +13,8 @@ from wu_culture.gloss import GlossResult, gloss_passage
 from wu_culture.graph import PersistentGraphQueryService
 from wu_culture.models import ReviewStatus
 from wu_culture.relations import RelationCreate, RelationRecord
+from wu_culture.review import ReviewConflictError
+from wu_culture.review.graph import GraphReviewRecord
 
 from app.gateway.deps import get_current_user_from_request, require_admin_user
 from deerflow.persistence.engine import get_session_factory
@@ -23,6 +27,56 @@ from deerflow.persistence.wu_culture import (
 
 router = APIRouter(prefix="/api/knowledge-graph", tags=["knowledge-graph"])
 _ADMIN_DETAIL = "Administrator privileges are required to manage knowledge graph data"
+
+
+@router.get("/overview")
+@router.get("/directory")
+async def graph_overview(
+    request: Request,
+    scope: Literal["all", "people"] = "all",
+    relation_type: str | None = Query(default=None, max_length=64),
+    review_status: ReviewStatus | None = None,
+    component_id: str | None = Query(default=None, max_length=255),
+    center: str | None = Query(default=None, max_length=255),
+    name: str | None = Query(default=None, max_length=255),
+    entity_type: str | None = Query(default=None, max_length=64),
+    dynasty: str | None = Query(default=None, max_length=64),
+    release_id: str | None = Query(default=None, max_length=255),
+    cursor: str | None = Query(default=None, max_length=2048),
+    max_nodes: int = Query(default=200, ge=2, le=1000),
+    max_edges: int = Query(default=300, ge=1, le=2000),
+) -> dict:
+    from deerflow.persistence.wu_culture.overview_repository import OverviewConflict, SqlGraphOverviewRepository
+
+    user = await get_current_user_from_request(request)
+    admin = user.system_role == "admin"
+    if review_status and review_status != ReviewStatus.REVIEWED and not admin:
+        raise HTTPException(status_code=403, detail=_ADMIN_DETAIL)
+    factory = get_session_factory()
+    if factory is None:
+        raise HTTPException(status_code=503, detail="Knowledge graph requires a SQL database")
+    try:
+        result = await SqlGraphOverviewRepository(factory).read(
+            admin=admin,
+            directory=request.url.path.endswith("/directory"),
+            scope=scope,
+            relation_type=relation_type,
+            review_status=review_status.value if review_status else None,
+            component_id=component_id,
+            center=center,
+            name=name,
+            entity_type=entity_type,
+            dynasty=dynasty,
+            cursor=cursor,
+            max_nodes=max_nodes,
+            max_edges=max_edges,
+            release_id=release_id,
+        )
+    except OverviewConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return result
 
 
 class ExtractionRequest(BaseModel):
@@ -45,6 +99,8 @@ class ReviewStatusUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     review_status: ReviewStatus
+    review_note: str | None = Field(default=None, max_length=2000)
+    expected_status: ReviewStatus | None = None
 
 
 class GlossLabelRequest(BaseModel):
@@ -268,16 +324,21 @@ async def list_relations(
     release_id: str | None = Query(default=None, max_length=255),
     limit: int = Query(default=100, ge=1, le=2000),
     offset: int = Query(default=0, ge=0),
+    include_rejected: bool = Query(default=False),
     repository: SqlKnowledgeGraphRepository = Depends(get_graph_repository),
 ) -> list[RelationRecord]:
     await get_current_user_from_request(request)
-    release_id = await _resolve_active_release_id(release_id)
+    if include_rejected:
+        await require_admin_user(request, detail=_ADMIN_DETAIL)
+    if not include_rejected:
+        release_id = await _resolve_active_release_id(release_id)
     return await repository.list_relations(
         entity_id=entity_id,
         relation_types=relation_types,
         release_id=release_id,
         limit=limit,
         offset=offset,
+        include_rejected=include_rejected,
     )
 
 
@@ -313,12 +374,21 @@ async def review_relation(
     repository: SqlKnowledgeGraphRepository = Depends(get_graph_repository),
 ) -> RelationRecord:
     await require_admin_user(request, detail=_ADMIN_DETAIL)
+    user = await get_current_user_from_request(request)
     try:
-        return await repository.review_relation(relation_id, body.review_status)
+        return await repository.review_relation(relation_id, body.review_status, reviewer_id=str(user.id), review_note=body.review_note, expected_status=body.expected_status)
+    except ReviewConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Relation not found") from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/relations/{relation_id}/review-history", response_model=list[GraphReviewRecord])
+async def relation_review_history(relation_id: str, request: Request, repository: SqlKnowledgeGraphRepository = Depends(get_graph_repository)) -> list[GraphReviewRecord]:
+    await require_admin_user(request, detail=_ADMIN_DETAIL)
+    return await repository.review_history(relation_id)
 
 
 @router.get("/events", response_model=list[EventRecord])
@@ -329,16 +399,23 @@ async def list_events(
     event_type: str | None = Query(default=None, max_length=64),
     release_id: str | None = Query(default=None, max_length=255),
     limit: int = Query(default=100, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    include_rejected: bool = Query(default=False),
     repository: SqlEventRepository = Depends(get_event_repository),
 ) -> list[EventRecord]:
     await get_current_user_from_request(request)
-    release_id = await _resolve_active_release_id(release_id)
+    if include_rejected:
+        await require_admin_user(request, detail=_ADMIN_DETAIL)
+    if not include_rejected:
+        release_id = await _resolve_active_release_id(release_id)
     return await repository.list(
         place_entity_id=place_entity_id,
         participant_entity_id=participant_entity_id,
         event_type=event_type,
         release_id=release_id,
         limit=limit,
+        offset=offset,
+        include_rejected=include_rejected,
     )
 
 
@@ -374,12 +451,21 @@ async def review_event(
     repository: SqlEventRepository = Depends(get_event_repository),
 ) -> EventRecord:
     await require_admin_user(request, detail=_ADMIN_DETAIL)
+    user = await get_current_user_from_request(request)
     try:
-        return await repository.review(event_id, body.review_status)
+        return await repository.review(event_id, body.review_status, reviewer_id=str(user.id), review_note=body.review_note, expected_status=body.expected_status)
+    except ReviewConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Event not found") from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/events/{event_id}/review-history", response_model=list[GraphReviewRecord])
+async def event_review_history(event_id: str, request: Request, repository: SqlEventRepository = Depends(get_event_repository)) -> list[GraphReviewRecord]:
+    await require_admin_user(request, detail=_ADMIN_DETAIL)
+    return await repository.review_history(event_id)
 
 
 @router.get("/geo", response_model=list[GeoFeature])
