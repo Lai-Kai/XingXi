@@ -1,5 +1,6 @@
 import { getBackendBaseURL } from "@/core/config";
 
+import { getPointModelAsset, MAP_MODEL_ASSETS } from "./model-assets";
 import {
   type MapCatalog,
   type MapEvidence,
@@ -263,10 +264,44 @@ export async function fetchMapCatalog(
     });
     if (!response.ok) throw new Error("无法读取古舆地图资料");
     const raw = (await response.json()) as RawCatalog;
+    const catalogPoints = raw.points.map(point);
+    const existingIds = new Set(catalogPoints.map((item) => item.id));
+    const missingModelIds = MAP_MODEL_ASSETS.filter(
+      (asset) => !existingIds.has(asset.pointId),
+    ).map((asset) => asset.pointId);
+    let modelReferences: MapPoint[] = [];
+    if (missingModelIds.length > 0) {
+      try {
+        const params = new URLSearchParams();
+        missingModelIds.forEach((id) => params.append("point_id", id));
+        const referenceResponse = await fetch(
+          `${getBackendBaseURL()}/api/map/reference-points?${params.toString()}`,
+          { cache: "no-store" },
+        );
+        if (referenceResponse.ok) {
+          const references: unknown = await referenceResponse.json();
+          if (Array.isArray(references)) {
+            modelReferences = (references as RawPoint[])
+              .map(point)
+              .filter(
+                (item) => getPointModelAsset(item) && !existingIds.has(item.id),
+              );
+          }
+        }
+      } catch {
+        // Optional model references must not replace a failed knowledge snapshot.
+      }
+    }
+    const modelNotice =
+      "独立三维模型参考点沿用景点定位，模型为生成示意；定位准确性见详情。";
     const catalog: MapCatalog = {
       updatedAt: raw.updated_at,
-      dataNotice: raw.data_notice,
-      points: raw.points.map(point),
+      dataNotice: modelReferences.length
+        ? raw.updated_at === "unpublished"
+          ? `当前尚未发布知识版本；以下为${modelNotice}`
+          : `${raw.data_notice} ${modelNotice}`
+        : raw.data_notice,
+      points: [...catalogPoints, ...modelReferences],
       layers: raw.layers.map((layer) => ({
         id: layer.id,
         name: layer.name,

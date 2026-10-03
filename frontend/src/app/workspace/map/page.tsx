@@ -54,6 +54,10 @@ import {
   getRenderableMapLayers,
 } from "@/core/map/layers";
 import {
+  getPointModelAsset,
+  type GlbAssetDescriptor,
+} from "@/core/map/model-assets";
+import {
   buildTimelineLayout,
   type TimelineEventGroup,
 } from "@/core/map/timeline";
@@ -471,12 +475,18 @@ function HistoricalYearDetails({
 }
 
 function PointDetails({
+  asset,
+  tab,
+  onTabChange,
   point,
   events,
   relations,
   dataNotice,
   onClose,
 }: {
+  asset: GlbAssetDescriptor | null;
+  tab: string;
+  onTabChange: (tab: string) => void;
   point: MapPoint;
   events: TimelineEvent[];
   relations: MapRelation[];
@@ -538,7 +548,11 @@ function PointDetails({
         )}
       </div>
 
-      <Tabs defaultValue="overview" className="min-h-0 flex-1 gap-0">
+      <Tabs
+        value={tab}
+        onValueChange={onTabChange}
+        className="min-h-0 flex-1 gap-0"
+      >
         <TabsList
           variant="line"
           aria-label="点位资料"
@@ -547,6 +561,11 @@ function PointDetails({
           <TabsTrigger value="overview" className="flex-none px-3">
             概览
           </TabsTrigger>
+          {asset && (
+            <TabsTrigger value="model" className="flex-none px-3">
+              模型
+            </TabsTrigger>
+          )}
           <TabsTrigger value="history" className="flex-none px-3">
             沿革
           </TabsTrigger>
@@ -606,7 +625,6 @@ function PointDetails({
                 {point.extentBasis}
               </div>
             )}
-            <GlbViewerSlot asset={null} />
             <section aria-label="证据片段" className="border-t pt-3">
               <h3 className="mb-2 flex items-center gap-2 text-sm font-medium">
                 <Quote className="size-4" /> 文献证据
@@ -614,6 +632,12 @@ function PointDetails({
               <EvidenceTrail sources={point.evidence} />
             </section>
           </TabsContent>
+
+          {asset && tab === "model" && (
+            <TabsContent value="model">
+              <GlbViewerSlot asset={asset} />
+            </TabsContent>
+          )}
 
           <TabsContent value="history">
             {pointEvents.length ? (
@@ -777,6 +801,7 @@ export default function MapPage() {
   const [appliedIncludeUnknownTime, setAppliedIncludeUnknownTime] =
     useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [pointDetailTab, setPointDetailTab] = useState("overview");
   const [visibleLayerIds, setVisibleLayerIds] = useState<string[] | null>(null);
   const [layerOpacity, setLayerOpacity] = useState<Record<string, number>>({});
   const [activeRouteId, setActiveRouteId] = useState<string | null>(null);
@@ -818,6 +843,7 @@ export default function MapPage() {
       setToolPanel(null);
       if (compactLayout) setDetailSheetOpen(true);
       const point = catalog?.points.find((item) => item.id === pointId);
+      setPointDetailTab(getPointModelAsset(point) ? "model" : "overview");
       recordOperationEvent({
         event_type: "map_point_click",
         entity_id: point?.entityId ?? pointId,
@@ -914,6 +940,13 @@ export default function MapPage() {
       catalog,
       year,
     ],
+  );
+  const modelPointIds = useMemo(
+    () =>
+      (catalog?.points ?? [])
+        .filter((point) => getPointModelAsset(point))
+        .map((point) => point.id),
+    [catalog],
   );
   const selected =
     catalog?.points.find((point) => point.id === selectedId) ?? null;
@@ -1819,6 +1852,7 @@ export default function MapPage() {
             <MapLibreCanvas
               key={reloadKey}
               points={points}
+              modelPointIds={modelPointIds}
               layers={catalog.layers}
               visibleLayerIds={enabledMapLayerIds}
               layerOpacity={layerOpacity}
@@ -1975,6 +2009,14 @@ export default function MapPage() {
                   : "OpenStreetMap 现代地图"}
               </span>
               <span className="text-teal-800">● 精确点</span>
+              {modelPointIds.length > 0 && (
+                <span className="flex items-center gap-1 text-[#276b75]">
+                  <span className="grid size-5 place-items-center rounded-full border-2 border-teal-800 bg-teal-600 text-[8px] font-bold text-white">
+                    3D
+                  </span>
+                  可预览模型 · 标点大小固定
+                </span>
+              )}
               {showHistoricalRanges && (
                 <span className="text-[#275e57]">▧ 历史范围</span>
               )}
@@ -2233,9 +2275,13 @@ export default function MapPage() {
               onSelectEvent={activateTimelineEvent}
             />
           </aside>
-        ) : selected ? (
+        ) : selected && !compactLayout ? (
           <aside className="hidden w-[390px] shrink-0 border-l bg-white xl:flex xl:min-h-0">
             <PointDetails
+              key={selected.id}
+              asset={getPointModelAsset(selected)}
+              tab={pointDetailTab}
+              onTabChange={setPointDetailTab}
               point={selected}
               events={catalog.events}
               relations={catalog.relations}
@@ -2311,7 +2357,7 @@ export default function MapPage() {
         open={compactLayout && detailSheetOpen && selected !== null}
         onOpenChange={setDetailSheetOpen}
       >
-        {selected && (
+        {compactLayout && detailSheetOpen && selected && (
           <SheetContent
             side="bottom"
             className="max-h-[84dvh] gap-0 rounded-t-md p-0 xl:hidden"
@@ -2320,6 +2366,10 @@ export default function MapPage() {
               <SheetTitle>{selected.name}</SheetTitle>
             </SheetHeader>
             <PointDetails
+              key={selected.id}
+              asset={getPointModelAsset(selected)}
+              tab={pointDetailTab}
+              onTabChange={setPointDetailTab}
               point={selected}
               events={catalog.events}
               relations={catalog.relations}
