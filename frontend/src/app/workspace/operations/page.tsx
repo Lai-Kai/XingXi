@@ -2,7 +2,6 @@
 
 import {
   Activity,
-  BookCheck,
   Database,
   History,
   ListChecks,
@@ -12,6 +11,7 @@ import {
   ShieldCheck,
   Target,
 } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
@@ -22,6 +22,7 @@ import {
   BusinessPageHeader,
   BusinessStatusBadge,
 } from "@/components/workspace/business-page";
+import { ManualEvaluations } from "@/components/workspace/manual-evaluations";
 import { useAuth } from "@/core/auth/AuthProvider";
 import {
   canManageSourceDocuments,
@@ -112,7 +113,7 @@ export default function OperationsPage() {
           next[item.id] ??= {
             case_id: item.id,
             actual_status: item.expected_status,
-            citation_count: item.min_citations,
+            citation_count: 0,
             answer: "",
           };
         }
@@ -216,42 +217,70 @@ export default function OperationsPage() {
               />
             )}
             {view === "evaluation" && (
-              <EvaluationPanel
-                cases={cases}
-                runs={runs}
-                observations={observations}
-                onObservation={(value) =>
-                  setObservations((current) => ({
-                    ...current,
-                    [value.case_id]: value,
-                  }))
-                }
-                saving={saving}
-                onCreateCase={async (input) => {
-                  setSaving(true);
-                  try {
-                    await createEvaluationCase(input);
-                    await load();
-                  } finally {
-                    setSaving(false);
+              <div className="space-y-6">
+                <ManualEvaluations
+                  cases={cases}
+                  runs={runs}
+                  observations={observations}
+                  onObservation={(value) =>
+                    setObservations((current) => ({
+                      ...current,
+                      [value.case_id]: value,
+                    }))
                   }
-                }}
-                onRun={async () => {
-                  setSaving(true);
-                  try {
-                    await createEvaluationRun(
-                      cases
-                        .filter((item) => item.active)
-                        .map((item) => observations[item.id]!)
-                        .filter(Boolean),
-                      versions[0]?.knowledge_release_id,
-                    );
-                    await load();
-                  } finally {
-                    setSaving(false);
-                  }
-                }}
-              />
+                  saving={saving}
+                  onCreateCase={async (input) => {
+                    setSaving(true);
+                    try {
+                      await createEvaluationCase(input);
+                      await load();
+                    } catch (reason) {
+                      setError(
+                        reason instanceof Error
+                          ? reason.message
+                          : "保存用例失败",
+                      );
+                      throw reason;
+                    } finally {
+                      setSaving(false);
+                    }
+                  }}
+                  onRun={async () => {
+                    setSaving(true);
+                    try {
+                      await createEvaluationRun(
+                        cases
+                          .filter((item) => item.active)
+                          .map((item) => observations[item.id]!)
+                          .filter(Boolean),
+                        versions[0]?.knowledge_release_id,
+                      );
+                      await load();
+                    } catch (reason) {
+                      setError(
+                        reason instanceof Error
+                          ? reason.message
+                          : "保存评测失败",
+                      );
+                    } finally {
+                      setSaving(false);
+                    }
+                  }}
+                />
+                <div className="rounded-xl border border-[#d7e1e2] bg-white p-5">
+                  <h3 className="font-semibold">自动流程评测已移至独立栏目</h3>
+                  <p className="mt-2 text-sm text-[#697a7f]">
+                    从左侧「Agent 评测」查看批次指标、测试轨迹、证据和复核记录。
+                  </p>
+                  <Link
+                    href="/workspace/evaluations"
+                    className="mt-3 inline-flex items-center gap-2 text-sm font-medium text-[#205f68] hover:underline"
+                  >
+                    <Target className="size-4" />
+                    打开 Agent 评测
+                  </Link>
+                </div>
+              </div>
             )}
             {view === "corrections" && (
               <CorrectionsPanel
@@ -539,235 +568,6 @@ function TaskPanel({
         )}
       </div>
     </section>
-  );
-}
-
-function EvaluationPanel({
-  cases,
-  runs,
-  observations,
-  onObservation,
-  saving,
-  onCreateCase,
-  onRun,
-}: {
-  cases: EvaluationCase[];
-  runs: EvaluationRun[];
-  observations: Record<string, EvaluationObservation>;
-  onObservation: (value: EvaluationObservation) => void;
-  saving: boolean;
-  onCreateCase: (input: {
-    name: string;
-    question: string;
-    expected_status: "answered" | "refused";
-    min_citations: number;
-    required_terms: string[];
-  }) => Promise<void>;
-  onRun: () => Promise<void>;
-}) {
-  const [name, setName] = useState("");
-  const [question, setQuestion] = useState("");
-  const [expected, setExpected] = useState<"answered" | "refused">("answered");
-  const [citations, setCitations] = useState(1);
-  const [terms, setTerms] = useState("");
-  return (
-    <div className="grid gap-7 xl:grid-cols-[minmax(0,1fr)_340px]">
-      <section>
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-base font-semibold">评测用例与本次观测</h2>
-            <p className="mt-1 text-sm text-[#697a7f]">
-              录入当前模型回答后，系统按状态、引用数和必含词自动评分并冻结结果。
-            </p>
-          </div>
-          <button
-            type="button"
-            disabled={saving || !cases.length}
-            onClick={() => void onRun()}
-            className="flex h-9 items-center gap-2 rounded-md bg-[#205f68] px-4 text-sm text-white disabled:opacity-40"
-          >
-            <BookCheck className="size-4" />
-            运行回归
-          </button>
-        </div>
-        <div className="mt-4 space-y-3">
-          {cases.map((item) => {
-            const value = observations[item.id] ?? {
-              case_id: item.id,
-              actual_status: item.expected_status,
-              citation_count: 0,
-              answer: "",
-            };
-            return (
-              <div
-                key={item.id}
-                className="rounded-md border border-[#d7e1e2] bg-white p-4"
-              >
-                <div className="flex flex-wrap justify-between gap-2">
-                  <div>
-                    <h3 className="text-sm font-medium">{item.name}</h3>
-                    <p className="mt-1 text-sm text-[#53676c]">
-                      {item.question}
-                    </p>
-                  </div>
-                  <span className="text-xs text-[#718186]">
-                    期望：
-                    {item.expected_status === "answered" ? "回答" : "拒答"} · ≥{" "}
-                    {item.min_citations} 引用
-                  </span>
-                </div>
-                <div className="mt-3 grid gap-3 sm:grid-cols-[130px_110px_1fr]">
-                  <select
-                    value={value.actual_status}
-                    onChange={(event) =>
-                      onObservation({
-                        ...value,
-                        actual_status: event.target.value as
-                          | "answered"
-                          | "refused",
-                      })
-                    }
-                    className="h-9 rounded-md border px-2 text-sm"
-                  >
-                    <option value="answered">本次已回答</option>
-                    <option value="refused">本次已拒答</option>
-                  </select>
-                  <input
-                    type="number"
-                    min={0}
-                    value={value.citation_count}
-                    onChange={(event) =>
-                      onObservation({
-                        ...value,
-                        citation_count: Number(event.target.value),
-                      })
-                    }
-                    aria-label="本次引用数"
-                    className="h-9 rounded-md border px-2 text-sm"
-                  />
-                  <input
-                    value={value.answer}
-                    onChange={(event) =>
-                      onObservation({ ...value, answer: event.target.value })
-                    }
-                    placeholder="粘贴或记录本次模型回答"
-                    className="h-9 min-w-0 rounded-md border px-3 text-sm"
-                  />
-                </div>
-              </div>
-            );
-          })}
-          {!cases.length && (
-            <p className="text-sm text-[#718186]">
-              先在右侧创建至少一个评测用例。
-            </p>
-          )}
-        </div>
-      </section>
-      <aside className="space-y-6 border-l border-[#d7e1e2] pl-0 xl:pl-6">
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            void onCreateCase({
-              name,
-              question,
-              expected_status: expected,
-              min_citations: citations,
-              required_terms: terms
-                .split(/[,，]/)
-                .map((item) => item.trim())
-                .filter(Boolean),
-            }).then(() => {
-              setName("");
-              setQuestion("");
-              setTerms("");
-            });
-          }}
-        >
-          <h2 className="text-base font-semibold">新增评测用例</h2>
-          <div className="mt-3 grid gap-3">
-            <input
-              required
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="用例名称"
-              className="h-9 rounded-md border px-3 text-sm"
-            />
-            <textarea
-              required
-              value={question}
-              onChange={(event) => setQuestion(event.target.value)}
-              placeholder="固定测试问题"
-              rows={3}
-              className="rounded-md border px-3 py-2 text-sm"
-            />
-            <div className="grid grid-cols-2 gap-2">
-              <select
-                value={expected}
-                onChange={(event) =>
-                  setExpected(event.target.value as "answered" | "refused")
-                }
-                className="h-9 rounded-md border px-2 text-sm"
-              >
-                <option value="answered">期望回答</option>
-                <option value="refused">期望拒答</option>
-              </select>
-              <input
-                type="number"
-                min={0}
-                value={citations}
-                onChange={(event) => setCitations(Number(event.target.value))}
-                aria-label="最低引用数"
-                className="h-9 rounded-md border px-2 text-sm"
-              />
-            </div>
-            <input
-              value={terms}
-              onChange={(event) => setTerms(event.target.value)}
-              placeholder="必含词，用逗号分隔"
-              className="h-9 rounded-md border px-3 text-sm"
-            />
-            <button
-              disabled={saving}
-              className="h-9 rounded-md border border-[#276f79] text-sm text-[#205f68] disabled:opacity-40"
-            >
-              保存用例
-            </button>
-          </div>
-        </form>
-        <div>
-          <h2 className="text-base font-semibold">最近运行</h2>
-          <div className="mt-3 space-y-2">
-            {runs.slice(0, 5).map((run) => (
-              <div
-                key={run.id}
-                className="border-b border-[#dce5e6] pb-2 text-sm"
-              >
-                <div className="flex justify-between">
-                  <span>
-                    {new Date(run.created_at).toLocaleString("zh-CN")}
-                  </span>
-                  <span
-                    className={
-                      run.pass_rate === 1 ? "text-[#237052]" : "text-[#a05c22]"
-                    }
-                  >
-                    {formatMetricRate(run.pass_rate)}
-                  </span>
-                </div>
-                <p className="mt-1 text-xs text-[#76868a]">
-                  {run.passed} / {run.total} 通过 ·{" "}
-                  {run.release_id ?? "未绑定知识版本"}
-                </p>
-              </div>
-            ))}
-            {!runs.length && (
-              <p className="text-sm text-[#718186]">尚未运行评测。</p>
-            )}
-          </div>
-        </div>
-      </aside>
-    </div>
   );
 }
 

@@ -35,6 +35,8 @@ The quality workspace separates visibility from mutation. `quality:read` exposes
 - **TanStack Query** (`@tanstack/react-query` ^5.90.17) — Server state management
 - **UI**: Shadcn UI, MagicUI, React Bits, and Vercel AI SDK elements (generated from registries — see Code Style)
 
+`components/workspace/manual-evaluations.tsx` owns the simple manual evaluation view. It displays saved answers and rule outcomes before the input form, excludes inactive cases from submission, explains stored failure reasons, and blocks empty observations. Case creation and automatic replay are collapsible. Manual success is a rule match, never proof of historical accuracy or a new model execution.
+
 ## Commands
 
 | Command          | Purpose                                           |
@@ -187,6 +189,10 @@ Live visitor location uses `navigator.geolocation.watchPosition`, not one-shot l
 Keep public provenance visible in the details pane. Historical event selection opens the event details pane with its period, place, people, description, and Evidence links; the place-details action returns to the associated map point. On narrow viewports the map and timeline appear before filters and details, with event and point details opening in bottom Sheets; on desktop the three columns scroll independently. A map source marked unavailable must remain a reference link rather than being rendered as an overlay. The GLB slot remains independent from this two-dimensional data surface.
 
 ## Operations Surface
+
+`app/workspace/evaluations/page.tsx` owns the standalone **Agent 评测** workspace, exposed alongside map/graph through `workspace-nav-chat-list.tsx` only to governance readers and admins. The operations regression tab keeps manual evaluation and links to this route. `components/workspace/agent-evaluations.tsx` owns automatic replay batches, controls, current-batch KPI cards and table filters; `agent-evaluation-detail.tsx` owns the accessible trajectory Sheet, append-only review and exact Evidence locators. `core/operations/evaluations.ts` owns the wire contract, authenticated API calls and portable exports. Pure metrics/filter/distribution/sequence projection lives in `core/operations/evaluation-dashboard.ts`; the SVG charts in `agent-evaluation-charts.tsx` plot real planned/passed counts and only terminal pass rates, with hover/focus tooltips. History time filters and charts cover only the current server page (20 batches), not the complete database. KPI scope stays at the selected batch when the table is filtered; missing durations remain unavailable and measured sample counts are visible. Do not invent failure causes or same-condition version comparisons from these aggregates.
+
+Polling queries are scoped by batch ID; drawer identity includes both batch and case; reruns preserve their parent and reviews append without changing the original verdict. Never render missing/empty/unfinished runs as all passed, classify expected timeout cancellation as failure, expose internal chain of thought, or describe scripted replay as real-model quality. Execution controls are admin-only; server permission checks remain authoritative. Fixtures live only in `tests/fixtures/agent-evaluations.ts`, never in the product UI. Playwright emits HTML+JSON and retains first-failure trace/screenshots/video; Rstest emits JSON when `TEST_REPORT_DIR` is set. See `../docs/agent-evaluation-testing.md`.
 
 `src/app/workspace/operations/page.tsx` is the governance-only continuous-improvement workspace. It must use real `/api/operations` data for metrics, regression observations, corrections, and asset versions; do not add demo KPI values. `src/core/operations/api.ts` also owns fire-and-forget interaction collection for final answers, citations and map points. Missing rates render as unavailable rather than `0%`, and the three-dimensional load rate remains unavailable until the GLB pipeline is real.
 

@@ -1,0 +1,255 @@
+{
+  "cases": [
+    {
+      "id": "b88af078-b3d9-4f7c-820b-d7a1ba2d89ea",
+      "name": "演示：灵岩山无证据拒答",
+      "question": "请根据文献库中的资料，介绍灵岩山，并列出资料出处。",
+      "expected_status": "refused",
+      "min_citations": 0,
+      "active": true,
+      "created_by": "local-demo",
+      "created_at": "2026-10-01T15:22:43.151440+00:00",
+      "required_terms": []
+    },
+    {
+      "id": "879a1e25-7258-43cc-b28f-b3eb2c674ac2",
+      "name": "灵岩山资料检索11",
+      "question": "请根据文献库中的资料，介绍灵岩山，并列出资料出处。",
+      "expected_status": "refused",
+      "min_citations": 1,
+      "active": false,
+      "created_by": "e31317d6-ac96-43c3-aa9b-7ec326bd8267",
+      "created_at": "2026-09-27 12:29:58.667026+00:00",
+      "required_terms": [
+        "无经复核的明确记载"
+      ]
+    },
+    {
+      "id": "f41d55e4-0387-4140-8a31-c0e3459af6b3",
+      "name": "灵岩山资料检索",
+      "question": "请根据文献库中的资料，介绍灵岩山，并列出资料出处。",
+      "expected_status": "answered",
+      "min_citations": 1,
+      "active": false,
+      "created_by": "e31317d6-ac96-43c3-aa9b-7ec326bd8267",
+      "created_at": "2026-09-27 12:20:45.655963+00:00",
+      "required_terms": [
+        "灵岩山"
+      ]
+    }
+  ],
+  "runs": [
+    {
+      "id": "027774f9-8009-4f03-a4bc-4fcbd1714b1e",
+      "release_id": "release-2c7aafe43b4247fa86ab0d6b951590e7",
+      "asset_version_id": null,
+      "status": "completed",
+      "total": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "created_by": "local-demo",
+      "created_at": "2026-10-01 15:41:59.911099+00:00",
+      "results": [
+        {
+          "id": "41712ca3-fa15-465b-a5cd-6e9ae2b45c0a",
+          "run_id": "027774f9-8009-4f03-a4bc-4fcbd1714b1e",
+          "case_id": "b88af078-b3d9-4f7c-820b-d7a1ba2d89ea",
+          "actual_status": "refused",
+          "citation_count": 0,
+          "answer": "当前检索范围内暂无明确记载。 检索范围：知识版本 release-2c7aafe43b4247fa86ab0d6b951590e7；当前已发布检索索引；可用证据 0 条。 说明：这只表示当前检索范围内未找到足够可引用记载，并不等于历史上不存在。 原因：证据包状态为空。 可继续查找：检查是否限定了错误知识版本或文献集合；可改写提问，或提供可授权的新史料入库。\n\n补充分析（以下内容未被当前本地文献核验）： 当前检索到的资料显示，灵岩山是灵岩寺及其相关吴王、西施传说地景的所在。资料中提到灵岩寺圆照塔前有小斜廊，传为吴王所建，因西施与宫人步行其上发出声响，故称“响屧廊”；但这一段属于《（正德）姑苏志》所收旧说，不能直接视为吴王时期建筑遗存的确证。\n\n资料出处\n\n《（正德）姑苏志》第六十卷，页1975—1979：记灵岩山、灵岩寺圆照塔及响屧廊，并载王禹偁、杨备、高启等相关诗句。\n《（民國）宋平江城坊考》，页275—278：检出灵岩山相关条目，可作为宋代平江城坊及地域关联的补充线索。\n《（民國）宋平江城坊考》，页180—184：另有灵岩山相关记载，需结合原书上下文辨析其具体所指。\n目前检索结果对灵岩山的山体形势、寺院创建年代及历代修葺未形成足够完整的证据链；上述内容宜区分为方志记载与传说性地景叙述。",
+          "passed": true,
+          "failure_reasons": []
+        }
+      ]
+    },
+    {
+      "id": "e00162d7-74a8-464d-b00c-5578bbfd5c12",
+      "release_id": "release-2c7aafe43b4247fa86ab0d6b951590e7",
+      "asset_version_id": null,
+      "status": "completed",
+      "total": 2,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "created_by": "e31317d6-ac96-43c3-aa9b-7ec326bd8267",
+      "created_at": "2026-10-01 15:06:03.002210+00:00",
+      "results": [
+        {
+          "id": "b4660b62-bea9-424d-80a4-615a11a453ba",
+          "run_id": "e00162d7-74a8-464d-b00c-5578bbfd5c12",
+          "case_id": "879a1e25-7258-43cc-b28f-b3eb2c674ac2",
+          "actual_status": "refused",
+          "citation_count": 1,
+          "answer": "",
+          "passed": false,
+          "failure_reasons": [
+            "missing required terms: 无经复核的明确记载"
+          ]
+        },
+        {
+          "id": "6d53634c-94b0-4d03-900d-ca2d5cf8ad58",
+          "run_id": "e00162d7-74a8-464d-b00c-5578bbfd5c12",
+          "case_id": "f41d55e4-0387-4140-8a31-c0e3459af6b3",
+          "actual_status": "answered",
+          "citation_count": 1,
+          "answer": "当前检索范围内暂无明确记载。",
+          "passed": false,
+          "failure_reasons": [
+            "missing required terms: 灵岩山"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "deb4ac95-79cd-4b69-8a1c-9b484c2675cf",
+      "release_id": "release-2c7aafe43b4247fa86ab0d6b951590e7",
+      "asset_version_id": null,
+      "status": "completed",
+      "total": 2,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "created_by": "e31317d6-ac96-43c3-aa9b-7ec326bd8267",
+      "created_at": "2026-10-01 15:06:01.078227+00:00",
+      "results": [
+        {
+          "id": "5d0e7dab-bfc4-41a5-bc7f-b43632956a3d",
+          "run_id": "deb4ac95-79cd-4b69-8a1c-9b484c2675cf",
+          "case_id": "879a1e25-7258-43cc-b28f-b3eb2c674ac2",
+          "actual_status": "refused",
+          "citation_count": 1,
+          "answer": "",
+          "passed": false,
+          "failure_reasons": [
+            "missing required terms: 无经复核的明确记载"
+          ]
+        },
+        {
+          "id": "cd969508-5160-464b-8a29-c024280ff592",
+          "run_id": "deb4ac95-79cd-4b69-8a1c-9b484c2675cf",
+          "case_id": "f41d55e4-0387-4140-8a31-c0e3459af6b3",
+          "actual_status": "answered",
+          "citation_count": 0,
+          "answer": "当前检索范围内暂无明确记载。",
+          "passed": false,
+          "failure_reasons": [
+            "expected at least 1 citations",
+            "missing required terms: 灵岩山"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "2dd2d6ab-90ee-4810-9d0c-7628dc6aad39",
+      "release_id": "release-2c7aafe43b4247fa86ab0d6b951590e7",
+      "asset_version_id": null,
+      "status": "completed",
+      "total": 2,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "created_by": "e31317d6-ac96-43c3-aa9b-7ec326bd8267",
+      "created_at": "2026-10-01 15:05:54.398512+00:00",
+      "results": [
+        {
+          "id": "17d28a01-9476-487e-a905-f9c5da34f3be",
+          "run_id": "2dd2d6ab-90ee-4810-9d0c-7628dc6aad39",
+          "case_id": "879a1e25-7258-43cc-b28f-b3eb2c674ac2",
+          "actual_status": "refused",
+          "citation_count": 1,
+          "answer": "",
+          "passed": false,
+          "failure_reasons": [
+            "missing required terms: 无经复核的明确记载"
+          ]
+        },
+        {
+          "id": "b37f9966-8128-4053-b0ff-d6774ee18066",
+          "run_id": "2dd2d6ab-90ee-4810-9d0c-7628dc6aad39",
+          "case_id": "f41d55e4-0387-4140-8a31-c0e3459af6b3",
+          "actual_status": "answered",
+          "citation_count": 0,
+          "answer": "当前检索范围内暂无明确记载。",
+          "passed": false,
+          "failure_reasons": [
+            "expected at least 1 citations",
+            "missing required terms: 灵岩山"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "0fad2940-09b5-4718-a2ee-f5b58110bc0d",
+      "release_id": "release-2c7aafe43b4247fa86ab0d6b951590e7",
+      "asset_version_id": null,
+      "status": "completed",
+      "total": 2,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "created_by": "e31317d6-ac96-43c3-aa9b-7ec326bd8267",
+      "created_at": "2026-10-01 14:54:05.210752+00:00",
+      "results": [
+        {
+          "id": "2e9ba2e1-e487-42ef-a87b-f3896822dd10",
+          "run_id": "0fad2940-09b5-4718-a2ee-f5b58110bc0d",
+          "case_id": "879a1e25-7258-43cc-b28f-b3eb2c674ac2",
+          "actual_status": "refused",
+          "citation_count": 0,
+          "answer": "",
+          "passed": false,
+          "failure_reasons": [
+            "expected at least 1 citations",
+            "missing required terms: 无经复核的明确记载"
+          ]
+        },
+        {
+          "id": "1024e10f-2ed7-4e1f-bdce-7dce8d4bde0a",
+          "run_id": "0fad2940-09b5-4718-a2ee-f5b58110bc0d",
+          "case_id": "f41d55e4-0387-4140-8a31-c0e3459af6b3",
+          "actual_status": "answered",
+          "citation_count": 0,
+          "answer": "",
+          "passed": false,
+          "failure_reasons": [
+            "expected at least 1 citations",
+            "missing required terms: 灵岩山"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "3d4a7533-d841-45e7-97b0-e696473b5938",
+      "release_id": "release-2c7aafe43b4247fa86ab0d6b951590e7",
+      "asset_version_id": null,
+      "status": "completed",
+      "total": 2,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "created_by": "e31317d6-ac96-43c3-aa9b-7ec326bd8267",
+      "created_at": "2026-10-01 14:49:05.376189+00:00",
+      "results": [
+        {
+          "id": "4f7f99fd-52b5-4d12-a463-deadba456285",
+          "run_id": "3d4a7533-d841-45e7-97b0-e696473b5938",
+          "case_id": "879a1e25-7258-43cc-b28f-b3eb2c674ac2",
+          "actual_status": "refused",
+          "citation_count": 1,
+          "answer": "",
+          "passed": false,
+          "failure_reasons": [
+            "missing required terms: 无经复核的明确记载"
+          ]
+        },
+        {
+          "id": "20605bc7-0326-46dc-b613-46071ab856a2",
+          "run_id": "3d4a7533-d841-45e7-97b0-e696473b5938",
+          "case_id": "f41d55e4-0387-4140-8a31-c0e3459af6b3",
+          "actual_status": "answered",
+          "citation_count": 1,
+          "answer": "",
+          "passed": false,
+          "failure_reasons": [
+            "missing required terms: 灵岩山"
+          ]
+        }
+      ]
+    }
+  ]
+}

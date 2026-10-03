@@ -7,6 +7,7 @@ import {
   Bot,
   ClipboardList,
   FolderKanban,
+  FlaskConical,
   History,
   Map,
   Search,
@@ -55,6 +56,12 @@ const navigation: Array<{
     href: "/workspace/quality",
     icon: ClipboardList,
     capability: "quality:read",
+  },
+  {
+    label: "Agent 评测",
+    href: "/workspace/evaluations",
+    icon: FlaskConical,
+    capability: "governance:read",
   },
   {
     label: "运营中心",

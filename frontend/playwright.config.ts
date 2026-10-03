@@ -1,7 +1,10 @@
+import { resolve } from "path";
+
 import { defineConfig, devices } from "@playwright/test";
 
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000";
 const skipWebServer = process.env.PLAYWRIGHT_SKIP_WEB_SERVER === "1";
+const reportDir = process.env.TEST_REPORT_DIR ?? ".";
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -9,14 +12,24 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : undefined,
-  reporter: process.env.CI ? "github" : "html",
+  reporter: [
+    [process.env.CI ? "github" : "list"],
+    [
+      "html",
+      { outputFolder: resolve(reportDir, "playwright-report"), open: "never" },
+    ],
+    ["json", { outputFile: resolve(reportDir, "results.json") }],
+  ],
+  outputDir: resolve(reportDir, "test-results"),
   preserveOutput: "always",
   timeout: 30_000,
 
   use: {
     baseURL,
     locale: "en-US",
-    trace: "on-first-retry",
+    trace: "retain-on-failure",
+    screenshot: "only-on-failure",
+    video: "retain-on-failure",
   },
 
   projects: [

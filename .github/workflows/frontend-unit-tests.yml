@@ -40,4 +40,14 @@ jobs:
 
       - name: Run unit tests of frontend
         working-directory: frontend
-        run: make test
+        run: pnpm exec rstest run
+        env:
+          TEST_REPORT_DIR: test-results
+      - name: Upload frontend test records
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-unit-results
+          path: frontend/test-results/results.json
+          if-no-files-found: error
+          retention-days: 7

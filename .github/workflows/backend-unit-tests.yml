@@ -37,4 +37,12 @@ jobs:
 
       - name: Run unit tests of backend
         working-directory: backend
-        run: make test
+        run: PYTHONPATH=. uv run pytest tests/ -v --junitxml=test-results/junit.xml
+      - name: Upload backend test records
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-unit-results
+          path: backend/test-results/junit.xml
+          if-no-files-found: error
+          retention-days: 7

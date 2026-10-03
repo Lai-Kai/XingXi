@@ -53,7 +53,7 @@ def build_dashboard_metrics(
     *, answer_events: list[dict[str, Any]], feedback_ratings: list[int], unanswered_count: int, map_click_count: int, correction_count: int, hot_entities: list[tuple[str, str, int]], evaluation_outcomes: list[bool] | None = None
 ) -> OperationsDashboard:
     judged = [bool(row["is_accurate"]) for row in answer_events if row.get("is_accurate") is not None]
-    judged.extend(evaluation_outcomes or [])
+    # Offline regression observations are not online answer-accuracy judgements.
     refusals = [row for row in answer_events if row.get("refused")]
     return OperationsDashboard(
         answer_accuracy_rate=_rate(sum(judged), len(judged)),
@@ -85,21 +85,9 @@ class RegressionReport(_Model):
 
 
 def grade_regression_run(*, cases: list[dict[str, Any]], observations: list[dict[str, Any]]) -> RegressionReport:
-    by_case = {row["case_id"]: row for row in observations}
-    results = []
-    for case in cases:
-        observed = by_case.get(case["id"], {"actual_status": "refused", "citation_count": 0, "answer": ""})
-        reasons = []
-        if observed["actual_status"] != case["expected_status"]:
-            reasons.append(f"expected status {case['expected_status']}, got {observed['actual_status']}")
-        if observed.get("citation_count", 0) < case.get("min_citations", 0):
-            reasons.append(f"expected at least {case['min_citations']} citations")
-        missing = [term for term in case.get("required_terms", []) if term not in observed.get("answer", "")]
-        if missing:
-            reasons.append("missing required terms: " + ", ".join(missing))
-        results.append(EvaluationResult(case_id=case["id"], actual_status=observed["actual_status"], citation_count=observed.get("citation_count", 0), answer=observed.get("answer", ""), passed=not reasons, failure_reasons=tuple(reasons)))
-    passed = sum(item.passed for item in results)
-    return RegressionReport(total=len(results), passed=passed, pass_rate=_rate(passed, len(results)), results=tuple(results))
+    from deerflow.persistence.operations.grading import grade_manual_regression
+
+    return RegressionReport.model_validate(grade_manual_regression(cases=cases, observations=observations))
 
 
 class OperationEventCreate(_Model):
@@ -315,10 +303,7 @@ async def list_operation_tasks(
     await _operator_id(request)
     statuses = None if status_filter == "all" else {IngestionJobStatus(status_filter)}
     rows = await repository.list_recent(limit=limit, statuses=statuses)
-    return [
-        _operation_task_from_job(job, document_title=document_title, filename=filename)
-        for job, document_title, filename in rows
-    ]
+    return [_operation_task_from_job(job, document_title=document_title, filename=filename) for job, document_title, filename in rows]
 
 
 @router.post("/tasks/{task_id}/retry", response_model=OperationTask)
@@ -393,7 +378,11 @@ async def list_evaluation_runs(request: Request, limit: int = Query(default=20, 
 
 @router.post("/evaluations/runs", response_model=EvaluationRun, status_code=status.HTTP_201_CREATED)
 async def create_evaluation_run(body: EvaluationRunCreate, request: Request, repository: OperationsRepository = Depends(get_operations_repository)):
-    return await repository.create_evaluation_run(body, actor_id=await _operator_id(request))
+    actor_id = await _operator_id(request)
+    try:
+        return await repository.create_evaluation_run(body, actor_id=actor_id)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
 
 
 @router.get("/asset-versions", response_model=list[AssetVersion])

@@ -45,3 +45,14 @@ def test_regression_run_is_deterministically_graded() -> None:
     assert report.passed == 1
     assert report.pass_rate == 0.5
     assert report.results[1].failure_reasons == ("expected status refused, got answered",)
+
+
+def test_missing_refusal_observation_cannot_pass() -> None:
+    report = grade_regression_run(cases=[{"id": "missing", "expected_status": "refused", "min_citations": 0, "required_terms": []}], observations=[])
+    assert report.passed == 0
+    assert "missing observation" in report.results[0].failure_reasons
+
+
+def test_offline_regression_does_not_inflate_online_accuracy() -> None:
+    metrics = build_dashboard_metrics(answer_events=[{"is_accurate": False}], feedback_ratings=[], unanswered_count=0, map_click_count=0, correction_count=0, hot_entities=[], evaluation_outcomes=[True] * 10)
+    assert metrics.answer_accuracy_rate == 0

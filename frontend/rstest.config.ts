@@ -4,6 +4,15 @@ import { pluginReact } from "@rsbuild/plugin-react";
 import { defineConfig } from "@rstest/core";
 
 export default defineConfig({
+  reporters: process.env.TEST_REPORT_DIR
+    ? [
+        "default",
+        [
+          "json",
+          { outputPath: resolve(process.env.TEST_REPORT_DIR, "results.json") },
+        ],
+      ]
+    : ["default"],
   plugins: [pluginReact()],
   resolve: {
     alias: {
