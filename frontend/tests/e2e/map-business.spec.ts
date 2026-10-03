@@ -288,8 +288,9 @@ test("desktop exploration keeps the map primary and shows one traceable detail s
 
   await yonganBridgeMarker.click();
   await expect(
-    pointDetails.getByRole("heading", { name: "永安桥" }),
+    pointDetails.getByRole("heading", { name: "永安桥", exact: true }),
   ).toBeVisible();
+  await pointDetails.getByRole("tab", { name: "概览", exact: true }).click();
   await expect(
     pointDetails.getByText("估计中心", { exact: true }),
   ).toBeVisible();
@@ -345,12 +346,13 @@ test("desktop exploration keeps the map primary and shows one traceable detail s
     .getByRole("button", { name: /永安桥/ })
     .click();
   await expect(
-    pointDetails.getByRole("heading", { name: "永安桥" }),
+    pointDetails.getByRole("heading", { name: "永安桥", exact: true }),
   ).toBeVisible();
 
   await expect(
     page.getByText("暂无授权 GLB 三维模型", { exact: true }),
   ).toHaveCount(0);
+  await pointDetails.getByRole("tab", { name: "概览", exact: true }).click();
   await expect(page.locator("[data-glb-id]")).toHaveCount(0);
 
   const mapLegend = page.locator('[data-map-legend="true"]');
@@ -639,7 +641,10 @@ test("mobile point selection brings its details into view immediately", async ({
   await marker.click({ force: true });
 
   const pointDetails = page.getByRole("region", { name: "点位详情" });
-  const pointTitle = pointDetails.getByRole("heading", { name: "永安桥" });
+  const pointTitle = pointDetails.getByRole("heading", {
+    name: "永安桥",
+    exact: true,
+  });
   await expect(pointDetails).toBeVisible();
   await expect(pointDetails).toBeInViewport();
   await expect(pointTitle).toBeInViewport();

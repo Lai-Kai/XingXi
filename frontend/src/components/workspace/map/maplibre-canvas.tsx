@@ -269,11 +269,14 @@ function syncMarkerLabel(view: MarkerView, zoom: number) {
       ? "30"
       : view.selected
         ? "20"
-        : "1";
+        : view.button.dataset.hasModel === "true"
+          ? "10"
+          : "1";
 }
 
 export function MapLibreCanvas({
   points,
+  modelPointIds = [],
   layers = [],
   visibleLayerIds = [],
   layerOpacity = {},
@@ -293,6 +296,7 @@ export function MapLibreCanvas({
   className,
 }: {
   points: MapPoint[];
+  modelPointIds?: readonly string[];
   layers?: MapLayer[];
   visibleLayerIds?: string[];
   layerOpacity?: Record<string, number>;
@@ -430,23 +434,32 @@ export function MapLibreCanvas({
       markersRef.current.forEach((marker) => marker.remove());
       markersRef.current = [];
       markerViewsRef.current = [];
+      const modelIds = new Set(modelPointIds);
       for (const point of points) {
+        const hasModel = modelIds.has(point.id);
         const activeEvent = events.find(
           (event) => event.id === activeEventId && event.pointId === point.id,
         );
         const wrapper = document.createElement("div");
-        wrapper.className = "relative grid size-8 place-items-center";
+        wrapper.className = cn(
+          "relative grid place-items-center",
+          hasModel ? "size-11" : "size-8",
+        );
 
         const element = document.createElement("button");
         element.type = "button";
-        element.className =
-          "relative grid size-8 animate-[xingxi-history-entry_700ms_ease-out] place-items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-700 focus-visible:ring-offset-2 motion-reduce:animate-none";
+        element.className = cn(
+          "relative grid place-items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-700 focus-visible:ring-offset-2",
+          hasModel
+            ? "size-11"
+            : "size-8 animate-[xingxi-history-entry_700ms_ease-out] motion-reduce:animate-none",
+        );
         element.setAttribute(
           "aria-label",
-          point.geometryType === "point"
-            ? `地图点位 ${point.name}`
-            : `地图范围 ${point.name}`,
+          `${point.geometryType === "point" ? "地图点位" : "地图范围"} ${point.name}${hasModel ? "，可预览三维模型" : ""}`,
         );
+        element.dataset.hasModel = String(hasModel);
+        element.title = `${point.name}${hasModel ? " · 点击预览模型" : ""}`;
         element.dataset.confidence = point.confidence;
         element.dataset.spatialGeometry = point.geometryType;
         element.dataset.reviewStatus = point.reviewStatus ?? "reference";
@@ -460,20 +473,40 @@ export function MapLibreCanvas({
         const dot = document.createElement("span");
         dot.className = cn(
           "pointer-events-none grid rounded-full border-2 shadow-sm transition-transform",
-          routeIndex >= 0
-            ? "size-5 place-items-center bg-teal-700 text-[10px] font-semibold text-white"
-            : point.geometryType === "point"
-              ? "size-3"
-              : "size-4 place-items-center bg-white text-[11px] font-bold",
+          hasModel
+            ? "size-7 place-items-center text-[10px] font-bold"
+            : routeIndex >= 0
+              ? "size-5 place-items-center bg-teal-700 text-[10px] font-semibold text-white"
+              : point.geometryType === "point"
+                ? "size-3"
+                : "size-4 place-items-center bg-white text-[11px] font-bold",
           point.id === selectedId
-            ? "scale-125 border-teal-950 bg-teal-950 ring-2 ring-white"
+            ? cn(
+                "border-teal-950 bg-teal-950 ring-2 ring-white",
+                !hasModel && "scale-125",
+              )
             : confidenceDotClass[point.confidence],
+          hasModel &&
+            (point.id === selectedId || point.confidence === "exact"
+              ? "text-white"
+              : "text-amber-950"),
           point.recordKind === "corpus" && point.reviewStatus !== "reviewed"
             ? "ring-2 ring-amber-300/80 [border-style:dashed]"
             : "",
         );
         dot.setAttribute("aria-hidden", "true");
-        if (routeIndex >= 0) dot.textContent = String(routeIndex + 1);
+        if (hasModel) {
+          dot.dataset.modelBadge = "true";
+          dot.textContent = "3D";
+          if (routeIndex >= 0) {
+            const stop = document.createElement("span");
+            stop.className =
+              "pointer-events-none absolute -top-0.5 -right-0.5 grid size-4 place-items-center rounded-full bg-teal-950 text-[9px] font-semibold text-white";
+            stop.setAttribute("aria-hidden", "true");
+            stop.textContent = String(routeIndex + 1);
+            element.appendChild(stop);
+          }
+        } else if (routeIndex >= 0) dot.textContent = String(routeIndex + 1);
         else if (point.geometryType !== "point") dot.textContent = "×";
 
         if (activeEvent) {
@@ -530,7 +563,10 @@ export function MapLibreCanvas({
         markerViewsRef.current.push(view);
         updateView();
         markersRef.current.push(
-          new maplibregl.Marker({ element: wrapper, anchor: "bottom" })
+          new maplibregl.Marker({
+            element: wrapper,
+            anchor: hasModel ? "center" : "bottom",
+          })
             .setLngLat([point.lon, point.lat])
             .addTo(map),
         );
@@ -594,6 +630,7 @@ export function MapLibreCanvas({
     historyYear,
     plannedRoute,
     points,
+    modelPointIds,
     routePoints,
     selectedId,
     showHistoricalRanges,
