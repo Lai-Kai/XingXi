@@ -1201,6 +1201,13 @@ async def _merged_catalog(source: VersionedCatalogSource | None) -> MapCatalogOu
     )
 
 
+@router.get("/reference-points", response_model=list[MapPointOut])
+async def list_reference_map_points(point_id: list[str] = Query(default=[])) -> list[MapPointOut]:
+    """Read curated modern references separately from published knowledge assets."""
+    selected = set(point_id)
+    return [point for point in POINTS if point.record_kind == "reference" and (not selected or point.id in selected)]
+
+
 @router.get("/points", response_model=list[MapPointOut])
 async def list_map_points(
     entity_type: list[str] = Query(default=[]),

@@ -25,6 +25,20 @@ const config = {
     defaultLocale: "en",
   },
   devIndicators: false,
+  async headers() {
+    return [
+      {
+        source: "/models/:slug/v1/:file.glb",
+        headers: [
+          { key: "Content-Type", value: "model/gltf-binary" },
+          {
+            key: "Cache-Control",
+            value: "public, max-age=31536000, immutable",
+          },
+        ],
+      },
+    ];
+  },
   async rewrites() {
     const rewrites = [];
     const gatewayURL = getInternalServiceURL(

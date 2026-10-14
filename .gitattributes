@@ -26,6 +26,10 @@ Makefile text eol=lf
 *.bat text eol=crlf
 *.cmd text eol=crlf
 
+# 3D models: real binary payloads (~419MB total) must go through Git LFS and must
+# never be line-ending normalized by the `* text=auto eol=lf` rule above.
+*.glb filter=lfs diff=lfs merge=lfs -text
+
 # Binary assets
 *.png binary
 *.jpg binary
