@@ -76,6 +76,19 @@ describe("business role access", () => {
 
   it("keeps every workspace entry for system administrators", () => {
     const admin = { ...user("government", []), system_role: "admin" as const };
-    expect(navigationForUser(admin)).toHaveLength(11);
+    expect(navigationForUser(admin)).toHaveLength(12);
+  });
+
+  it("exposes the standalone evaluation area only to governance readers", () => {
+    expect(
+      navigationForUser(user("government", ["governance:read"])).find(
+        (item) => item.label === "Agent 评测",
+      )?.href,
+    ).toBe("/workspace/evaluations");
+    expect(
+      navigationForUser(user("public", [])).some(
+        (item) => item.href === "/workspace/evaluations",
+      ),
+    ).toBe(false);
   });
 });

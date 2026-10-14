@@ -63,6 +63,21 @@ jobs:
       - name: Replay golden (backend SSE contract)
         working-directory: backend
         run: PYTHONPATH=. uv run pytest tests/test_replay_golden.py -v
+      - name: Xingxi Agent core replay
+        run: make eval-smoke
+      - name: Upload Agent evaluation evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-evaluation
+          path: |
+            reports/testing/agent-*/**/index.html
+            reports/testing/agent-*/**/summary.md
+            reports/testing/agent-*/**/results.json
+            reports/testing/agent-*/**/results.csv
+            reports/testing/agent-*/**/manifest.json
+          if-no-files-found: error
+          retention-days: 7
 
   fullstack-replay-render:
     name: Layer 2 — full-stack render (no API key)
@@ -97,6 +112,11 @@ jobs:
       - name: Full-stack replay render (DOM assertions are the gate)
         working-directory: frontend
         run: pnpm exec playwright test -c playwright.real-backend.config.ts
+      - name: Require browser report artifacts
+        if: ${{ !cancelled() }}
+        run: |
+          test -s frontend/playwright-report/index.html
+          test -s frontend/results.json
       - name: Upload report + render artifact
         uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
@@ -105,4 +125,6 @@ jobs:
           path: |
             frontend/playwright-report/
             frontend/test-results/
+            frontend/results.json
+          if-no-files-found: error
           retention-days: 7

@@ -4,6 +4,8 @@ This file provides guidance to AI coding agents (Claude Code, Codex, and others)
 
 ## Project Overview
 
+Automatic Agent evaluations live in `app/gateway/evaluations/` with `/api/operations/evaluations/{catalog,executions}` endpoints. SQL migration `0044_agent_evaluations` preserves legacy manual runs and adds immutable attempt results, append-only reviews, idempotency keys and one shared worker lease. The application service claims jobs, launches a separate Gateway process with a fresh synthetic SQLite corpus and scripted model, and saves observed RunJournal tools/evidence plus rule checks. `XINGXI_EVALUATION_CHILD=1` prevents recursive evaluation/ingestion workers; seeding also requires an empty database. The child never inherits provider credentials or enables external tracing. Expired leases become errors, and retries create new linked batches. All execution/cancel/rerun/review writes require admin; reads/exports require `governance:read`. Harness persistence must not import this application package. Missing observations cannot pass and offline evaluation outcomes must not affect online accuracy. See `../docs/agent-evaluation-testing.md` for CLI/report behavior and replay limitations.
+
 This backend powers Xingxi (星羲弦沚), the sole public-facing Wu-culture and Mudu regional-history agent. DeerFlow remains the internal LangGraph runtime providing sandbox execution, persistent memory, subagent delegation, and tool integration; generic DeerFlow Agent and Skill management are not product surfaces.
 
 **Architecture**:

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -199,6 +200,8 @@ async def _recover_interrupted_ingestion_jobs(*, grace_seconds: int) -> int:
 
 async def _start_ingestion_worker(app: FastAPI, startup_config: AppConfig) -> None:
     """Start the durable source-ingestion worker after SQL bootstrap is ready."""
+    if os.environ.get("XINGXI_EVALUATION_CHILD") == "1":
+        return
     from deerflow.persistence.engine import get_session_factory
 
     session_factory = get_session_factory()
@@ -383,6 +386,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         except Exception:
             logger.exception("Failed to initialize scheduled task service")
 
+        # Resume the durable offline evaluation queue after SQL/runtime setup.
+        from app.gateway.evaluations.service import start_evaluations
+
+        await start_evaluations(app)
+
         # Prime the evidence-bound daily feed before the first browser request.
         # The service returns its verified seed selection first and performs
         # popularity/RAG refresh work in its own bounded background task.
@@ -410,6 +418,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             logger.exception("Research feed warm-up stopped with an error")
 
         await _stop_ingestion_worker(app)
+        from app.gateway.evaluations.service import stop_evaluations
+
+        await stop_evaluations(app)
 
         try:
             await auth.close_oidc_service()
@@ -656,6 +667,9 @@ This gateway provides Xingxi runtime endpoints plus supporting model, MCP, memor
     app.include_router(entities.router)
     app.include_router(map_points.router)
     app.include_router(operations.router)
+    from app.gateway.evaluations.api import router as evaluation_router
+
+    app.include_router(evaluation_router)
     app.include_router(public_knowledge.router)
     app.include_router(research_feed.router)
     app.include_router(research_projects.router)

@@ -175,11 +175,13 @@ class OperationsRepository:
         ]
 
     async def create_evaluation_run(self, body, *, actor_id: str) -> dict[str, Any]:
-        from app.gateway.routers.operations import grade_regression_run
+        from deerflow.persistence.operations.grading import grade_manual_regression
 
         cases = await self.list_evaluation_cases()
         selected = [case for case in cases if case["active"] and (not body.case_ids or case["id"] in body.case_ids)]
-        report = grade_regression_run(cases=selected, observations=[item.model_dump() for item in body.observations])
+        if not selected or (body.case_ids and set(body.case_ids) != {case["id"] for case in selected}):
+            raise ValueError("Select at least one existing active evaluation case")
+        report = grade_manual_regression(cases=selected, observations=[item.model_dump() for item in body.observations])
         run_id = str(uuid.uuid4())
         created_at = datetime.now(UTC)
         async with self._sf() as session:
@@ -189,16 +191,25 @@ class OperationsRepository:
                     (id,release_id,asset_version_id,status,total,passed,pass_rate,created_by,created_at)
                     VALUES (:id,:release_id,:asset_version_id,'completed',:total,:passed,:pass_rate,:created_by,:created_at)"""
                 ),
-                {"id": run_id, "release_id": body.release_id, "asset_version_id": body.asset_version_id, "total": report.total, "passed": report.passed, "pass_rate": report.pass_rate, "created_by": actor_id, "created_at": created_at},
+                {
+                    "id": run_id,
+                    "release_id": body.release_id,
+                    "asset_version_id": body.asset_version_id,
+                    "total": report["total"],
+                    "passed": report["passed"],
+                    "pass_rate": report["pass_rate"],
+                    "created_by": actor_id,
+                    "created_at": created_at,
+                },
             )
-            for result in report.results:
+            for result in report["results"]:
                 await session.execute(
                     text(
                         """INSERT INTO wu_evaluation_results
                         (id,run_id,case_id,actual_status,citation_count,answer,passed,failure_reasons_json)
                         VALUES (:id,:run_id,:case_id,:actual_status,:citation_count,:answer,:passed,:failure_reasons_json)"""
                     ),
-                    {"id": str(uuid.uuid4()), "run_id": run_id, **result.model_dump(exclude={"failure_reasons"}), "failure_reasons_json": _json(result.failure_reasons)},
+                    {"id": str(uuid.uuid4()), "run_id": run_id, **{key: value for key, value in result.items() if key != "failure_reasons"}, "failure_reasons_json": _json(result["failure_reasons"])},
                 )
             await session.commit()
         return {
@@ -206,17 +217,25 @@ class OperationsRepository:
             "release_id": body.release_id,
             "asset_version_id": body.asset_version_id,
             "status": "completed",
-            "total": report.total,
-            "passed": report.passed,
-            "pass_rate": report.pass_rate,
+            "total": report["total"],
+            "passed": report["passed"],
+            "pass_rate": report["pass_rate"],
             "created_by": actor_id,
             "created_at": created_at,
-            "results": list(report.results),
+            "results": report["results"],
         }
 
     async def list_evaluation_runs(self, *, limit: int) -> list[dict[str, Any]]:
         async with self._sf() as session:
-            runs = (await session.execute(text("SELECT * FROM wu_evaluation_runs ORDER BY created_at DESC LIMIT :limit"), {"limit": limit})).mappings().all()
+            runs = (
+                (
+                    await session.execute(
+                        text("SELECT id,release_id,asset_version_id,status,total,passed,pass_rate,created_by,created_at FROM wu_evaluation_runs WHERE execution_mode='manual' ORDER BY created_at DESC LIMIT :limit"), {"limit": limit}
+                    )
+                )
+                .mappings()
+                .all()
+            )
             output = []
             for run in runs:
                 results = (await session.execute(text("SELECT * FROM wu_evaluation_results WHERE run_id=:run_id ORDER BY id"), {"run_id": run["id"]})).mappings().all()
@@ -272,25 +291,22 @@ class OperationsRepository:
     @staticmethod
     async def ensure_release_ready(session: AsyncSession, release) -> None:  # noqa: ANN001
         row = (
-            await session.execute(
-                text(
-                    "SELECT * FROM wu_asset_versions "
-                    "WHERE knowledge_release_id=:release_id"
-                ),
-                {"release_id": release.id},
+            (
+                await session.execute(
+                    text("SELECT * FROM wu_asset_versions WHERE knowledge_release_id=:release_id"),
+                    {"release_id": release.id},
+                )
             )
-        ).mappings().first()
+            .mappings()
+            .first()
+        )
         if row is None or not row["graph_manifest_sha256"] or not row["map_manifest_sha256"]:
-            raise RuntimeError(
-                f"knowledge release {release.id!r} does not have complete graph and map assets"
-            )
+            raise RuntimeError(f"knowledge release {release.id!r} does not have complete graph and map assets")
         # Pre-0038 databases have no map body at all. They can still be read
         # by old isolated callers, but an upgraded schema must not activate a
         # release whose map snapshot is missing.
         if "map_manifest_json" in row and not row["map_manifest_json"]:
-            raise RuntimeError(
-                f"knowledge release {release.id!r} does not have a persisted map snapshot"
-            )
+            raise RuntimeError(f"knowledge release {release.id!r} does not have a persisted map snapshot")
 
     @staticmethod
     async def ensure_asset_snapshot_in_session(
@@ -305,10 +321,7 @@ class OperationsRepository:
         existing = (
             (
                 await session.execute(
-                    text(
-                        "SELECT * FROM wu_asset_versions "
-                        "WHERE knowledge_release_id=:release_id"
-                    ),
+                    text("SELECT * FROM wu_asset_versions WHERE knowledge_release_id=:release_id"),
                     {"release_id": release_id},
                 )
             )
@@ -320,11 +333,7 @@ class OperationsRepository:
                 return dict(existing)
             map_json = _json(map_manifest)
             await session.execute(
-                text(
-                    "UPDATE wu_asset_versions SET map_manifest_sha256=:map_manifest_sha256, "
-                    "map_manifest_json=:map_manifest_json, map_point_count=:map_point_count "
-                    "WHERE knowledge_release_id=:release_id"
-                ),
+                text("UPDATE wu_asset_versions SET map_manifest_sha256=:map_manifest_sha256, map_manifest_json=:map_manifest_json, map_point_count=:map_point_count WHERE knowledge_release_id=:release_id"),
                 {
                     "release_id": release_id,
                     "map_manifest_sha256": hashlib.sha256(map_json.encode()).hexdigest(),
@@ -333,33 +342,29 @@ class OperationsRepository:
                 },
             )
             refreshed = (
-                await session.execute(
-                    text(
-                        "SELECT * FROM wu_asset_versions "
-                        "WHERE knowledge_release_id=:release_id"
-                    ),
-                    {"release_id": release_id},
+                (
+                    await session.execute(
+                        text("SELECT * FROM wu_asset_versions WHERE knowledge_release_id=:release_id"),
+                        {"release_id": release_id},
+                    )
                 )
-            ).mappings().first()
+                .mappings()
+                .first()
+            )
             if refreshed is None:
                 raise RuntimeError(f"asset snapshot disappeared for release {release_id!r}")
             return dict(refreshed)
         entities = (
             (
                 await session.execute(
-                    text(
-                        "SELECT id,canonical_name,entity_type,review_status "
-                        "FROM wu_entities WHERE release_id=:release_id ORDER BY id"
-                    ),
+                    text("SELECT id,canonical_name,entity_type,review_status FROM wu_entities WHERE release_id=:release_id ORDER BY id"),
                     {"release_id": release_id},
                 )
             )
             .mappings()
             .all()
         )
-        graph_hash = hashlib.sha256(
-            _json([dict(row) for row in entities]).encode()
-        ).hexdigest()
+        graph_hash = hashlib.sha256(_json([dict(row) for row in entities]).encode()).hexdigest()
         map_hash = hashlib.sha256(_json(map_manifest).encode()).hexdigest()
         snapshot = {
             "id": str(uuid.uuid4()),
@@ -404,13 +409,12 @@ class OperationsRepository:
     async def list_asset_versions(self) -> list[dict[str, Any]]:
         async with self._sf() as session:
             rows = (
-                await session.execute(
-                    text(
-                        "SELECT id,knowledge_release_id,knowledge_release_version,"
-                        "graph_manifest_sha256,map_manifest_sha256,entity_count,"
-                        "map_point_count,created_by,created_at "
-                        "FROM wu_asset_versions ORDER BY created_at DESC"
+                (
+                    await session.execute(
+                        text("SELECT id,knowledge_release_id,knowledge_release_version,graph_manifest_sha256,map_manifest_sha256,entity_count,map_point_count,created_by,created_at FROM wu_asset_versions ORDER BY created_at DESC")
                     )
                 )
-            ).mappings().all()
+                .mappings()
+                .all()
+            )
         return [dict(row) for row in rows]

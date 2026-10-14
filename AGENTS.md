@@ -158,6 +158,8 @@ Rule of thumb: **root `make` = the full application**; **`backend/Makefile` and 
 
 ## Cross-Cutting Conventions
 
+- **Agent evaluation records** — `make eval-smoke` / `make eval-agent` use an isolated real Gateway with synthetic model replay; `make test-report` preserves software test logs and machine reports under `reports/testing/`. These are software checks, not real-model quality scores. See [docs/agent-evaluation-testing.md](docs/agent-evaluation-testing.md). Automatic evaluations have their own sidebar entry at `/workspace/evaluations`, reuse the existing operations API with admin-only writes and governance reads, and must not insert fixture knowledge into the business corpus or inflate online accuracy. The operations regression tab retains manual tests and links to the standalone dashboard.
+
 These apply repo-wide; module guides own the module-specific detail.
 
 - **Documentation update policy** — keep docs in sync with code: update `README.md` for

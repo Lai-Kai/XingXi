@@ -1,3 +1,5 @@
+import { resolve } from "path";
+
 import { defineConfig, devices } from "@playwright/test";
 
 const frontendPort = process.env.E2E_FRONTEND_PORT ?? "3000";
@@ -5,6 +7,7 @@ const gatewayPort = process.env.E2E_GATEWAY_PORT ?? "8011";
 const frontendUrl = `http://localhost:${frontendPort}`;
 const gatewayUrl = `http://localhost:${gatewayPort}`;
 const gatewayInternalUrl = `http://127.0.0.1:${gatewayPort}`;
+const reportDir = process.env.TEST_REPORT_DIR ?? ".";
 
 /**
  * Layer 2 of the record/replay e2e: the REAL Next.js frontend rendering data
@@ -23,12 +26,22 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   workers: 1,
-  reporter: process.env.CI ? "github" : "html",
+  reporter: [
+    [process.env.CI ? "github" : "list"],
+    [
+      "html",
+      { outputFolder: resolve(reportDir, "playwright-report"), open: "never" },
+    ],
+    ["json", { outputFile: resolve(reportDir, "results.json") }],
+  ],
+  outputDir: resolve(reportDir, "test-results"),
   timeout: 90_000,
 
   use: {
     baseURL: frontendUrl,
-    trace: "on-first-retry",
+    trace: "retain-on-failure",
+    screenshot: "only-on-failure",
+    video: "retain-on-failure",
   },
 
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],

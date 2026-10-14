@@ -1,9 +1,23 @@
 # DeerFlow - Unified Development Environment
+.DEFAULT_GOAL := help
 
 .PHONY: help config config-upgrade check install setup doctor support-bundle detect-thread-boundaries detect-blocking-io dev dev-daemon start start-daemon nginx stop up down clean docker-init docker-start docker-stop docker-logs docker-logs-frontend docker-logs-gateway docker-logs-redis
 
 BASH ?= bash
 BACKEND_UV_RUN = cd backend && uv run
+EVAL_PYTHON ?= $(if $(wildcard backend/.venv/bin/python),.venv/bin/python,uv run python)
+REPORT_PYTHON ?= $(if $(wildcard backend/.venv/bin/python),backend/.venv/bin/python,uv run --project backend python)
+TEST_ARGS ?=
+
+.PHONY: test-report eval-smoke eval-agent
+test-report:
+	@$(REPORT_PYTHON) scripts/testing_report.py $(TEST_ARGS)
+
+eval-smoke:
+	@cd backend && $(EVAL_PYTHON) -m app.gateway.evaluations.cli --smoke $(TEST_ARGS)
+
+eval-agent:
+	@cd backend && $(EVAL_PYTHON) -m app.gateway.evaluations.cli $(TEST_ARGS)
 
 # Detect OS for Windows compatibility
 ifeq ($(OS),Windows_NT)
@@ -21,6 +35,9 @@ help:
 	@echo "  make setup           - Interactive setup wizard (recommended for new users)"
 	@echo "  make doctor          - Check configuration and system requirements"
 	@echo "  make support-bundle  - Create a redacted issue summary, AI draft, and evidence bundle"
+	@echo "  make test-report     - Run software checks and write HTML/JSON/Markdown evidence"
+	@echo "  make eval-smoke      - Run six isolated Xingxi Agent replay cases"
+	@echo "  make eval-agent      - Run all 30 Xingxi Agent replay cases"
 	@echo "  make config          - Generate local config files (aborts if config already exists)"
 	@echo "  make config-upgrade  - Merge new fields from config.example.yaml into config.yaml"
 	@echo "  make check           - Check if all required tools are installed"

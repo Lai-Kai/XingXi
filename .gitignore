@@ -110,6 +110,9 @@ config.yaml.bak
 .playwright-mcp
 /frontend/test-results/
 /frontend/playwright-report/
+/frontend/results.json
+/reports/testing/
+/backend/test-results/
 .gstack/
 .worktrees
 
