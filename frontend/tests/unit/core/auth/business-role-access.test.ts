@@ -28,12 +28,13 @@ describe("business role access", () => {
     const visitor = user("public", ["knowledge:read", "chat:use", "map:read"]);
     expect(navigationForUser(visitor).map((item) => item.label)).toEqual([
       "文史检索",
-      "星羲智能体",
-      "古舆地图",
-      "古文展签",
-      "知识图谱",
-      "异名辨析",
+      "星羲研究助手",
       "最近研究",
+      "古舆地图",
+      "知识图谱",
+      "古文展签",
+      "异名辨析",
+      "定时研究任务",
     ]);
     expect(canManageSourceDocuments(visitor)).toBe(false);
   });
@@ -76,7 +77,7 @@ describe("business role access", () => {
 
   it("keeps every workspace entry for system administrators", () => {
     const admin = { ...user("government", []), system_role: "admin" as const };
-    expect(navigationForUser(admin)).toHaveLength(12);
+    expect(navigationForUser(admin)).toHaveLength(13);
   });
 
   it("exposes the standalone evaluation area only to governance readers", () => {

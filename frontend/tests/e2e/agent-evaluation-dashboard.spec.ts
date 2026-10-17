@@ -7,6 +7,7 @@ import {
 } from "../fixtures/agent-evaluations";
 
 import { mockLangGraphAPI } from "./utils/mock-api";
+import { refreshMockUser } from "./utils/refresh-mock-user";
 
 async function mockEvaluations(page: Page, batches: AgentEvaluation[]) {
   mockLangGraphAPI(page);
@@ -180,7 +181,9 @@ test("API failures remain errors and can recover without demo fallback", async (
       : route.fallback(),
   );
   await page.goto("/workspace/evaluations");
-  await expect(page.getByRole("alert")).toContainText("评测记录读取失败");
+  await expect(
+    page.getByRole("alert").filter({ hasText: "评测记录读取失败" }),
+  ).toBeVisible({ timeout: 15000 });
   await expect(page.getByRole("table")).not.toBeVisible();
   failed = false;
   await page.getByRole("button", { name: "重试读取" }).click();
@@ -237,9 +240,7 @@ test("governance readers can inspect records without execution or review control
     }),
   );
   await page.goto("/workspace/evaluations");
-  await page.evaluate(() =>
-    document.dispatchEvent(new Event("visibilitychange")),
-  );
+  await refreshMockUser(page);
   await expect(
     page.getByText(
       "可查看和导出记录；启动、取消、重跑与人工复核需要管理员权限。",
@@ -280,9 +281,7 @@ test("users without governance access lose the navigation and see a permission s
     }),
   );
   await page.goto("/workspace/evaluations");
-  await page.evaluate(() =>
-    document.dispatchEvent(new Event("visibilitychange")),
-  );
+  await refreshMockUser(page);
   await expect(
     page.getByRole("heading", { name: "无 Agent 评测查看权限" }),
   ).toBeVisible();

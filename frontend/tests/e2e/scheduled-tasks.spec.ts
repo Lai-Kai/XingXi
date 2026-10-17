@@ -29,7 +29,11 @@ test("scheduled tasks page is reachable from sidebar", async ({ page }) => {
   });
 
   await page.goto("/workspace/chats/new");
-  await page.getByRole("link", { name: /scheduled tasks/i }).click();
+  await page
+    .locator(
+      "nav[aria-label='工作区导航'] a[href='/workspace/scheduled-tasks']",
+    )
+    .click();
   await page.waitForURL("**/workspace/scheduled-tasks");
   await expect(page).toHaveURL(/workspace\/scheduled-tasks/);
   await expect(

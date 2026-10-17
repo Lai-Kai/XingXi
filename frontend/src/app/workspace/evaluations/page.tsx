@@ -2,6 +2,7 @@
 
 import { FlaskConical, ShieldCheck } from "lucide-react";
 
+import { WorkbenchGuide } from "@/components/workspace/admin-workbench";
 import { AgentEvaluations } from "@/components/workspace/agent-evaluations";
 import {
   BusinessEmptyState,
@@ -15,9 +16,13 @@ export default function EvaluationsPage() {
   const { user } = useAuth();
   const allowed = hasCapability(user, "governance:read");
   return (
-    <main className="size-full overflow-y-auto bg-[#f7fafb] text-[#202b2e]">
+    <main className="admin-workspace size-full overflow-y-auto">
       <BusinessMobileHeader title="Agent 评测" />
       <div className="mx-auto min-h-full max-w-[1500px] px-4 py-7 sm:px-8 lg:px-10 lg:py-10">
+        <WorkbenchGuide
+          title="评测与复核"
+          steps={["选择批次", "核对规则与样本", "回放证据轨迹"]}
+        />
         <BusinessPageHeader
           title="星羲 Agent 自动评测"
           description="自动测试、运行轨迹与证据核对，保留每一次判定与复核"

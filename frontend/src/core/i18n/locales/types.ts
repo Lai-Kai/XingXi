@@ -299,10 +299,10 @@ export interface Translations {
     };
     recipes: {
       label: string;
-      trending: { title: string; desc: string };
-      news: { title: string; desc: string };
-      issues: { title: string; desc: string };
-      weekly: { title: string; desc: string };
+      mapSources: { title: string; desc: string; prompt: string };
+      mapPoints: { title: string; desc: string; prompt: string };
+      placeNames: { title: string; desc: string; prompt: string };
+      mapWeekly: { title: string; desc: string; prompt: string };
     };
   };
 

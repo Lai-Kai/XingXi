@@ -41,6 +41,7 @@ import {
   SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import { resetThreadChatAfterDelete } from "@/components/workspace/chats/use-thread-chat";
 import { getAPIClient } from "@/core/api";
@@ -66,6 +67,7 @@ import { isIMEComposing } from "@/lib/ime";
 import { ThreadChannelIcon } from "./thread-channel-source";
 
 export function RecentChatList() {
+  const { isMobile, setOpenMobile } = useSidebar();
   const { t } = useI18n();
   const router = useRouter();
   const pathname = usePathname();
@@ -223,7 +225,7 @@ export function RecentChatList() {
   return (
     <>
       <SidebarGroup>
-        <SidebarGroupLabel>最近研究</SidebarGroupLabel>
+        <SidebarGroupLabel>近期会话</SidebarGroupLabel>
         <SidebarGroupContent className="group-data-[collapsible=icon]:pointer-events-none group-data-[collapsible=icon]:-mt-8 group-data-[collapsible=icon]:opacity-0">
           <SidebarMenu>
             <div className="flex w-full flex-col gap-1">
@@ -235,10 +237,18 @@ export function RecentChatList() {
                     key={thread.thread_id}
                     className="group/side-menu-item"
                   >
-                    <SidebarMenuButton isActive={isActive} asChild>
+                    <SidebarMenuButton
+                      isActive={isActive}
+                      className="h-10"
+                      asChild
+                    >
                       <Link
                         className="text-muted-foreground min-w-0 whitespace-nowrap group-hover/side-menu-item:overflow-hidden"
                         href={pathOfThread(thread)}
+                        aria-current={isActive ? "page" : undefined}
+                        onClick={() => {
+                          if (isMobile) setOpenMobile(false);
+                        }}
                       >
                         <ThreadChannelIcon source={channelSource} />
                         <span className="min-w-0 truncate">

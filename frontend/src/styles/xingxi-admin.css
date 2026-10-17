@@ -1,0 +1,296 @@
+.admin-workspace {
+  background: var(--background);
+  color: var(--foreground);
+}
+.admin-action {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: var(--card);
+  color: var(--primary);
+  font-size: 13px;
+}
+.admin-action:hover:not(:disabled) {
+  background: var(--accent);
+}
+.admin-action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.admin-primary {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+.admin-icon {
+  display: inline-grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--primary);
+}
+.admin-icon:hover {
+  background: var(--accent);
+}
+.admin-field {
+  min-height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: var(--card);
+  font-size: 13px;
+}
+.admin-workbench {
+  max-width: 1440px;
+  margin-inline: auto;
+}
+.workbench-metrics {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+@media (min-width: 1280px) {
+  .workbench-metrics {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+.admin-workspace h1,
+.admin-workspace h2,
+.admin-dialog [data-slot="dialog-title"] {
+  font-family: var(--font-serif, Georgia), "Songti SC", "SimSun", serif;
+}
+.admin-workspace h1 {
+  letter-spacing: 0.04em;
+}
+.admin-workspace button:focus-visible,
+.admin-dialog button:focus-visible,
+.admin-workspace input:focus-visible,
+.admin-workspace select:focus-visible,
+.admin-dialog input:focus-visible,
+.admin-dialog select:focus-visible,
+.admin-dialog textarea:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+.admin-dialog {
+  background: var(--card);
+  color: var(--foreground);
+  border-radius: 14px;
+  box-shadow: var(--heritage-shadow-overlay);
+}
+.admin-dialog input:not([type="checkbox"]),
+.admin-dialog select,
+.admin-dialog textarea,
+.admin-workspace select {
+  background-color: var(--card);
+  color: var(--foreground);
+}
+.admin-dialog [data-slot="dialog-close"] {
+  min-width: 44px;
+  min-height: 44px;
+}
+.library-catalog {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.library-volume {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: var(--heritage-shadow-card);
+}
+.library-volume:hover {
+  border-color: color-mix(in oklab, var(--primary) 40%, var(--border));
+}
+.library-bookmark {
+  background: var(--secondary);
+  border-inline-start: 3px solid var(--primary);
+  padding: 12px;
+}
+.admin-dialog.review-workbench {
+  width: calc(100vw - 24px);
+  max-width: 1320px;
+  height: 92dvh;
+}
+.admin-dialog.release-workbench {
+  width: calc(100vw - 24px);
+  max-width: 900px;
+}
+.review-workbench pre {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.graph-study-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) 360px;
+}
+.graph-study-canvas {
+  height: min(74dvh, 800px);
+  min-height: 480px;
+  border-radius: 14px;
+  background: var(--card);
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.graph-study-inspector {
+  max-height: min(74dvh, 800px);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card);
+  padding: 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.admin-workspace .react-flow__node {
+  color: var(--foreground) !important;
+  background: var(--card) !important;
+}
+.admin-workspace .react-flow__controls-button {
+  background: var(--card);
+  color: var(--foreground);
+  fill: currentColor;
+  border-color: var(--border);
+}
+.admin-workspace .react-flow__attribution {
+  background: var(--card);
+  color: var(--muted-foreground);
+}
+.admin-workspace .react-flow__minimap {
+  background: var(--muted);
+}
+.graph-review-card {
+  border-inline-start: 3px solid var(--primary);
+}
+.quality-workbench {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  align-items: start;
+}
+.quality-record {
+  display: grid;
+  grid-template-columns: 90px 70px minmax(0, 1fr) 90px 60px;
+  gap: 12px;
+  padding: 16px;
+  align-items: center;
+}
+.quality-inspector {
+  position: sticky;
+  top: 20px;
+}
+.scheduled-workbench {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 0.75fr);
+  gap: 20px;
+  align-items: start;
+}
+.scheduled-create {
+  grid-column: 2;
+  grid-row: 3 / span 4;
+  position: sticky;
+  top: 16px;
+  background: var(--card);
+}
+.scheduled-records {
+  grid-column: 1;
+}
+.scheduled-workbench > :not(.scheduled-create) {
+  grid-column: 1;
+}
+.scheduled-workbench > .scheduled-heading {
+  grid-column: 1 / -1;
+}
+.scheduled-workbench > .scheduled-heading:first-child {
+  grid-row: 1;
+}
+.scheduled-workbench > .scheduled-heading:nth-child(2) {
+  grid-row: 2;
+}
+.admin-workspace .react-flow__node.admin-graph-node--focused {
+  background: var(--secondary) !important;
+  border-color: var(--primary) !important;
+}
+.admin-workspace .admin-graph-node--place,
+.admin-workspace .admin-graph-node--building,
+.admin-workspace .admin-graph-node--bridge {
+  clip-path: polygon(
+    10% 0,
+    90% 0,
+    100% 18%,
+    100% 82%,
+    90% 100%,
+    10% 100%,
+    0 82%,
+    0 18%
+  );
+}
+.admin-workspace .admin-graph-node--event {
+  border-color: var(--heritage-disputed-foreground) !important;
+}
+@media (max-width: 1199px) {
+  .graph-study-grid {
+    grid-template-columns: minmax(0, 1fr) 300px;
+  }
+  .quality-workbench {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .quality-inspector {
+    position: static;
+  }
+}
+@media (max-width: 767px) {
+  .library-catalog,
+  .graph-study-grid,
+  .scheduled-workbench {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .library-volume {
+    padding: 16px;
+  }
+  .graph-study-canvas {
+    height: 55dvh;
+    min-height: 360px;
+  }
+  .graph-study-inspector {
+    max-height: none;
+  }
+  .quality-record {
+    grid-template-columns: 1fr auto;
+  }
+  .quality-record [data-quality-comment] {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .scheduled-create,
+  .scheduled-records {
+    grid-column: auto;
+    grid-row: auto;
+    position: static;
+  }
+}
+@media (pointer: coarse) {
+  .admin-workspace button,
+  .admin-dialog button,
+  .admin-workspace select,
+  .admin-dialog select,
+  .admin-workspace input:not([type="checkbox"]),
+  .admin-dialog input:not([type="checkbox"]) {
+    min-height: 44px;
+  }
+  .admin-workspace button,
+  .admin-dialog button {
+    min-width: 44px;
+  }
+  .admin-workspace input[type="checkbox"],
+  .admin-dialog input[type="checkbox"] {
+    width: 24px;
+    height: 24px;
+    margin: 10px;
+  }
+}

@@ -170,3 +170,15 @@ These apply repo-wide; module guides own the module-specific detail.
   frontend tests live in `frontend/tests/`.
 - **Format before pushing** — run `make format` (backend) / `pnpm check` (frontend). Backend
   CI enforces `ruff format --check`, so formatting must be clean before a push.
+
+## UI 全面重构协作
+
+- 本次 UI 重构的入口为 `docs/ui-redesign/README.md`；先读审计、设计规格、实施计划和回归清单。
+- 使用简体中文解释和总结。Gemini CLI／IDE 负责设计文档与独立原型，Codex 负责产品实现、测试和集成。
+- 此处补充规则不替代本文件和 `frontend/AGENTS.md` 的已有架构、权限、品牌及业务约束。
+- 大幅调整表现层时仍须保留所有既有功能、路由和深链接、API／类型、鉴权、状态／持久化、流式与 Evidence／审核／发布协议。
+- 设计必须包含具体 Token、组件及异常状态、主要页面和移动规格。当前占位模板不能作为已完成设计；实施使用明确的设计版本。
+- 复用已有 Rstest、Playwright、语义主题与 UI 依赖；遵循前端生成组件的修改边界，不重新初始化测试或整库替换。
+- 按批次记录旧版基线、实际检查和 UI 差异；未执行／跳过／环境阻断均如实记录。
+- Gemini／Codex 不同时修改同一文件；本地任务按 `.scratch/ui-redesign/` 记录，不向上游发布。
+- 每轮实质代码／配置／脚本修改后，在根 README「迭代日志」最前同轮追加日期、文件、内容、原因与影响／验证。

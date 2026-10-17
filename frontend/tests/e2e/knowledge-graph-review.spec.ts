@@ -7,6 +7,7 @@ import type {
 } from "../../src/core/knowledge-graph/types";
 
 import { mockLangGraphAPI } from "./utils/mock-api";
+import { refreshMockUser } from "./utils/refresh-mock-user";
 
 async function mockReviewAPI(page: Page, role = "admin", hasEvidence = true) {
   mockLangGraphAPI(page);
@@ -68,6 +69,41 @@ async function mockReviewAPI(page: Page, role = "admin", hasEvidence = true) {
       release_id: null,
     } as HistoricalEvent,
   };
+  await page.route("**/api/knowledge-graph/overview?**", (route) =>
+    route.fulfill({
+      json: {
+        release_id: null,
+        nodes: entities,
+        edges:
+          state.relation.review_status === "rejected" ? [] : [state.relation],
+        total_nodes: 2,
+        total_edges: 1,
+        returned_nodes: 2,
+        returned_edges: 1,
+        truncated: false,
+        next_cursor: null,
+        components: [],
+        evidence: [],
+      },
+    }),
+  );
+  await page.route("**/api/knowledge-graph/directory?**", (route) =>
+    route.fulfill({
+      json: {
+        release_id: null,
+        nodes: entities,
+        edges: [],
+        total_nodes: 2,
+        total_edges: 0,
+        returned_nodes: 2,
+        returned_edges: 0,
+        truncated: false,
+        next_cursor: null,
+        components: [],
+        evidence: [],
+      },
+    }),
+  );
   await page.route("**/api/entities*", (route) =>
     route.fulfill({ json: entities }),
   );
@@ -162,7 +198,7 @@ for (const kind of ["relation", "event"] as const) {
   }) => {
     const state = await mockReviewAPI(page);
     await page.goto(
-      `/workspace/knowledge-graph?view=${kind === "event" ? "events" : "graph"}`,
+      `/workspace/knowledge-graph?manage=1&view=${kind === "event" ? "events" : "graph"}`,
     );
     const card = page.locator(
       kind === "event" ? "#graph-event-event" : "#graph-relation-relation",
@@ -234,7 +270,7 @@ for (const kind of ["relation", "event"] as const) {
     const state = await mockReviewAPI(page);
     state.failNext = true;
     await page.goto(
-      `/workspace/knowledge-graph?view=${kind === "event" ? "events" : "graph"}`,
+      `/workspace/knowledge-graph?manage=1&view=${kind === "event" ? "events" : "graph"}`,
     );
     const card = page.locator(
       kind === "event" ? "#graph-event-event" : "#graph-relation-relation",
@@ -257,7 +293,7 @@ for (const kind of ["relation", "event"] as const) {
   test(`${kind}: no Evidence disables approval`, async ({ page }) => {
     await mockReviewAPI(page, "admin", false);
     await page.goto(
-      `/workspace/knowledge-graph?view=${kind === "event" ? "events" : "graph"}`,
+      `/workspace/knowledge-graph?manage=1&view=${kind === "event" ? "events" : "graph"}`,
     );
     const card = page.locator(
       kind === "event" ? "#graph-event-event" : "#graph-relation-relation",
@@ -274,8 +310,14 @@ test("ordinary users have no review controls or rejected query", async ({
   page,
 }) => {
   const state = await mockReviewAPI(page, "user");
-  await page.goto("/workspace/knowledge-graph");
-  await expect(page.locator("#graph-relation-relation")).toBeVisible();
+  await page.goto("/workspace/knowledge-graph?manage=1");
+  await refreshMockUser(page);
+  await expect(
+    page.getByRole("button", { name: "打开审核与录入工作台" }),
+  ).toHaveCount(0);
+  await expect(
+    page.locator('.react-flow__edge[data-id="relation"]'),
+  ).toHaveCount(1);
   await expect(page.getByRole("button", { name: "修改审核结果" })).toHaveCount(
     0,
   );

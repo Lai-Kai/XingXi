@@ -81,7 +81,7 @@ export default function GlossaryPage() {
   }
 
   return (
-    <main className="size-full overflow-y-auto bg-[#f4f7f6] text-[#203033]">
+    <main className="admin-workspace bg-background text-foreground size-full overflow-y-auto">
       <BusinessMobileHeader title="古文展签" />
       <div className="mx-auto max-w-7xl px-4 py-7 sm:px-8 lg:px-10 lg:py-9">
         <BusinessPageHeader
@@ -94,14 +94,14 @@ export default function GlossaryPage() {
                 <button
                   type="button"
                   onClick={() => void copyLabel()}
-                  className="inline-flex h-9 items-center gap-2 rounded-md border border-[#c9d6d8] bg-white px-3 text-sm text-[#315f67] hover:bg-[#edf4f5]"
+                  className="border-border bg-card text-primary hover:bg-accent inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm"
                 >
                   <Clipboard className="size-4" /> 复制展签
                 </button>
                 <button
                   type="button"
                   onClick={() => window.print()}
-                  className="inline-flex h-9 items-center gap-2 rounded-md bg-[#285f66] px-3 text-sm text-white hover:bg-[#1f5056]"
+                  className="bg-primary text-primary-foreground hover:bg-primary inline-flex h-9 items-center gap-2 rounded-md px-3 text-sm"
                 >
                   <Printer className="size-4" /> 打印
                 </button>
@@ -122,64 +122,64 @@ export default function GlossaryPage() {
         <div className="mt-7 grid gap-6 lg:grid-cols-[21rem_minmax(0,1fr)]">
           <form
             onSubmit={(event) => void submit(event)}
-            className="space-y-5 border-r-0 border-[#d8e1e1] lg:border-r lg:pr-6"
+            className="border-border space-y-5 border-r-0 lg:border-r lg:pr-6"
           >
             <div>
               <h2 className="text-sm font-semibold">展签信息</h2>
-              <p className="mt-1 text-xs leading-5 text-[#708084]">
+              <p className="text-muted-foreground mt-1 text-xs leading-5">
                 出处信息会和释读一起展示；不清楚的字段可以留空。
               </p>
             </div>
 
-            <label className="block text-xs font-medium text-[#52666a]">
+            <label className="text-muted-foreground block text-xs font-medium">
               展签标题
               <input
                 value={form.title}
                 onChange={(event) => update("title", event.target.value)}
                 maxLength={120}
                 required
-                className="mt-1.5 h-10 w-full rounded-md border border-[#cfdadb] bg-white px-3 text-sm outline-none focus:border-[#377780]"
+                className="border-border bg-card focus:border-primary/50 mt-1.5 h-10 w-full rounded-md border px-3 text-sm outline-none"
               />
             </label>
-            <label className="block text-xs font-medium text-[#52666a]">
+            <label className="text-muted-foreground block text-xs font-medium">
               文物、篇名或对象
               <input
                 value={form.object_name ?? ""}
                 onChange={(event) => update("object_name", event.target.value)}
                 maxLength={120}
-                className="mt-1.5 h-10 w-full rounded-md border border-[#cfdadb] bg-white px-3 text-sm outline-none focus:border-[#377780]"
+                className="border-border bg-card focus:border-primary/50 mt-1.5 h-10 w-full rounded-md border px-3 text-sm outline-none"
               />
             </label>
-            <label className="block text-xs font-medium text-[#52666a]">
+            <label className="text-muted-foreground block text-xs font-medium">
               书名或资料来源
               <input
                 value={form.source_title ?? ""}
                 onChange={(event) => update("source_title", event.target.value)}
                 maxLength={255}
-                className="mt-1.5 h-10 w-full rounded-md border border-[#cfdadb] bg-white px-3 text-sm outline-none focus:border-[#377780]"
+                className="border-border bg-card focus:border-primary/50 mt-1.5 h-10 w-full rounded-md border px-3 text-sm outline-none"
               />
             </label>
             <div className="grid grid-cols-2 gap-3">
-              <label className="block text-xs font-medium text-[#52666a]">
+              <label className="text-muted-foreground block text-xs font-medium">
                 卷目
                 <input
                   value={form.volume ?? ""}
                   onChange={(event) => update("volume", event.target.value)}
                   maxLength={120}
-                  className="mt-1.5 h-10 w-full rounded-md border border-[#cfdadb] bg-white px-3 text-sm outline-none focus:border-[#377780]"
+                  className="border-border bg-card focus:border-primary/50 mt-1.5 h-10 w-full rounded-md border px-3 text-sm outline-none"
                 />
               </label>
-              <label className="block text-xs font-medium text-[#52666a]">
+              <label className="text-muted-foreground block text-xs font-medium">
                 页码
                 <input
                   value={form.page ?? ""}
                   onChange={(event) => update("page", event.target.value)}
                   maxLength={60}
-                  className="mt-1.5 h-10 w-full rounded-md border border-[#cfdadb] bg-white px-3 text-sm outline-none focus:border-[#377780]"
+                  className="border-border bg-card focus:border-primary/50 mt-1.5 h-10 w-full rounded-md border px-3 text-sm outline-none"
                 />
               </label>
             </div>
-            <label className="block text-xs font-medium text-[#52666a]">
+            <label className="text-muted-foreground block text-xs font-medium">
               古文原文
               <textarea
                 value={form.text}
@@ -187,16 +187,16 @@ export default function GlossaryPage() {
                 maxLength={10_000}
                 required
                 rows={8}
-                className="mt-1.5 w-full resize-y rounded-md border border-[#cfdadb] bg-white p-3 font-serif text-base leading-8 outline-none focus:border-[#377780]"
+                className="border-border bg-card focus:border-primary/50 mt-1.5 w-full resize-y rounded-md border p-3 font-serif text-base leading-8 outline-none"
               />
-              <span className="mt-1 block text-right font-normal text-[#879397]">
+              <span className="text-muted-foreground mt-1 block text-right font-normal">
                 {form.text.length}/10000
               </span>
             </label>
             <button
               type="submit"
               disabled={loading || !form.text.trim()}
-              className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-[#285f66] px-4 text-sm font-medium text-white hover:bg-[#1f5056] disabled:cursor-not-allowed disabled:opacity-50"
+              className="bg-primary text-primary-foreground hover:bg-primary inline-flex h-10 w-full items-center justify-center gap-2 rounded-md px-4 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Sparkles className="size-4" />
               {loading ? "正在生成…" : "生成释读展签"}
@@ -205,18 +205,18 @@ export default function GlossaryPage() {
 
           <section aria-live="polite" className="min-w-0">
             {label ? (
-              <article className="border border-[#cad5d4] bg-white shadow-sm print:border-black print:shadow-none">
-                <header className="border-b border-[#d9e2e1] px-6 py-5 sm:px-8">
+              <article className="border-border bg-card border shadow-sm print:border-black print:shadow-none">
+                <header className="border-border border-b px-6 py-5 sm:px-8">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <p className="text-xs font-medium text-[#4c777c]">
+                      <p className="text-primary text-xs font-medium">
                         星羲数字文史 · 释读展签
                       </p>
                       <h2 className="mt-2 font-serif text-2xl font-semibold">
                         {label.title}
                       </h2>
                       {label.object_name && (
-                        <p className="mt-2 text-sm text-[#5f7074]">
+                        <p className="text-muted-foreground mt-2 text-sm">
                           {label.object_name}
                         </p>
                       )}
@@ -229,7 +229,7 @@ export default function GlossaryPage() {
                   {[label.source_title, label.volume, label.page].some(
                     Boolean,
                   ) && (
-                    <p className="mt-4 border-l-2 border-[#6f9ba0] pl-3 text-xs leading-5 text-[#65777a]">
+                    <p className="border-primary/50 text-muted-foreground mt-4 border-l-2 pl-3 text-xs leading-5">
                       出处：
                       {[label.source_title, label.volume, label.page]
                         .filter(Boolean)
@@ -238,38 +238,38 @@ export default function GlossaryPage() {
                   )}
                 </header>
 
-                <div className="divide-y divide-[#e2e8e7]">
+                <div className="divide-border divide-y">
                   {label.gloss.sentences.map((sentence, index) => (
                     <section
                       key={`${sentence.original}-${index}`}
                       className="grid gap-5 px-6 py-6 sm:px-8 md:grid-cols-2"
                     >
                       <div>
-                        <p className="text-xs font-medium text-[#718084]">
+                        <p className="text-muted-foreground text-xs font-medium">
                           原文
                         </p>
-                        <p className="mt-2 font-serif text-lg leading-9 text-[#253638]">
+                        <p className="text-foreground mt-2 font-serif text-lg leading-9">
                           {sentence.original}
                         </p>
                       </div>
                       <div>
-                        <p className="text-xs font-medium text-[#718084]">
+                        <p className="text-muted-foreground text-xs font-medium">
                           释读
                         </p>
-                        <p className="mt-2 text-sm leading-7 text-[#405659]">
+                        <p className="text-foreground mt-2 text-sm leading-7">
                           {sentence.modern}
                         </p>
                         {sentence.keywords.length > 0 && (
-                          <dl className="mt-4 space-y-2 border-t border-dashed border-[#d7dfde] pt-3">
+                          <dl className="border-border mt-4 space-y-2 border-t border-dashed pt-3">
                             {sentence.keywords.map((keyword) => (
                               <div
                                 key={keyword.term}
                                 className="grid grid-cols-[4.5rem_1fr] gap-2 text-xs leading-5"
                               >
-                                <dt className="font-serif font-semibold text-[#28656c]">
+                                <dt className="text-primary font-serif font-semibold">
                                   {keyword.term}
                                 </dt>
-                                <dd className="text-[#647578]">
+                                <dd className="text-muted-foreground">
                                   {keyword.meaning}
                                 </dd>
                               </div>
@@ -277,7 +277,7 @@ export default function GlossaryPage() {
                           </dl>
                         )}
                         {sentence.uncertain_terms.length > 0 && (
-                          <p className="mt-3 text-xs text-amber-800">
+                          <p className="text-heritage-disputed-foreground mt-3 text-xs">
                             待考：{sentence.uncertain_terms.join("、")}
                           </p>
                         )}
@@ -286,20 +286,20 @@ export default function GlossaryPage() {
                   ))}
                 </div>
 
-                <footer className="bg-[#f1f5f4] px-6 py-4 text-xs leading-5 text-[#68787b] sm:px-8">
+                <footer className="bg-secondary text-muted-foreground px-6 py-4 text-xs leading-5 sm:px-8">
                   {label.gloss.notes.map((note) => (
                     <p key={note}>· {note}</p>
                   ))}
                 </footer>
               </article>
             ) : (
-              <div className="grid min-h-[34rem] place-items-center border border-dashed border-[#cbd7d7] bg-white/60 px-6 text-center">
+              <div className="border-border bg-card/60 grid min-h-[34rem] place-items-center border border-dashed px-6 text-center">
                 <div className="max-w-sm">
-                  <BookMarked className="mx-auto size-9 text-[#679198]" />
+                  <BookMarked className="text-primary mx-auto size-9" />
                   <h2 className="mt-4 text-base font-medium">
                     生成后在这里查看博物馆式展签
                   </h2>
-                  <p className="mt-2 text-sm leading-6 text-[#738286]">
+                  <p className="text-muted-foreground mt-2 text-sm leading-6">
                     原文不会被覆盖，释读、词语解释、出处和待考信息会并列呈现。
                   </p>
                 </div>

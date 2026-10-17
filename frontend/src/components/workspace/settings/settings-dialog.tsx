@@ -10,7 +10,7 @@ import {
   UserIcon,
   WrenchIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type RefObject } from "react";
 
 import {
   Dialog,
@@ -42,10 +42,15 @@ type SettingsSection =
 
 type SettingsDialogProps = React.ComponentProps<typeof Dialog> & {
   defaultSection?: SettingsSection;
+  restoreFocusRef?: RefObject<HTMLElement | null>;
 };
 
 export function SettingsDialog(props: SettingsDialogProps) {
-  const { defaultSection = "appearance", ...dialogProps } = props;
+  const {
+    defaultSection = "appearance",
+    restoreFocusRef,
+    ...dialogProps
+  } = props;
   const { t } = useI18n();
   const [activeSection, setActiveSection] =
     useState<SettingsSection>(defaultSection);
@@ -106,6 +111,12 @@ export function SettingsDialog(props: SettingsDialogProps) {
       onOpenChange={(open) => props.onOpenChange?.(open)}
     >
       <DialogContent
+        onCloseAutoFocus={(event) => {
+          if (restoreFocusRef?.current?.isConnected) {
+            event.preventDefault();
+            restoreFocusRef.current.focus();
+          }
+        }}
         className="flex h-[75vh] max-h-[calc(100vh-2rem)] flex-col sm:max-w-5xl md:max-w-6xl"
         aria-describedby={undefined}
       >

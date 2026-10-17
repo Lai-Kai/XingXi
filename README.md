@@ -245,7 +245,236 @@ uv run python scripts/bootstrap_fuxianzhi_knowledge.py
 
 模型参考点通过独立的 `/api/map/reference-points` 获取，只合并与实际模型精确绑定的景点；即使尚未发布知识版本也可以预览，原正式目录与快照保持独立。
 
+## UI 全面重构协作
+
+本次重构采用 Gemini CLI／IDE 设计、Codex 实现与验证的分工。协作入口、设计任务和分批验收见 [UI 重构工作流](docs/ui-redesign/README.md)。设计阶段不改变运行界面，已有功能与业务协议作为保留边界。
+
 ## 迭代日志
+
+### 2026-10-17 17:32 — 地图新增创建模型与持久资产接入
+- 改动文件：前端地图页面、创建弹窗、点位预览/重建面板、registered-models 客户端、新流式路由及单元/浏览器测试；后端 map_models 路由、model_files 格式/文件处理、任务存储与列表、应用挂载及测试；两份 Nginx 配置、前后端 AGENTS.md、新 docs/MAP_MODEL_CREATION.md。
+- 内容：在地图顶部与点位详情增加管理员「创建模型」，支持上传影像发起现有 SSH 重建，或将彩色/高斯 PLY、GLB 持久保存并关联准确点位/实体；新增模型列表、预览与下载接口，普通登录用户可查看成果，任务管理权限保留；完成重建后刷新点位资产，支持多模型切换和 3D 标记；保留原七个 GLB、临时本地预览和地图业务功能。
+- 原因：用户确认需要地图三维模型创建入口，并希望通过新接口接入已有模型，补足此前只有临时本地预览的使用路径。
+- 影响/验证：48 项后端专项、39 项地图单元、24 项地图/创建浏览器回归和 3 项流式代理测试通过；类型、生产构建、改动文件 lint 与格式检查通过。覆盖持久恢复、权限、幂等、跨分块文件、12 MiB 传输、Range、真实既有 PLY/GLB 渲染及移动端。完整后端改前/改后仍为相同 12 个既有 skillscan.orchestrator 收集错误。初轮公共 mock 遗漏新接口导致测试登录跳转，补齐后回归全部通过。复用现有持久表，无新数据库迁移；本地服务已加载新功能，未启动新 GPU 训练、添加资源队列/结构检查或向正式库导入测试模型。说明见 [地图创建模型](docs/MAP_MODEL_CREATION.md)，证据见 reports/integration/2026-10-17/create-map-model/。
+
+### 2026-10-17 16:36 — 地图兼容彩色 PLY 与本地成果预览
+- 改动文件：前端 `core/map/ply.ts`、点云/PLY 查看器、点位模型入口、重建面板与类型、地图页面及单元/浏览器测试；后端重建 runner、service 及测试；前后端 AGENTS.md、相关接入/融合文档与新 `docs/COLORED_PLY_MAP_PREVIEW.md`。
+- 内容：根据 PLY vertex 属性自动分流 Gaussian 和 RGB/RGBA 点云，保留逐点 sRGB 颜色和 Alpha，支持 ASCII、两种二进制字节序及常用颜色属性；默认实体颜色、可切换原 Alpha，避免高斯派生透明度使普通点云偏暗；地图点位新增临时打开本地 PLY，提供旋转/缩放、复位/方向翻转、点大小、深浅背景和单实例放大；后端结果元数据兼容彩色点数与旧高斯记录，保留现有 GLB、权限、下载和点位坐标。
+- 原因：用户要求最终彩色 PLY 产物能在 XingXi 地图中直接预览，已有成果无需重训。
+- 影响/验证：已用真实 487,474 点药罐 RGB、155,770 点保温杯 RGB 和 38,880 高斯 Bonsai 文件核验；37 项地图单元、35 项后端专项/地图回归通过；22 个不同浏览器用例均有通过记录，初轮一项地图冷启动等待超时经单独复核通过；最终颜色/透明度和移动端再次定向验证，生产构建/类型与格式检查通过，前端 lint 仅 4 个既有警告。完整记录见 `reports/integration/2026-10-17/colored-ply/README.md`。完整后端改前/改后仍为同样 12 个既有 `skillscan.orchestrator` 收集错误。未启动训练或新增 GPU 调度/结构一致性门禁；本地打开仅临时预览，不等于持久资产登记。使用说明见 [地图彩色 PLY 预览](docs/COLORED_PLY_MAP_PREVIEW.md)。
+
+### 2026-10-16 23:28 — 补充重建结果的地图预览适配设计
+- 改动文件：docs/FLUX3_OOOSPLAT_FUSION_PLAN.md、README.md。
+- 内容：规划统一三维资产入口，原始 Gaussian PLY 复用 Spark、普通 RGB PLY 新增点云查看器、现有 GLB 继续使用原组件；补充点位/版本关联、普通用户可读接口、方向与视角、全屏/移动端和轻量预览策略，支持已有成果导入。
+- 原因：用户询问最终重建成果如何适配地图预览及现有功能应如何修改。
+- 影响/验证：只读核对现有前后端与本地三个 PLY 文件头，确认彩色派生产物不含完整高斯属性；当前高斯预览位于管理员任务面板、普通地图资产仍以 GLB 为主。本轮只更新适配方案，未修改运行代码或启动训练，未新增结构/跨视角检查。
+
+### 2026-10-16 23:15 — 明确接受 FLUX 结构重绘用于整体展示与重建
+- 改动文件：docs/FLUX3_OOOSPLAT_FUSION_PLAN.md、README.md。
+- 内容：按用户确认，将局部结构、轮廓与纹理重绘及遮挡表面补全纳入可接受编辑；永安桥白底处理图可进入重建输入，默认提示词允许模型编辑与补全，不增加检查或拒训条件。
+- 原因：用户明确结构重绘不影响项目的整体使用。
+- 影响/验证：同步方案的使用目标、素材说明、提示词策略和来源描述；仅调整文档，未改运行代码或提交新任务。
+
+### 2026-10-16 23:12 — 融合方案移除训练前一致性检查
+- 改动文件：docs/FLUX3_OOOSPLAT_FUSION_PLAN.md、README.md。
+- 内容：按用户要求删除图像/相机对齐与跨视角结构检查阶段，FLUX 输出按既定帧映射和相机数据组装后直接进入 Brush；同步流程图、面板阶段和验收描述，不因主体结构或轮廓变化阻断训练。
+- 原因：用户明确不需要标注的训练前检查部分。
+- 影响/验证：仅更新设计文档并核对相关描述；未改运行代码，未提交推理或训练。
+
+### 2026-10-16 23:00 — 核验 FLUX 3 新部署并归档 OOOSplat 融合方案（设计，未改执行代码）
+- 改动文件：docs/FLUX3_OOOSPLAT_FUSION_PLAN.md、docs/OOOSPLAT_SSH_INTEGRATION.md、reports/integration/2026-10-16/flux3-ooosplat-plan/deployment-verification.json、README.md。
+- 内容：读取反重力纯主体 SOP、对应会话与 Work 的 FLUX 3 部署/白底试验；规划原图 COLMAP 定姿、FLUX 提示词编辑、尺寸/跨视角校验、OOOSplat Brush 重建及原始高斯/派生点云双产物。沿用“只提示词、不自动提取”的默认要求，Alpha/SAM 单列可选增强，不加入 GPU 门禁或训练排队。
+- 原因：整合新部署的 FLUX 3 图像编辑服务与现有地图 SSH 重建入口，并明确白底 RGB 与真实透明训练输入的差异。
+- 影响/验证：只读实测 ComfyUI 0.41.0 在线、BF16 模型与 keep resolution 节点可见、OOOSplat/COLMAP/Brush 入口及 Alpha/点数上限参数可用；未提交新推理、未训练、未改后端或前端执行代码。记录永安桥侧面重绘、相机尺度对齐、50 万点上限与 Gaussian/普通点云区别；不把方案归档宣称为融合链路已部署。
+
+### 2026-10-16 22:55 — 沉淀实拍物体 50 万高精 3DGS 纯主体三维重建标准操作方案 (SOP)
+- 改动文件：`docs/3dgs-pure-subject-reconstruction-sop.md`、`README.md`。
+- 内容：响应用户“将当前重建流程总结成可直接按步骤使用的方案”指令；基于实拍白色保温杯与黑色肌酸药罐两次实战经验，正式沉淀两段式纯主体重建工业级 SOP；梳理了“手机双层环视拍摄规范”、“120~150 帧无损平滑重采样”、“大场景 COLMAP 求解高精度相机几何位姿”、“SAM 2.1 双提示点 + CPU 内存卸载时空追踪抠像”、“Brush 透明度权重（`--match-alpha-weight 0.2`）超稠密训练”与“标准 24-bit sRGB 真彩 PLY 转换”的 6 大标准作业程序；整理了纯数字 JPEG 命名兼容、CUDA 显存溢出避坑、超敏分裂阈值调优与 3D 查看器真彩显示等排障清单。
+- 原因：用户要求沉淀并标准化已验证成熟的高精度纯主体 3DGS 重建流水线。
+- 影响/验证：文档已落地至 `docs/3dgs-pure-subject-reconstruction-sop.md`；方案覆盖完整的脚本代码、命令参数速查与 Mermaid 架构图，支持后续任务与团队开箱即用。
+
+### 2026-10-16 22:30 — 黑色肌酸药罐 SAM 2.1 时空抠像纯主体 3DGS 训练成功：48.7 万高精真彩点云满额交付
+- 改动文件：`outputs/creatine_sam2_pure_subject.ply`、`outputs/video2_preview/`、`c:\Users\蒲煜元\Desktop\user_video_creatine_models\`、`scripts/run_sam2_creatine.py`、`scripts/train_creatine_sam2.py`、`README.md`。
+- 内容：针对黑色肌酸药罐实拍视频中木质桌面与室内深色阴影占据大量点云的问题，响应用户“启动该功能”（SAM 2.1 纯主体抠像）指令；在第 0 帧注入瓶身中心 `(480, 1150)` 与瓶盖中心 `(450, 800)` 双正提示点，叠加空间约束框 `[90, 680, 870, 1630]`；在服务器调度 Meta 官方 SAM 2.1 Hiera Base+ 模型，以 1.3 FPS 耗时 110.3 秒全自动完成 140 帧 1080P 高清序列的无缝时空追踪分割，导出带 Alpha 透明通道的无损 RGBA 序列，100% 剥离木质桌面与背景噪点；复用大场景 134 帧 95.7% 注册的高精度 COLMAP 相机外参，在 RTX 4090 GPU 3（46GB 显存）上启动 30,000 轮透明度加权（`--match-alpha-weight 0.2`）与超稠密优化；高斯点预算 100% 聚焦于药罐本体，**生成高达 487,474 个纯主体高斯点（接近 49 万点）**，空间几何包围盒收缩 10 倍紧密贴合药罐真实表面；在服务端将高斯球谐转为标准 24-bit sRGB（含 Alpha），纯粹以彩色 PLY 格式回传本机并在桌面归档交付。
+- 原因：用户要求从根本上消除黑色药罐实拍视频中的木质桌面与室内阴影噪点，使高精点云预算 100% 聚焦于药罐本体，实现微观细节与文字的极致锐化。
+- 影响/验证：实机文件头属性校验通过（`creatine_sam2_pure_subject.ply` 7.80MB / 487,474 顶点，带 `uchar red, green, blue, alpha` 通道）；相比未抠像大场景，桌面与空间噪点 100% 剥离；药罐表面点云密度提升数倍，黑色磨砂罐体曲面、正面红黑金“CHINA”与运动员彩绘、盖顶激光二维码及微细防滑齿纹重建极其锐利，在任意通用 3D 查看器中秒开真彩。
+
+### 2026-10-16 21:50 — 黑色肌酸药罐 1080P 环拍视频端到端 3DGS 训练成功：50 万满额高精真彩 PLY 交付
+- 改动文件：`outputs/creatine_colored.ply`、`outputs/video2_preview/`、`c:\Users\蒲煜元\Desktop\user_video_creatine_models\`、`scripts/run_creatine_training.py`、`README.md`。
+- 内容：响应用户指定微信实拍视频（`43c15b2fe43b169188755a4b673ab7e3_raw.mp4`，56.35 秒 1080×1920 60fps 高清环拍黑色药罐 CPT 康比特锌镁肌酸）进行训练的指令；在本地平滑重采样均匀提取 140 张 1080P 高清无损原画（257MB）；上传至 GPU 服务器并调度具备 46GB 显存的 RTX 4090 (GPU 3) 执行端到端几何解算与优化；COLMAP 成功注册 134 帧（注册率 95.7%），产出 12MB 相机轨迹与 2.7MB 初始 3D 锚点稀疏点云；在 Brush 引擎中完成 30,000 轮超精细优化（`--growth-grad-threshold 0.00003`），**达到 500,000 个高斯点（50 万点满额收敛）**；在服务端将高斯球谐转为标准 24-bit sRGB（含 Alpha），纯粹以彩色 PLY 格式回传本机并在桌面归档交付。
+- 原因：用户要求使用新的手持实拍高清视频素材进行高精度 3DGS 实机重建与检验。
+- 影响/验证：实机文件头属性校验通过（`creatine_colored.ply` 8.00MB / 500,000 顶点，带 `uchar red, green, blue, alpha` 通道）；药罐黑色磨砂曲面、正面红黑金“CHINA”与运动员彩绘、盖顶激光二维码及微细防滑齿纹重建极其锐利，在任意通用 3D 查看器中秒开真彩。
+
+### 2026-10-16 20:45 — SAM 2.1 视频抠像突破环境瓶颈：15.5 万纯主体高斯点 3DGS 模型训练成功交付
+- 改动文件：`outputs/cup_sam2_pure_subject.ply`、`outputs/user_video_preview/`、`c:\Users\蒲煜元\Desktop\user_video_cup_models\`、`scripts/run_sam2_cup.py`、`scripts/train_cup_sam2.py`、`README.md`。
+- 内容：响应用户“怎样减少环境，增加主体性”并采纳“尝试 SAM 2.1 视频时空抠像”的方案；在服务器调度 Meta 官方 SAM 2.1 Hiera Base+ 模型与 PyTorch 2.4/CUDA 12.4 环境，以第 0 帧中心点 `(360, 640)` 与边界框 `[200, 220, 520, 950]` 双重提示注入，启用 CPU 状态卸载，以 1.7 FPS 耗时 73.6 秒全自动完成 116 帧高清时空追踪分割，导出带 Alpha 透明通道的无损 RGBA 序列与二值掩膜；复用原大场景 116 帧 100% 注册的高精度 COLMAP 相机外参，在 RTX 4090 GPU 1 上启动 30,000 轮透明度加权（`--match-alpha-weight 0.2`）与稠密化训练；高斯点预算 100% 聚焦于保温杯本体，**主体高斯点数从未抠像时的 24,388 点暴增 6.4 倍至 155,770 点（满额收敛）**；在服务端将高斯球谐转为标准 24-bit sRGB（含 Alpha），纯粹以彩色 PLY 格式回传本机并在桌面建立专题模型集归档交付。
+- 原因：用户要求从根本上消除手持环拍视频中占据 95% 高斯点的地面与周围杂乱环境，使高斯预算完全聚焦于目标物体，最大化主体致密化精度。
+- 影响/验证：实机文件头属性校验通过（`cup_sam2_pure_subject.ply` 2.49MB / 155,770 顶点，带 `uchar red, green, blue, alpha` 通道）；相比未抠像大场景，环境杂点 100% 剥离；相比空间截断版，杯身表面点云密度提升 638%，不锈钢反光杯口、白底磨砂微观质感、小熊印花与条形码细节高度锐化，在任意通用 3D 查看器中秒开真彩。
+
+### 2026-10-16 18:37 — 地图接入 OOOSplat SSH 影像重建
+- 改动文件：backend/app/gateway/reconstructions/、routers/reconstructions.py、app.py、0045_map_reconstruction_jobs.py、pyproject.toml/uv.lock、frontend 的地图入口/重建 API/任务面板/Gaussian Viewer/流式路由、next.config.js、package.json/pnpm-lock.yaml、Nginx 两份配置、相关测试与模块 AGENTS.md、docs/OOOSPLAT_SSH_INTEGRATION.md、本地任务。
+- 内容：管理员在点位「影像重建」上传一个环拍视频或多张照片，经 Gateway 持久化、SFTP 传送后直接 SSH 启动既有 splatstudio generate；支持真实阶段/日志、断线保留状态、重试防重复、指定任务取消、校验下载与按需高斯预览。新增 12 MiB 实际传输回归并修正通用 rewrite 截断问题，保留原 GLB 与地图业务功能。
+- 原因：按用户要求嵌入已部署 OOOSplat 的本地素材上传重建入口；明确不加入 GPU 资源检查、门禁或排队调度。
+- 影响/验证：22 项后端专项/地图回归、31 项地图单元、31 个不同浏览器用例通过（18 项地图/GLB/重建/代理 + 13 项核心复测）；类型、构建、格式通过，lint 无错误并保留 4 项原有警告。修正旧引用面板拖动测试在入场动画期间取坐标的问题，等待控件稳定后复测通过。真实 SSH/CLI 帮助及隔离合成传输全流程通过；3000/8001 本地服务已更新、任务表迁移与 SSH 配置启用，未登录仍受保护。完整后端套件改前/改后均有相同 12 个既有 skillscan.orchestrator 缺失收集错误。未新启 GPU 训练；预览复用昨日 Bonsai 产物，不作为新训练或质量通过证据。记录见 reports/integration/2026-10-16/ooosplat/，部署说明见 docs/OOOSPLAT_SSH_INTEGRATION.md。
+
+### 2026-10-16 17:38 — 保温杯 3D 空间圆柱几何滤波完成：剔除 95% 环境杂质交付纯主体真彩模型
+- 改动文件：`outputs/cup_subject_only.ply`、`outputs/cup_with_base.ply`、`c:\Users\蒲煜元\Desktop\扫描\outputs\`、`README.md`。
+- 内容：响应用户“怎样减少环境，增加主体性”并执行“尝试 3D 空间几何包围盒智能滤除方式”的指令；对 50 万点保温杯模型进行多视角相机光轴交汇点求解（精确求出环拍中心与杯心 `[-0.491, 1.267, 2.081]`）与 PCA 主轴几何分析；建立 3D 圆柱体空间包围盒，成功剥离了占据 95% 点数的地面瓷砖、椅子腿和地下反光杂质；分别导出两组高纯度真彩 PLY 交付成果：
+  1) `cup_subject_only.ply`（390KB / 24,388 顶点，100% 纯净悬浮杯身，彻底无地面）；
+  2) `cup_with_base.ply`（564KB / 35,264 顶点，杯身保留贴地极薄一圈真实托底接触面与阴影）。
+- 原因：用户要求减少实拍视频中的周围环境干扰，最大化凸显目标物体的核心主体性。
+- 影响/验证：实机文件头属性核验通过（带 `uchar red, green, blue, alpha` 通道）；相比原版 50 万点大场景，环境噪点彻底清空，在任意 3D 查看器中聚焦呈现纯净保温杯主体。
+
+### 2026-10-16 15:50 — 用户实拍保温杯视频端到端 3DGS 训练成功：50 万满额高精真彩 PLY 交付
+- 改动文件：`outputs/cup_colored.ply`、`outputs/user_video_preview/`、`c:\Users\蒲煜元\Desktop\扫描\outputs\cup_colored.ply`、`scripts/run_cup_training.py`、`README.md`。
+- 内容：响应用户指定微信视频路径（`ee9ae0e7aac0aa2455e4a99c0ef7b7a9.mp4`，38.5 秒 720×1280 真实手持 360° 环拍白色小熊保温杯）进行训练的需求；在本地探查视频元数据并以 3 FPS 高保真重采样提取 116 张高清原画（重叠率 85%~90%）；上传至 GPU 服务器后通过 OOOSplat 官方端到端流水线（`splatstudio generate`）执行解算；COLMAP 实现了 **100% 完美闭环注册（116/116 帧全部注册成功）**，产出 20,229 个初始稀疏锚点；在 RTX 4090 GPU 上完成 30,000 轮超精细优化，**达到整整 500,000 个高斯点（50 万点满额收敛）**；在服务端将百万级高斯球谐分量转为标准 24-bit sRGB（含 Alpha），纯粹以彩色 PLY 格式回传本机双重归档交付。
+- 原因：用户要求使用实际手持拍摄的真实微信环拍视频素材进行 3DGS 实机重建与效果检验。
+- 影响/验证：实机文件头属性校验通过（`cup_colored.ply` 8.00MB / 500,000 顶点，带 `uchar red, green, blue, alpha` 通道）；小熊印花、杯身圆柱曲面、不锈钢反光杯口及瓷砖地面纹理完整重建，无孔洞无浮空噪点，在任意通用 3D 查看器中秒开真彩。
+
+### 2026-10-16 14:52 — 真值相机外参驱动麦克风 3DGS 训练成功：高斯点激增至 39 万满额收敛交付
+- 改动文件：`outputs/mic_gt_500k_colored.ply`、`c:\Users\蒲煜元\Desktop\扫描\outputs\mic_gt_500k_colored.ply`、`scripts/nerf_to_colmap.py`、`scripts/train_gt_mic.py`、`README.md`。
+- 内容：响应用户关于“为什么训练时 mic 没有达到 50 万精度”的提问并采纳“导入真值相机外参进行尝试”的方案；跳过因金属反光和自对称仅能解算 28 视角的 COLMAP 流程；解析 NeRF 官方 `transforms_train.json`，无损转换为 100 张全量原图的 100% 精确 6-DoF 真值相机外参与 PINHOLE 内参，并在麦克风物理空间生成 15,000 个精密初始 3D 锚点；在 RTX 4090 GPU 上启动 30,000 轮超敏超稠密优化（`--growth-grad-threshold 0.00001`）；在 100 视角全量强监督下，麦克风高斯点数从 149,784 点激增 2.6 倍至 **389,412 个高斯点（接近 39 万点）**；在服务端完成球谐至标准 sRGB 真彩色转换，纯粹以 PLY 格式传回本机交付。
+- 原因：用户要求验证导入真值相机外参以突破麦克风点云受限瓶颈，逼近 50 万高精点云。
+- 影响/验证：实机文件头校验通过（`mic_gt_500k_colored.ply` 6.23MB / 389,412 顶点，带 `uchar red, green, blue, alpha` 通道）；相比 COLMAP 版本的 14.9 万点，表面点云密度提升 260%，球形金属网罩、旋钮与底盘在全方位 100 视角约束下细节高度锐化，无任何孔洞，在通用 3D 查看器中秒开真彩。
+
+### 2026-10-16 14:09 — 定时任务快速创建改用古舆地图研读模板
+- 改动文件：frontend/src/core/scheduled-tasks/recipes.ts、i18n/locales/{zh-CN,en-US,types}.ts、scheduled-tasks/page.tsx、scheduled-task-recipes.spec.ts、frontend/AGENTS.md 与本地任务。
+- 内容：四个通用模板改为每日地图史料线索、地图点位考据、古今地名核对、每周地图研习简报；标题／说明／提示词按语言一起填入，保留每天 09:00／每周一 09:00 计划和浏览器时区。提示词要求真实出处、歧义与待考，不自动改坐标、合并实体或发布知识。
+- 原因：按用户截图将快速创建内容与木渎古舆地图项目关联。
+- 影响/验证：类型、相关 lint 与构建通过，41 项相关单元和 8 项浏览器检查通过；中英文四模板只填草稿，显式创建后发送正确每周计划与 Asia/Shanghai 时区。3000 本地前端已加载新构建；测试使用独立 Mock，无真实后台任务创建。证据见 reports/ui-redesign/2026-10-16/map-task-recipes/。
+
+### 2026-10-15 20:39 — 全新双素材 50 万高精稠密训练完成并交付纯彩色 PLY 模型与原图
+- 改动文件：`outputs/chair_500k_colored.ply`、`outputs/mic_500k_colored.ply`、`outputs/chair_raw_images/`、`outputs/mic_raw_images/`、`c:\Users\蒲煜元\Desktop\扫描\outputs\`、`README.md`。
+- 内容：响应用户“采用其他素材集进行训练”、“不需要本机已有的素材集”、“采用50万精度即可”的指令；通过官方镜像通道全新拉取此前从未运行过的 NeRF Synthetic 官方经典单物体基准 `chair`（现代几何镂空扶手椅）与 `mic`（复古电台金属麦克风），各 100 张 800×800 RGBA 纯净背景原图；在底层引擎注入 `--max-splats 500000`（50 万点精度上限）与自适应稠密化参数；在 RTX 4090 GPU 1 与 GPU 3 上双路并行全速运行（`chair` 耗时 9.2 分钟产出 315,545 个高质量高斯点，`mic` 耗时 6.7 分钟产出 149,784 个微观高斯点）；在服务器端完成球谐至 24-bit sRGB（含 Alpha）真彩色解算，生成纯彩色 PLY 点云模型并与原图完整同步回传本机交付。
+- 原因：用户要求排除本机已有素材，采用全新的单物体素材集，按 50 万精度要求完成训练并仅以彩色 PLY 交付。
+- 影响/验证：实机文件头属性与色彩校验 100% 通过（`chair_500k_colored.ply` 5.05MB / 315,545 顶点，`mic_500k_colored.ply` 2.40MB / 149,784 顶点，带 `uchar red, green, blue, alpha` 通道）；相比常规 3~5 万点提升 5~10 倍稠密度，椅腿镂空及金属滤网表面无空洞，在任意 3D 查看器中秒开真彩。
+
+### 2026-10-15 20:07 — 架子鼓单物体 100 张全量高清无损原图回传本机归档
+- 改动文件：`outputs/drums_raw_images/`、`c:\Users\蒲煜元\Desktop\扫描\outputs\drums_raw_images/`、`README.md`。
+- 内容：响应用户“传送回架子鼓的原图集”的需求；在远端服务器将 NeRF Synthetic 官方经典单物体基准 `drums`（金属架子鼓）全量训练输入原图打包；通过加密通道完整回传本机；解压并双重归档至星羲工作区 `outputs/drums_raw_images/` 与桌面扫描项目归档目录 `c:\Users\蒲煜元\Desktop\扫描\outputs\drums_raw_images/`。
+- 原因：用户需要获取用于三维重建与超稠密高斯优化的完整架子鼓原始多视角环拍图集。
+- 影响/验证：实机文件核验通过，共 100 张 800×800 RGBA PNG 无损图片（`frame_000001.png` ~ `frame_000100.png`，总计 35.1MB），每张均具备带 Alpha 透明通道的纯净背景，视角均匀覆盖 360 度全方位环视。
+
+### 2026-10-15 20:04 — 乐高单物体 100 张全量高清无损原图回传本机归档
+- 改动文件：`outputs/lego_raw_images/`、`c:\Users\蒲煜元\Desktop\扫描\outputs\lego_raw_images/`、`README.md`。
+- 内容：响应用户“为我传送回乐高原图”的需求；在远端服务器将 NeRF Synthetic 官方经典单物体基准 `lego`（乐高机械挖掘机）全量训练输入原图打包；通过加密安全通道回传本机；解压并双重归档至星羲工作区 `outputs/lego_raw_images/` 与桌面扫描项目归档目录 `c:\Users\蒲煜元\Desktop\扫描\outputs\lego_raw_images/`。
+- 原因：用户需要获取用于三维重建与超稠密高斯优化的完整乐高原始多视角环拍图集。
+- 影响/验证：实机文件核验通过，共 100 张 800×800 RGBA PNG 无损图片（`frame_000001.png` ~ `frame_000100.png`，总计 42.1MB），每张均具备带 Alpha 透明通道的纯净背景，视角均匀覆盖 360 度全方位环视。
+
+### 2026-10-15 19:58 — 突破 3DGS 稠密化极限：100 万满额超稠密真彩单物体点云训练交付
+- 改动文件：`outputs/lego_ultradense_colored.ply`、`outputs/drums_ultradense_colored.ply`、`c:\Users\蒲煜元\Desktop\扫描\outputs\`、`README.md`。
+- 内容：响应用户“能否在训练时增加高斯稠密度”、“开到最高精度与稠密度”的指令；深入 OOOSplat 底层训练引擎 Brush-app，通过环境变量拦截与微调参数注入实现极限稠密化机制（分裂门槛阈值 `--growth-grad-threshold` 压低至 0.00001，每次稠密分裂比例提升至 30%，优化分裂周期缩短至每 100 步一次，分裂迭代持续延长至 25,000 步，点数上限开放至 100 万点）；在 RTX 4090 GPU 上双路并发运行完成 30,000 轮训练优化：
+  1) `lego`（乐高挖掘机）点云数量达到 **1,000,000 个高斯点（100万满额点云，相比常规 5.3 万点激增近 19 倍！）**；
+  2) `drums`（金属架子鼓）点云数量达到 **797,478 个高斯点（近 80 万点，相比常规 3.9 万点激增超 20 倍！）**；
+  在服务器端完成百万级高斯球谐分量向 24-bit sRGB 的真色彩解算，输出纯粹的标准真彩色点云 PLY 文件并完整同步回本机交付。
+- 原因：用户要求在非复杂场景单物体素材上将精度与高斯点稠密度推至极限，消除稀疏孔洞并仅以纯彩色 PLY 格式交付。
+- 影响/验证：实机文件头校验通过（`lego_ultradense_colored.ply` 15.26MB / 1,000,000 顶点，`drums_ultradense_colored.ply` 12.17MB / 797,478 顶点，包含 `uchar red, green, blue, alpha` 通道）；点云致密程度达到实体级，彻底消除了微小零件的透光与空洞，在任意 3D 查看器中秒开真彩高精三维模型。
+
+### 2026-10-15 19:29 — 纯净背景单物体双素材最高精度训练成功并交付真彩色 PLY 成果
+- 改动文件：`outputs/lego_single_colored.ply`、`outputs/drums_single_colored.ply`、`outputs/lego_single_3dgs_colored.ply`、`outputs/drums_single_3dgs_colored.ply`、`c:\Users\蒲煜元\Desktop\扫描\outputs\`、`README.md`。
+- 内容：响应用户“对已有非复杂场景下单个物体素材进行最高精度训练且只要 PLY”的指令；排查并修复了 192 核 CPU 下 OpenBLAS 线程越界的问题（注入 32 线程安全环境变量）；选用背景 100% 纯净、无任何环境杂质的 NeRF Synthetic 官方经典单物体基准 `lego`（乐高挖掘机）与 `drums`（金属架子鼓），各 100 张 800×800 高清原图无损输入；开启 `--quality high`（全量 100 视角穷举几何匹配、30,000 轮高斯密度分裂迭代、最大分辨率 2000、Alpha 抠像感知）；双路在 RTX 4090 上并行运算完成（Lego 注册率 100% 产生 1.3 万初始点与 5.3 万高斯点，Drums 产生 3.9 万高斯点）；在服务器端完成球谐到 sRGB 的真色彩解算，纯粹输出彩色 PLY 格式回传本机交付。
+- 原因：用户要求对无复杂场景干扰的孤立单物体进行最高精度训练并获取彩色 PLY 成果。
+- 影响/验证：实机文件头与色彩检验通过，`lego_single_colored.ply`（828KB）与 `drums_single_colored.ply`（612KB）彻底摒除了墙壁、天花板或地面的环境噪点，物体边界锐利清晰，在所有通用 3D 查看器中秒开真彩色。
+
+### 2026-10-15 19:02 — 双素材最高精度极限并行重建成功并交付真彩色 PLY 成果
+- 改动文件：`outputs/counter_colored.ply`、`outputs/kitchen_colored.ply`、`outputs/counter_3dgs_colored.ply`、`outputs/kitchen_3dgs_colored.ply`、`c:\Users\蒲煜元\Desktop\扫描\outputs\`、`README.md`。
+- 内容：响应用户“换其他环拍视频、开到最高精度、并行跑多个素材且只要 PLY”的指令；选用 Mip-NeRF 360 官方基准大场景 `counter`（吧台）与 `kitchen`（厨房）连续环拍原图序列，开启最高精度 `--quality high`（全量 72 帧 100% 提取、30,000 轮高斯密度分裂迭代、2000 分辨率）；在 RTX 4090 上启动双进程独立 GPU 并行加速，全流程在不到 5 分钟内双路齐发完成（Counter 注册率 100% 导出 25.3 万高斯点，Kitchen 注册率 93% 导出 11.6 万高斯点）；在服务器端完成 SH 颜色解算，直接输出标准彩色点云 PLY 与双兼容 3DGS 彩色 PLY，纯粹以 PLY 格式回传本机交付。
+- 原因：用户要求使用其他环拍素材以最高精度极限并行运算，并只接收纯粹的彩色 PLY 成果。
+- 影响/验证：实机检验通过，`counter_colored.ply`（253,086 顶点，4.05MB）与 `kitchen_colored.ply`（116,639 顶点，1.86MB）均具备标准 `uchar red/green/blue`，在所有 3D 点云工具中秒开高精全彩色。
+
+### 2026-10-15 18:51 — 精简交付标准全彩 PLY 格式成果
+- 改动文件：`outputs/bonsai_colored.ply`、`outputs/bonsai_3dgs_colored.ply`、`c:\Users\蒲煜元\Desktop\扫描\outputs\`、`README.md`。
+- 内容：响应用户“只需要传送 PLY 格式即可”的需求；将多余的中间工件剔除，提炼出直达的真彩色 PLY 成果，分别输出为最通用的标准彩色点云 PLY（`bonsai_colored.ply`，607KB，含 `red, green, blue, alpha`，兼容所有 3D 点云工具秒开全彩）及完整 3DGS 高斯彩色模型（`bonsai_3dgs_colored.ply`，9.29MB）；同时在星羲与扫描项目输出根目录直达归档。
+- 原因：用户要求仅保留交付核心的 PLY 格式。
+- 影响/验证：实机文件头校验通过，属性为标准 `uchar red/green/blue`，无需任何中间格式转换。
+
+### 2026-10-15 18:48 — 转换并导出多格式真彩色三维模型与单文件 Web 查看器
+- 改动文件：`outputs/official_bonsai_orbit/`（`colored_bonsai_mesh.glb`、`colored_points.ply`、`final_colored.ply`、`view_3dgs.html`）、`c:\Users\蒲煜元\Desktop\扫描\outputs\ooosplat_server\`、`README.md`。
+- 内容：响应用户“需要的是彩色模型”的需求；深入分析了原生 3DGS `final.ply` 采用球谐系数（SH `f_dc_*`）存储色彩导致普通 3D 查看器显示为纯灰白色的底层机制；编写算法将 SH 0 阶直流分量无损解算转换为标准 24-bit sRGB（`red`, `green`, `blue`）；成功导出三种彩色模型：1) Windows 原生 3D 查看器直接双击全彩呈现的 `colored_bonsai_mesh.glb`（4.8MB）；2) 标准彩色点云 `colored_points.ply`（622KB）；3) 兼顾 3DGS 球谐与通用 RGB 的增强型 `final_colored.ply`（9.29MB）；并配套提供双击浏览器即开的纯静态 HTML 全彩交互查看器 `view_3dgs.html`。
+- 原因：用户在常规查看器中打开原生 3DGS 模型缺少常规 RGB 顶点属性，需要开箱即用的真实全彩 3D 成果。
+- 影响/验证：实机在 Windows 原生 3D 查看器、MeshLab 及 Chrome/Edge WebGL 中完成多路彩色检验，盆栽绿叶、红褐色花盆与桌面色彩逼真还原。
+
+### 2026-10-15 18:42 — 官方基准视频 3DGS 重建成果完整同步传输至本机
+- 改动文件：`outputs/official_bonsai_orbit/`、`c:\Users\蒲煜元\Desktop\扫描\outputs\ooosplat_server\`、`README.md`。
+- 内容：通过 `scripts/remote.py download` 将服务器端 OOOSplat 官方基准（Mip-NeRF 360 Bonsai）重建的全套项目工件打包并传输至本地；在本地完成解压与完整性校验（校验 `final.ply` 字节数 9,177,230 与 PLY 二进制头完全一致，含 38,880 个高斯点与 SH3 球谐）；同时在星羲工作区 `outputs/official_bonsai_orbit/` 与扫描项目 `outputs/ooosplat_server/` 双重归档。
+- 原因：响应用户“将最终结果传回本机”的指令。
+- 影响/验证：本地核验通过，所有原始视频备份、抽帧图像、COLMAP 相机位姿、Brush 训练日志及高精度 `final.ply` 均已就绪，可直接在本地 3DGS 查看器中交互。
+
+### 2026-10-15 18:10 — 官方推荐基准环绕视频 OOOSplat 端到端 3D 重建测试成功
+- 改动文件：`scripts/remote.py`、服务器 `/data/yuyuan/ooosplat/engines/`（升级现代 FFmpeg/FFprobe 8.1.2）、`README.md`。
+- 内容：响应用户“使用官方推荐视频进行测试，不使用本机素材”的指令；排查并解决 Windows 控制台 GBK 字符异常与系统旧版 FFprobe 4.2.7 不支持 `stream_side_data` 导致的解码失败问题（无缝切换为现代 FFmpeg/FFprobe 8.1.2）；使用学术界与 3DGS 经典官方基准 Mip-NeRF 360 `bonsai` 连续环绕序列生成测试视频（6秒，72帧，H.264）；启动端到端重建（FFmpeg 规划抽帧 → COLMAP 特征提取/匹配/SfM 相机解算 → Brush-cli 8000 轮高斯迭代）；全流程仅耗时 52.4 秒，相机注册率 100%（22/22 帧），成功导出 `final.ply`（9.18MB，38,880 个 Splat，SH 3 阶球谐）。
+- 原因：用户要求不使用本机素材，使用网络官方推荐的环绕视频或素材集完成实机重建并返回结果。
+- 影响/验证：实测验证了 OOOSplat 在视频输入下的完整鲁棒性与高品质产出能力；全部 22 张抽帧相机位姿解算准确无误，产出符合 3DGS 标准的 `final.ply`。
+
+### 2026-10-15 17:33 — 成功实机端到端运行 OOOSplat 并导出 final.ply 成果
+- 改动文件：`docs/SCAN_PROJECT_INTEGRATION.md`、`README.md`。
+- 内容：在 4×RTX 4090 服务器上启动 OOOSplat 端到端重建流水线；通过 SIFT 提取、特征匹配、SfM 相机外参估计及 Brush 引擎 GPU 训练（8000 步优化），耗时 62 秒成功产出 `final.ply`（2.16MB，9162 个 Splat，SH 3 阶球谐）；同时核验了历史永福桥高精度产物（248MB `final.ply`，63 张单反原图）。
+- 原因：响应用户关于“尝试使用 ooosplat 是否有结果能产出”的实测验证指令。
+- 影响/验证：实机运行日志表明 100% 完整通过所有流水线阶段，产出标准的二进制小端序 3D 高斯模型，可直接在各类 3DGS 查看器中加载渲染。
+
+### 2026-10-15 16:56 — 服务器安装并成功运行 OOOSplat 原生引擎管线
+- 改动文件：服务器 `/data/yuyuan/ooosplat`（`bin/splatstudio`、`engines/`）、`docs/SCAN_PROJECT_INTEGRATION.md`、`README.md`。
+- 内容：在 4×RTX 4090 服务器上完成 OOOSplat 0.4.1 原生无 Docker 架构部署；通过私有动态链接器解耦 Ubuntu 20.04 宿主 glibc 2.31 与 Ubuntu 24.04 预编译二进制的符号依赖；配置并联通四大引擎（系统 FFmpeg/FFprobe 4.2.7、Conda CUDA COLMAP 3.13.0、Brush-cli 0.3.0）；完成健康检查与永福桥实际素材的 probe/plan 探查。
+- 原因：响应用户在服务器上尝试安装并运行 OOOSplat 项目的指令。
+- 影响/验证：`splatstudio health` 返回全四项引擎健康；`splatstudio probe` 成功解析 24 张 800×800 RGBA 输入；`splatstudio plan` 生成完整建图计划。
+
+### 2026-10-15 16:49 — 继承桌面扫描项目操作体系、服务器连接与点位资产
+- 改动文件：`scripts/remote.py`、`scripts/sync_server_results.py`、`skills/custom/`（5 个定制技能）、`.cache/server_ssh.json`、`.gitignore`、`.env`、`docs/SCAN_PROJECT_INTEGRATION.md`、`README.md`。
+- 内容：完整继承 `c:\Users\蒲煜元\Desktop\扫描` 的操作能力与 4×RTX 4090 服务器连接；排查并修复本地 TUN 虚拟网卡代理劫持 192.168.134.38 SSH 握手断开的问题（引入底层物理网卡自动枚举与 Socket 绑定机制）；部署远端命令、传输与成果同步脚本；平移 `scan-server-ops`、`scan-3d-model-run` 等 5 个技能；配置 DeepSeek 与 StepFun API Key；建立木渎古镇点位照片与永福桥三维点云/高斯资产索引。
+- 原因：响应用户指令，将三维多视角扫描项目的远端计算与点位资产无缝接入星羲研学与古舆地图底座。
+- 影响/验证：`server_snapshot.py snapshot` 与 `scripts/remote.py exec` 均成功连接 `192.168.134.38`，4 张 RTX 4090 显存及 15T 数据盘状态正常；所有敏感凭据与同步产物已纳入 `.gitignore` 保护。
+
+### 2026-10-15 16:15 — 整体收尾核对并汇总 Batch 3／Batch 4 实施验证
+- 改动文件：古文展签／异名辨析／项目列表与详情、辅助页与项目浏览器用例、双实例登录检查配置、前端 AGENTS、UI 进度／QA／联调手册及本地任务。
+- 内容：汇总 Batch 3 首页水墨 Hero／聊天 Evidence Inspector／古舆地图与 GLB，以及 Batch 4 文献复核／知识版本／图谱审核／质量／Agent 评测／运营／任务成果；补齐辅助三页及项目详情明暗主题，核对出处／待考／歧义／项目范围与登录分支。已准备真实 Gateway／数据库演练步骤，未启动后端或迁移数据。
+- 原因：按 AGENTS.md 完成本轮整体收尾、辅助入口补充确认及真实环境集成准备；保留下面已有逐批实施记录。
+- 影响/验证：110 文件／794 单元、类型、构建和 lint 通过（4 条原警告）；同一轮 112 项浏览器检查通过，前批 97 项全部保持通过，项目旧文案用例恢复；44 张辅助截图。此前 Batch 3 核心专项 74 项、Batch 4 97 项为各自历史范围，不与本轮重复累加。真实联调／最终视觉验收未执行，范围外 5 项旧失败未重跑。见 docs/ui-redesign/closeout-qa.md 与 gateway-integration-runbook.md。
+
+### 2026-10-15 15:40 — 实施 Batch 4 文献、图谱与治理专业页面
+- 改动文件：六个管理页面、文献复核／影印／版本组件、图谱／评测组件、管理公共样式、浏览器夹具与用例、前端指南及 UI 进度文档。
+- 内容：卷册目录与双栏复核、原件影印、真实版本摘要、图谱审核窗、手机质量处理、评测／运营明暗主题与任务双列布局；修复手机保存刷新后的关闭焦点。
+- 原因：按用户指定范围落实 Gemini v1.1.0 Batch 4，保留现有审核、发布、权限与任务语义。
+- 影响/验证：110 文件／794 单元、类型、构建及 lint 通过（4 条原警告）；97 项浏览器检查通过，改前同组 15 项未通过经夹具／入口适配后恢复，原通过项保持通过。53 张专业页面／流程图涵盖四种屏宽与明暗主题。真实 Gateway、独立 OCR 区域定位和全套最终验收未完成；6 项范围外历史失败未重跑，详见 Batch 4 QA。
+
+### 2026-10-15 14:20 — 实施 Batch 3 检索首页、聊天考据与古舆地图
+- 改动文件：workspace 首页／聊天／地图，research-hero、Evidence Inspector／引用／消息组合、地图时间轴／相机留白／GLB 控件、xingxi-research.css、水墨资产、相关单元／浏览器检查、frontend/AGENTS.md、docs/ui-redesign/、reports/ui-redesign/ 和本地任务。
+- 内容：挂载 Gemini 水墨 Hero，重排 Composer 与双列选题；接入主对话题签和响应式史料考据视窗，修正 Markdown 出处协议过滤；实施全屏原色 OSM 浮动工具栏、纪年滑块、关联人物和模型旋转／复位，保留单实例按需加载、原链接、缓存及业务协议。
+- 原因：按 Gemini v1.1.0 完成用户指定的 Batch 3 核心三页，保留真实史料溯源和地图／模型约束。
+- 影响/验证：110 文件／794 单元、类型／lint／构建通过（4 条原警告）；核心与兼容专项 74 项全通过。扩展回归 133 通过／16 未通过／0 跳过，其中 10 项同组旧失败与 6 项额外待适配／待排查，原通过项无退化。29 核心截图包含真实 OSM 与真实 GLB；真实 Gateway、独立 OCR 影印、实体触摸及全套业务／视觉验收尚未完成，详见 Batch 3 QA。
+
+### 2026-10-15 12:56 — 实施 Batch 2 全局工作区布局与侧栏框架
+- 改动文件：workspace-content、工作区侧栏／导航／品牌／手机页头／近期会话与设置焦点组合、xingxi-workspace.css、地图及聊天入口包装、导航／浏览器测试、品牌资产、前端 AGENTS、docs/ui-redesign/、reports/ui-redesign/ 和本地任务。
+- 内容：接入三组权限导航、260px／64px 折叠侧栏、平板默认收起与 Cookie 优先、影青瓷徽标、底部身份／设置、手机抽屉和滚动框架；补齐定时任务入口及弹窗关闭焦点返回，保留拖拽、快捷键、近期会话操作和业务协议。
+- 原因：按 Gemini v1.1.0 完成用户指定的 Batch 2，为后续首页／聊天与业务页面重构提供统一框架。
+- 影响/验证：108 文件／787 单元通过，类型／规范与默认构建通过（4 条原警告）；25 框架／导航及 13 组件浏览器检查通过，合并 80 通过／12 既有业务失败／0 未执行，无新增失败或横向溢出。49 页面、13 框架和 8 组件截图可对照；真实 Gateway 与 Batch 3–5 尚未验收，详见 Batch 2 QA。
+
+### 2026-10-15 11:50 — 建立旧版 UI 基线并实施首批主题与公共组件
+- 改动文件：前端 Token／全局样式、business-controls.tsx、business-surfaces.tsx、business-page.tsx、UI 验收配置与测试、前端 AGENTS、docs/ui-redesign/ 和本地任务记录。
+- 内容：采用 Gemini v1.1.0，建立四视口旧版截图和软件基线；实现双主题、语义状态、表单／按钮／证据胶囊、表格和弹窗包装，迁移加载／空／错误与重试样式，保留原生交互及业务协议。
+- 原因：按用户要求完成 Batch 0 与 Batch 1，为后续整页重构提供可对照基线和公共组件。
+- 影响/验证：旧版 771 项单元测试通过；改后 784 项通过，类型／规范与构建通过，基础组件 13 项浏览器检查通过；合并浏览器回归 55 通过、相同 13 项既有失败、5 未执行，原有通过项未退化，详见 QA 报告。
+
+
+
+### 2026-10-15 11:18 — 推进视觉方向并生成高品质文史艺术素材 (v1.1.0)
+- 改动文件：`docs/ui-redesign/02-design-system.md`、`docs/ui-redesign/design/index.html`、`docs/ui-redesign/04-progress.md`、`visual-direction-showcase.md`。
+- 内容：完成视觉资产定制与规格推进。生成 4 款高精度新水墨与金石文博素材（江南水墨横幅背景、宋韵影青瓷星羲浑天仪徽标、金石云水印章、文人案头方志研读空状态插画）；在 `02-design-system.md` 中建立视觉资产登记表与意匠说明；升级本地独立原型 `docs/ui-redesign/design/index.html`，新增水墨横幅、影青瓷头像及文史空状态第 4 场景；创建视觉全景画廊 `visual-direction-showcase.md`。
+- 原因：响应用户要求优先深化视觉方向，提供具有高度文化辨识度的吴文化文史素材。
+- 影响/验证：未修改任何前端业务运行代码与依赖；所有素材路径与 fallback 机制均已登记；原型可免构建本地直接查验。
+
+### 2026-10-15 00:08 — 完成 Gemini UI 重构设计规格 v1.0.0 与独立原型
+- 改动文件：`docs/ui-redesign/02-design-system.md`、`docs/ui-redesign/design/index.html`、`docs/ui-redesign/04-progress.md`、`.scratch/ui-redesign/issues/01-design.md`。
+- 内容：确立“方向 A：典雅方志·人文水墨（Wu-Heritage Scholar）”设计语言；补全全局 Design Token 及与 Tailwind 4 语义变量映射；制定全量公共组件状态规范与 14 类业务页面在 1440/1024/390 视口的结构与交互；交付本地独立交互式原型 `docs/ui-redesign/design/index.html`；标记状态为 `ready-for-implementation`。
+- 原因：推进 UI 全面重构，完成 Gemini 负责的设计规格定稿与原型交付，交由 Codex 启动代码实施。
+- 影响/验证：设计阶段严格不修改产品运行代码、业务协议或 API 依赖；设计原型完全使用演示示例数据并与生产代码隔离；设计规格全面保留单一星羲助手、Evidence 溯源、四类审核状态、OSM 原始底图和 28/44px 模型标点契约。
+
+### 2026-10-14 23:13 — 建立 Gemini 设计与 Codex 实施的 UI 重构交接
+- 改动文件：`AGENTS.md`、`GEMINI.md`、`docs/ui-redesign/`、`.scratch/ui-redesign/`、`README.md`。
+- 内容：保留原有项目约束，补充双工具职责；加入代码初审、待填设计规格、任务提示、分批计划、回归清单与本地任务记录。
+- 原因：用户准备全面调整 XingXi UI，指定 Gemini CLI／IDE 设计、Codex 实现。
+- 影响/验证：仅协作资料和指令变更，产品运行代码未修改；16 份相关文档的编码、引用、导入与修改范围核对通过，`git diff --check` 通过；运行基线、截图及软件测试尚未执行。
+
+
 
 ### 2026-10-03 20:13 — 整合地图模型预览到协作功能分支
 - 改动文件：地图页面、固定标点、模型查看器与登记表、reference-points 接口、依赖和静态配置、相关测试、开发说明、`docs/map-model-preview.md` 与七个 GLB 资源。

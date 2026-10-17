@@ -56,8 +56,8 @@ export function AgentEvaluationDetail({
         if (!open) onClose();
       }}
     >
-      <SheetContent className="w-full gap-0 bg-[#f7fafb] sm:max-w-[760px]">
-        <SheetHeader className="border-b border-[#dce5e6] bg-white p-6 pr-12">
+      <SheetContent className="bg-card w-full gap-0 sm:max-w-[760px]">
+        <SheetHeader className="border-border bg-card border-b p-6 pr-12">
           <SheetTitle>{observation?.case.title} · 轨迹详情</SheetTitle>
           <SheetDescription>
             可观察的运行事件、工具、回答与证据；固定模型回放不代表真实模型质量。
@@ -110,7 +110,7 @@ function ObservationDetail({
   const reviews = batch.reviews.filter(
     (item) => item.case_id === observation.case_id,
   );
-  const box = "rounded-xl border border-[#dce5e6] bg-white p-4 shadow-sm";
+  const box = "rounded-xl border border-border bg-card p-4 shadow-sm";
   return (
     <article className="space-y-5" aria-label="用例详情">
       <section className={box}>
@@ -118,7 +118,7 @@ function ObservationDetail({
           <EvaluationBadge value={observation.status} />
           <EvaluationBadge value={observation.verdict} />
         </div>
-        <dl className="mt-4 grid gap-2 font-mono text-xs break-all text-slate-500">
+        <dl className="text-muted-foreground mt-4 grid gap-2 font-mono text-xs break-all">
           <div>
             <dt className="inline">Batch：</dt>
             <dd className="inline">{batch.id}</dd>
@@ -143,13 +143,13 @@ function ObservationDetail({
             <dd className="inline">{observation.release_id ?? "未采集"}</dd>
           </div>
         </dl>
-        <p className="mt-3 text-xs leading-5 text-slate-500">
+        <p className="text-muted-foreground mt-3 text-xs leading-5">
           {observation.case.review_rubric}
         </p>
         {observation.error && (
           <p
             role="alert"
-            className="mt-3 rounded-lg bg-rose-50 p-3 text-sm text-rose-800"
+            className="bg-heritage-rejected-surface text-heritage-rejected-foreground mt-3 rounded-lg p-3 text-sm"
           >
             {observation.error}
           </p>
@@ -157,10 +157,10 @@ function ObservationDetail({
       </section>
       <section className={box}>
         <h3 className="font-semibold">执行时间线</h3>
-        <p className="mt-1 text-xs text-slate-500">
+        <p className="text-muted-foreground mt-1 text-xs">
           事件按持久化序号排列；缺失事件不补造。
         </p>
-        <ol className="mt-5 ml-3 border-l-2 border-[#d5e4e6]">
+        <ol className="border-border mt-5 ml-3 border-l-2">
           <li className="relative pb-6 pl-7">
             <TimelineDot icon={MessageSquare} />
             <h4 className="text-sm font-semibold">用户输入</h4>
@@ -200,7 +200,9 @@ function ObservationDetail({
             </li>
           ))}
           {!events.length && (
-            <li className="pb-6 pl-7 text-sm text-slate-500">尚无执行事件。</li>
+            <li className="text-muted-foreground pb-6 pl-7 text-sm">
+              尚无执行事件。
+            </li>
           )}
           <li className="relative pl-7">
             <TimelineDot icon={FileText} />
@@ -217,7 +219,7 @@ function ObservationDetail({
           {observation.checks.map((check) => (
             <details
               key={check.key}
-              className="rounded-lg border border-slate-200 p-3 text-sm"
+              className="border-border rounded-lg border p-3 text-sm"
             >
               <summary className="cursor-pointer">
                 <EvaluationBadge value={check.status} />
@@ -228,8 +230,8 @@ function ObservationDetail({
                   { label: "期望", value: check.expected },
                   { label: "实际", value: check.actual },
                 ].map((item) => (
-                  <div key={item.label} className="rounded-lg bg-slate-50 p-3">
-                    <strong className="text-xs text-slate-500">
+                  <div key={item.label} className="bg-muted rounded-lg p-3">
+                    <strong className="text-muted-foreground text-xs">
                       {item.label}
                     </strong>
                     <pre className="mt-2 text-xs break-all whitespace-pre-wrap">
@@ -242,7 +244,7 @@ function ObservationDetail({
           ))}
         </div>
         {!observation.checks.length && (
-          <p className="mt-3 text-sm text-slate-500">尚未完成判定。</p>
+          <p className="text-muted-foreground mt-3 text-sm">尚未完成判定。</p>
         )}
       </section>
       <section className={box}>
@@ -250,21 +252,21 @@ function ObservationDetail({
         {observation.evidence.map((item) => (
           <div
             key={item.evidence_id}
-            className="mt-3 rounded-lg border border-slate-200 p-3 text-sm"
+            className="border-border mt-3 rounded-lg border p-3 text-sm"
           >
             <p className="font-medium">
               {item.document_title} · 第 {item.page_start}
               {item.page_end === item.page_start ? "" : `–${item.page_end}`} 页
             </p>
             <p
-              className={`mt-2 text-xs ${item.verified ? "text-emerald-700" : "text-rose-700"}`}
+              className={`mt-2 text-xs ${item.verified ? "text-heritage-approved-foreground" : "text-heritage-rejected-foreground"}`}
             >
               {item.verified ? "已核对版本、授权与原文" : "证据核对失败"}
             </p>
-            <blockquote className="mt-3 border-l-2 border-[#8fb5ba] pl-3 leading-6 whitespace-pre-wrap">
+            <blockquote className="border-border mt-3 border-l-2 pl-3 leading-6 whitespace-pre-wrap">
               {item.quote}
             </blockquote>
-            <p className="mt-3 font-mono text-xs leading-5 break-all text-slate-500">
+            <p className="text-muted-foreground mt-3 font-mono text-xs leading-5 break-all">
               Evidence：{item.evidence_id}
               <br />
               Chunk：{item.chunk_id}
@@ -274,22 +276,19 @@ function ObservationDetail({
           </div>
         ))}
         {!observation.evidence.length && (
-          <p className="mt-3 text-sm text-slate-500">
+          <p className="text-muted-foreground mt-3 text-sm">
             本次没有取得可核对的证据。
           </p>
         )}
       </section>
       <section className={box}>
         <h3 className="font-semibold">人工复核记录</h3>
-        <p className="mt-1 text-xs text-slate-500">
+        <p className="text-muted-foreground mt-1 text-xs">
           复核追加保存，原始规则判定保持可追溯。
         </p>
         {reviews.map((item) => (
-          <div
-            key={item.id}
-            className="mt-3 rounded-lg bg-slate-50 p-3 text-sm"
-          >
-            <p className="text-xs text-slate-500">
+          <div key={item.id} className="bg-muted mt-3 rounded-lg p-3 text-sm">
+            <p className="text-muted-foreground text-xs">
               {evaluationLabel(item.decision)} · {item.actor_id} ·{" "}
               {new Date(item.created_at).toLocaleString()}
             </p>
@@ -297,7 +296,7 @@ function ObservationDetail({
           </div>
         ))}
         {!reviews.length && (
-          <p className="mt-3 text-sm text-slate-500">暂无人工复核。</p>
+          <p className="text-muted-foreground mt-3 text-sm">暂无人工复核。</p>
         )}
         {canReview && !["queued", "running"].includes(observation.status) && (
           <form
@@ -313,7 +312,7 @@ function ObservationDetail({
               onChange={(event) =>
                 setDecision(event.target.value as typeof decision)
               }
-              className="min-h-9 w-full rounded-lg border bg-white p-2 text-sm"
+              className="bg-card min-h-9 w-full rounded-lg border p-2 text-sm"
               disabled={review.isPending}
             >
               <option value="confirmed">确认原判定</option>
@@ -336,7 +335,10 @@ function ObservationDetail({
               {review.isPending ? "正在保存…" : "保存复核"}
             </button>
             {review.error && (
-              <p role="alert" className="text-sm text-rose-800">
+              <p
+                role="alert"
+                className="text-heritage-rejected-foreground text-sm"
+              >
                 {review.error.message}
               </p>
             )}
@@ -349,7 +351,7 @@ function ObservationDetail({
 
 function TimelineDot({ icon: Icon }: { icon: typeof Wrench }) {
   return (
-    <span className="absolute -left-[15px] flex size-7 items-center justify-center rounded-full border-2 border-white bg-[#e7f1f2] text-[#276f79]">
+    <span className="bg-secondary text-primary absolute -left-[15px] flex size-7 items-center justify-center rounded-full border-2 border-white">
       <Icon className="size-3.5" aria-hidden="true" />
     </span>
   );

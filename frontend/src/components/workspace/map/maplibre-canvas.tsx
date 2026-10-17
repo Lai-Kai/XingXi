@@ -293,6 +293,7 @@ export function MapLibreCanvas({
   selectedId,
   onSelect,
   onReload,
+  cameraPadding,
   className,
 }: {
   points: MapPoint[];
@@ -313,6 +314,7 @@ export function MapLibreCanvas({
   selectedId?: string | null;
   onSelect?: (point: MapPoint) => void;
   onReload?: () => void;
+  cameraPadding?: { top: number; right: number; bottom: number; left: number };
   className?: string;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -327,12 +329,14 @@ export function MapLibreCanvas({
   const onSelectRef = useRef(onSelect);
   const pointsRef = useRef(points);
   const selectedIdRef = useRef(selectedId);
+  const cameraPaddingRef = useRef(cameraPadding);
   const [status, setStatus] = useState<"loading" | "ready" | "error">(
     "loading",
   );
   onSelectRef.current = onSelect;
   pointsRef.current = points;
   selectedIdRef.current = selectedId;
+  cameraPaddingRef.current = cameraPadding;
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -412,6 +416,12 @@ export function MapLibreCanvas({
       focusedEventIdRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    // Keep camera targets in the exposed map area while the raster canvas
+    // continues underneath floating controls and the study panel.
+    if (cameraPadding) mapRef.current?.setPadding(cameraPadding);
+  }, [cameraPadding]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -584,7 +594,12 @@ export function MapLibreCanvas({
               bounds.extend([point.lon, point.lat]),
             );
             map.fitBounds(bounds, {
-              padding: { top: 128, right: 72, bottom: 72, left: 72 },
+              padding: cameraPaddingRef.current ?? {
+                top: 128,
+                right: 72,
+                bottom: 72,
+                left: 72,
+              },
               maxZoom: 15,
               duration: 0,
             });

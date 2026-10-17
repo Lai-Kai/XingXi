@@ -149,7 +149,9 @@ async function expectComposerHeightsEqual(page: Page) {
     };
 
     return {
-      main: findFormByPlaceholder(/how can i assist you/i),
+      main: findFormByPlaceholder(
+        /Ask about Mudu sites, people, gazetteers, or historical change|询问木渎古迹、人物、方志出处或历史沿革/i,
+      ),
       sidecar: findFormByPlaceholder(/deeper follow-up/i),
     };
   });
@@ -204,7 +206,9 @@ async function expectSidecarModelPinnedToSubmit(page: Page) {
     };
 
     return {
-      main: getComposerMetrics(/how can i assist you/i),
+      main: getComposerMetrics(
+        /Ask about Mudu sites, people, gazetteers, or historical change|询问木渎古迹、人物、方志出处或历史沿革/i,
+      ),
       sidecar: getComposerMetrics(/deeper follow-up/i),
     };
   });
@@ -756,7 +760,9 @@ test.describe("Side chat", () => {
     );
     const quoteAttachment = page.getByTestId("conversation-quote-attachment");
     const mainInputForm = page.locator("form").filter({
-      has: page.getByPlaceholder(/how can i assist you/i),
+      has: page.getByPlaceholder(
+        /Ask about Mudu sites, people, gazetteers, or historical change|询问木渎古迹、人物、方志出处或历史沿革/i,
+      ),
     });
     await expect(quoteAttachment).toBeVisible();
     await expect(
@@ -835,7 +841,9 @@ test.describe("Side chat", () => {
     await expect(
       sidecarInputForm.getByRole("button", { name: /Fast Model/i }),
     ).toBeVisible();
-    const mainInput = page.getByPlaceholder(/how can i assist you/i);
+    const mainInput = page.getByPlaceholder(
+      /Ask about Mudu sites, people, gazetteers, or historical change|询问木渎古迹、人物、方志出处或历史沿革/i,
+    );
     const sidecarInput = page.getByPlaceholder(/deeper follow-up/i);
     await mainInput.fill("Left draft");
     await expect(sidecarInput).toHaveValue("");

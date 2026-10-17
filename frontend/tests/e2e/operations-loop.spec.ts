@@ -22,6 +22,9 @@ test("operations workspace exposes the non-3d governance loop", async ({
   page,
 }, testInfo) => {
   mockLangGraphAPI(page);
+  await page.route("**/api/operations/tasks?**", (route) =>
+    route.fulfill({ json: [] }),
+  );
   await page.route("**/api/operations/dashboard?*", (route) =>
     route.fulfill({
       status: 200,
@@ -45,7 +48,7 @@ test("operations workspace exposes the non-3d governance loop", async ({
   await page.goto("/workspace/operations");
   await expect(page.getByRole("heading", { name: "运营中心" })).toBeVisible();
   await expect(page.getByText("87.5%")).toBeVisible();
-  await expect(page.getByText("三维完成后启用")).toBeVisible();
+  await expect(page.getByText("尚无服务端统计")).toBeVisible();
   await expect(page.getByText("木渎古镇")).toBeVisible();
   await page.screenshot({
     path: testInfo.outputPath("operations-desktop.png"),

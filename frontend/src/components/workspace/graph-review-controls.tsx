@@ -42,18 +42,18 @@ export function GraphReviewControls({
   }
 
   return (
-    <div className="mt-2 text-xs">
+    <div className="graph-review-card bg-secondary/30 mt-3 rounded-lg border p-3 text-xs">
       <button
         type="button"
         disabled={disabled}
         aria-expanded={open}
         onClick={() => setOpen(!open)}
-        className="text-[#24676c] hover:underline disabled:opacity-50"
+        className="text-primary hover:underline disabled:opacity-50"
       >
         修改审核结果
       </button>
       {open && (
-        <div className="mt-2 space-y-2 rounded border border-[#d9e4e2] bg-[#f6faf9] p-2">
+        <div className="border-border bg-card mt-2 space-y-2 rounded border p-2">
           <div
             className="flex flex-wrap gap-2"
             role="group"
@@ -68,7 +68,7 @@ export function GraphReviewControls({
                 }
                 aria-pressed={next === action.status}
                 onClick={() => setNext(action.status)}
-                className={`rounded border px-2 py-1 disabled:cursor-not-allowed disabled:opacity-40 ${next === action.status ? "border-[#24676c] bg-white text-[#24676c]" : "border-[#d9e4e2]"}`}
+                className={`rounded border px-2 py-1 disabled:cursor-not-allowed disabled:opacity-40 ${next === action.status ? "border-primary/50 bg-card text-primary" : "border-border"}`}
               >
                 {action.label}
               </button>
@@ -85,10 +85,10 @@ export function GraphReviewControls({
             maxLength={2000}
             disabled={disabled}
             onChange={(event) => setNote(event.target.value)}
-            className="min-h-20 w-full rounded border bg-white p-2"
+            className="bg-card min-h-20 w-full rounded border p-2"
           />
           {error && (
-            <p role="alert" className="text-red-700">
+            <p role="alert" className="text-heritage-rejected-foreground">
               {error}
             </p>
           )}
@@ -102,7 +102,7 @@ export function GraphReviewControls({
               (required && !note.trim())
             }
             onClick={() => void submit()}
-            className="rounded bg-[#24676c] px-3 py-1.5 text-white disabled:opacity-40"
+            className="bg-primary text-primary-foreground rounded px-3 py-1.5 disabled:opacity-40"
           >
             {disabled ? "保存中…" : "保存审核结果"}
           </button>

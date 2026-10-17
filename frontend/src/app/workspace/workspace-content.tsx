@@ -31,11 +31,18 @@ export async function WorkspaceContent({
   return (
     <QueryClientProvider>
       <WorkspaceSidebarProvider
-        className="h-screen"
+        className="xingxi-workspace h-dvh min-h-0 overflow-hidden"
         defaultOpen={initialSidebarOpen}
       >
+        <a href="#workspace-content" className="workspace-skip-link">
+          跳转到工作区内容
+        </a>
         <WorkspaceSidebar />
-        <SidebarInset className="min-w-0">
+        <SidebarInset
+          id="workspace-content"
+          tabIndex={-1}
+          className="min-h-0 min-w-0 overflow-hidden outline-none"
+        >
           <GatewayOfflineBanner gatewayUnavailable={gatewayUnavailable} />
           {children}
         </SidebarInset>

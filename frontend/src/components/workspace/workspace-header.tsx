@@ -1,57 +1,69 @@
 "use client";
 
 import { Sparkles } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
+import { useState } from "react";
 
-import { SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
-import { useAuth } from "@/core/auth/AuthProvider";
-import { businessRoleLabel } from "@/core/auth/permissions";
+import { useSidebar } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 
+import { WorkspaceSidebarToggle } from "./workspace-mobile-header";
+
+function BrandMark() {
+  const [failed, setFailed] = useState(false);
+  return (
+    <span className="bg-secondary text-primary flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-full">
+      {failed ? (
+        <Sparkles className="size-5" aria-hidden="true" />
+      ) : (
+        <Image
+          src="/brand/xingxi-celadon-emblem.jpg"
+          alt=""
+          width={36}
+          height={36}
+          className="size-9 rounded-full object-cover"
+          onError={() => setFailed(true)}
+        />
+      )}
+    </span>
+  );
+}
+
 export function WorkspaceHeader({ className }: { className?: string }) {
-  const { state } = useSidebar();
-  const { user } = useAuth();
-  const isCollapsed = state === "collapsed";
+  const { state, isMobile, setOpenMobile } = useSidebar();
+  const isCollapsed = state === "collapsed" && !isMobile;
 
   return (
     <div
       className={cn(
-        "flex h-16 items-center gap-2 px-1",
-        isCollapsed ? "justify-center" : "justify-between",
+        "flex shrink-0 items-center",
+        isCollapsed ? "flex-col gap-1 py-3" : "h-20 justify-between gap-1 px-2",
         className,
       )}
     >
-      {isCollapsed ? (
-        <SidebarTrigger
-          className="size-8 opacity-100"
-          aria-label="展开侧栏"
-          title="展开侧栏"
-        />
-      ) : (
-        <>
-          <Link
-            href="/workspace"
-            aria-label="星羲弦沚首页"
-            className="flex min-w-0 items-center gap-2.5"
-          >
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-[#20282b] text-white">
-              <Sparkles className="size-5" />
+      <Link
+        href="/workspace"
+        aria-label="星羲弦沚首页"
+        title="星羲弦沚首页"
+        onClick={() => {
+          if (isMobile) setOpenMobile(false);
+        }}
+        className="focus-visible:ring-ring flex min-h-11 min-w-11 items-center justify-center gap-2.5 rounded-lg outline-none focus-visible:ring-2"
+      >
+        <BrandMark />
+        {!isCollapsed && (
+          <span className="min-w-0">
+            <span className="block truncate font-serif text-lg font-semibold tracking-widest">
+              星羲弦沚
             </span>
-            <span className="min-w-0">
-              <span className="block truncate text-base font-semibold">
-                星羲弦沚
-              </span>
-              {user && (
-                <span className="block truncate text-[11px] text-[#648087]">
-                  {businessRoleLabel(user.business_role)}
-                  {user.organization_name ? ` · ${user.organization_name}` : ""}
-                </span>
-              )}
+            <span className="text-sidebar-foreground/70 block truncate text-[10px] tracking-wider">
+              吴地文史 · 木渎
             </span>
-          </Link>
-          <SidebarTrigger />
-        </>
-      )}
+          </span>
+        )}
+      </Link>
+      <WorkspaceSidebarToggle />
     </div>
   );
 }

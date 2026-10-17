@@ -51,7 +51,7 @@ import {
 import { BusinessEmptyState, BusinessLoadingState } from "./business-page";
 
 const selectStyle =
-  "min-h-10 min-w-0 rounded-lg border border-[#d5dfe1] bg-white px-3 py-2 text-sm outline-[#276f79]";
+  "min-h-10 min-w-0 rounded-lg border border-border bg-card px-3 py-2 text-sm outline-[#276f79]";
 
 export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
   const queryClient = useQueryClient();
@@ -178,15 +178,15 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
   return (
     <>
       <section className="space-y-5" aria-label="Agent 自动评测">
-        <div className="rounded-xl border border-[#d4e2e4] bg-[#edf5f5] p-5">
+        <div className="border-border bg-secondary rounded-xl border p-5">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="max-w-2xl">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-[#bad1d5] bg-white px-2.5 py-1 text-xs font-medium text-[#276f79]">
+              <span className="border-border bg-card text-primary inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium">
                 <FlaskConical className="size-3.5" />
                 固定模型回放 · 运行流程验证
               </span>
               <h2 className="mt-3 text-lg font-semibold">自动化测试监控大盘</h2>
-              <p className="mt-2 text-sm leading-6 text-[#61777c]">
+              <p className="text-primary mt-2 text-sm leading-6">
                 通过真实 Gateway 和星羲 Graph
                 执行测试，核对工具、引用与取消流程。合成资料只进入隔离环境；回放通过率不代表真实模型质量或线上回答准确率。
               </p>
@@ -207,7 +207,7 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
                     type="button"
                     className={cn(
                       evaluationButton,
-                      "border-[#276f79] bg-[#276f79] text-white hover:bg-[#205f68]",
+                      "border-primary/50 bg-primary text-primary-foreground hover:bg-primary",
                     )}
                     disabled={busy || !catalog.data?.available}
                     onClick={() => start.mutate(true)}
@@ -229,16 +229,16 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
             </div>
           </div>
           {!canExecute && (
-            <p className="mt-3 text-xs text-[#61777c]">
+            <p className="text-primary mt-3 text-xs">
               可查看和导出记录；启动、取消、重跑与人工复核需要管理员权限。
             </p>
           )}
           {catalog.data && !catalog.data.available && (
-            <p className="mt-3 text-sm text-amber-800">
+            <p className="text-heritage-disputed-foreground mt-3 text-sm">
               自动评测服务当前不可用，请检查 Gateway 与数据库状态。
             </p>
           )}
-          <details className="mt-3 text-xs text-[#61777c]">
+          <details className="text-primary mt-3 text-xs">
             <summary className="cursor-pointer">
               查看用例集与覆盖范围（{catalog.data?.cases.length ?? 0} 项）
             </summary>
@@ -259,7 +259,7 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
         {(error ?? exportError) && (
           <div
             role="alert"
-            className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800"
+            className="border-heritage-rejected-border bg-heritage-rejected-surface text-heritage-rejected-foreground flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4 text-sm"
           >
             <span>{error?.message ?? exportError}</span>
             <button type="button" className="underline" onClick={refresh}>
@@ -279,8 +279,8 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
 
         {(hasRecords || offset > 0) && (
           <>
-            <div className="flex flex-wrap items-end gap-3 rounded-xl border border-[#dce5e6] bg-white p-4 shadow-sm">
-              <label className="flex min-w-0 flex-1 flex-col gap-2 text-xs font-medium text-slate-500">
+            <div className="border-border bg-card flex flex-wrap items-end gap-3 rounded-xl border p-4 shadow-sm">
+              <label className="text-muted-foreground flex min-w-0 flex-1 flex-col gap-2 text-xs font-medium">
                 评测批次
                 <select
                   aria-label="评测批次"
@@ -307,7 +307,7 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
                   ))}
                 </select>
               </label>
-              <label className="flex flex-col gap-2 text-xs font-medium text-slate-500">
+              <label className="text-muted-foreground flex flex-col gap-2 text-xs font-medium">
                 历史时间范围
                 <select
                   aria-label="历史时间范围"
@@ -334,7 +334,7 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
                 >
                   <ChevronLeft className="size-4" />
                 </button>
-                <span className="text-xs text-slate-500">
+                <span className="text-muted-foreground text-xs">
                   第 {offset / 20 + 1} 页
                 </span>
                 <button
@@ -347,7 +347,7 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
                   <ChevronRight className="size-4" />
                 </button>
               </div>
-              <p className="basis-full text-xs text-slate-500">
+              <p className="text-muted-foreground basis-full text-xs">
                 时间筛选和趋势图仅覆盖当前历史页，每页最多 20
                 个批次；下方指标统计所选批次，表格筛选不改变批次指标。
               </p>
@@ -418,11 +418,11 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
             )}
             {batch && (
               <>
-                <div className="rounded-xl border border-[#dce5e6] bg-white p-5 shadow-sm">
+                <div className="border-border bg-card rounded-xl border p-5 shadow-sm">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <h3 className="font-semibold">{batchLabel}</h3>
-                      <p className="mt-1 font-mono text-xs break-all text-slate-500">
+                      <p className="text-muted-foreground mt-1 font-mono text-xs break-all">
                         {batch.id}
                       </p>
                     </div>
@@ -482,7 +482,7 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
                   {batch.parent_id && (
                     <button
                       type="button"
-                      className="mt-3 text-sm text-[#205f68] underline"
+                      className="text-primary mt-3 text-sm underline"
                       onClick={() => choose(batch.parent_id!)}
                     >
                       查看原批次及失败记录
@@ -491,13 +491,13 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
                   {batch.error_message && (
                     <p
                       role="alert"
-                      className="mt-3 rounded-lg bg-rose-50 p-3 text-sm text-rose-800"
+                      className="bg-heritage-rejected-surface text-heritage-rejected-foreground mt-3 rounded-lg p-3 text-sm"
                     >
                       {batch.error_message}
                     </p>
                   )}
                   <details className="mt-4 text-xs">
-                    <summary className="cursor-pointer text-slate-500">
+                    <summary className="text-muted-foreground cursor-pointer">
                       执行环境与版本
                     </summary>
                     <div className="mt-3">
@@ -510,13 +510,13 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
                 </div>
 
                 <section
-                  className="overflow-hidden rounded-xl border border-[#dce5e6] bg-white shadow-sm"
+                  className="border-border bg-card overflow-hidden rounded-xl border shadow-sm"
                   aria-label="测试记录"
                 >
-                  <div className="border-b border-[#dce5e6] p-5">
+                  <div className="border-border border-b p-5">
                     <div className="flex items-center justify-between gap-3">
                       <h3 className="font-semibold">测试记录</h3>
-                      <span className="text-xs text-slate-500">
+                      <span className="text-muted-foreground text-xs">
                         显示 {visible.length} / {batch.results.length} 条 · 计划{" "}
                         {batch.total} 项
                       </span>
@@ -583,7 +583,7 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full min-w-[900px] text-left text-sm">
-                      <thead className="bg-slate-50 text-xs text-slate-500">
+                      <thead className="bg-muted text-muted-foreground text-xs">
                         <tr>
                           {[
                             "Case ID",
@@ -609,21 +609,21 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
                         {visible.map((item) => (
                           <tr
                             key={item.attempt_id}
-                            className="transition-colors hover:bg-[#f5f9fa]"
+                            className="hover:bg-card transition-colors"
                           >
-                            <td className="px-4 py-4 font-mono text-xs text-slate-500">
+                            <td className="text-muted-foreground px-4 py-4 font-mono text-xs">
                               {item.case_id}
                             </td>
                             <td className="max-w-72 px-4 py-4">
                               <p className="font-medium">{item.case.title}</p>
                               <p
-                                className="mt-1 truncate text-xs text-slate-500"
+                                className="text-muted-foreground mt-1 truncate text-xs"
                                 title={item.case.question}
                               >
                                 {item.case.question}
                               </p>
                               {item.error && (
-                                <p className="mt-1 text-xs text-rose-700">
+                                <p className="text-heritage-rejected-foreground mt-1 text-xs">
                                   {item.error}
                                 </p>
                               )}
@@ -657,7 +657,7 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
                             <td className="px-4 py-4">
                               <button
                                 type="button"
-                                className="inline-flex items-center gap-1 text-xs font-medium whitespace-nowrap text-[#276f79] hover:underline"
+                                className="text-primary inline-flex items-center gap-1 text-xs font-medium whitespace-nowrap hover:underline"
                                 aria-label={`${item.case.title} · 查看轨迹`}
                                 onClick={() =>
                                   setTrajectory({
@@ -676,7 +676,7 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
                     </table>
                   </div>
                   {!visible.length && (
-                    <p className="p-8 text-center text-sm text-slate-500">
+                    <p className="text-muted-foreground p-8 text-center text-sm">
                       {batch.results.length
                         ? "没有符合筛选条件的测试记录。"
                         : "尚无用例执行记录，未执行不代表通过。"}
@@ -713,18 +713,18 @@ function MetricCard({
   tone: "emerald" | "teal" | "rose" | "amber";
 }) {
   const tones = {
-    emerald: "bg-emerald-50 text-emerald-700",
-    teal: "bg-[#edf5f5] text-[#276f79]",
-    rose: "bg-rose-50 text-rose-700",
-    amber: "bg-amber-50 text-amber-700",
+    emerald: "bg-heritage-approved-surface text-heritage-approved-foreground",
+    teal: "bg-secondary text-primary",
+    rose: "bg-heritage-rejected-surface text-heritage-rejected-foreground",
+    amber: "bg-heritage-disputed-surface text-heritage-disputed-foreground",
   };
   return (
     <section
-      className="rounded-xl border border-[#dce5e6] bg-white p-5 shadow-sm"
+      className="border-border bg-card rounded-xl border p-5 shadow-sm"
       aria-label={title}
     >
       <div className="flex items-center justify-between gap-2">
-        <h3 className="text-sm font-medium text-slate-500">{title}</h3>
+        <h3 className="text-muted-foreground text-sm font-medium">{title}</h3>
         <span className={cn("rounded-lg p-2", tones[tone])}>
           <Icon className="size-4" aria-hidden="true" />
         </span>
@@ -732,7 +732,9 @@ function MetricCard({
       <p className="mt-4 text-3xl font-semibold tracking-tight tabular-nums">
         {value}
       </p>
-      <p className="mt-3 text-xs leading-5 text-slate-500">{description}</p>
+      <p className="text-muted-foreground mt-3 text-xs leading-5">
+        {description}
+      </p>
     </section>
   );
 }

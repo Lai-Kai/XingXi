@@ -16,7 +16,7 @@ import { evaluationLabel } from "@/core/operations/evaluations";
 import { cn } from "@/lib/utils";
 
 export const evaluationButton =
-  "inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-[#cbd8da] bg-white px-3 py-2 text-sm transition-colors hover:bg-[#eef5f5] focus-visible:outline-2 focus-visible:outline-[#276f79] disabled:cursor-not-allowed disabled:opacity-50";
+  "inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm transition-colors hover:bg-secondary focus-visible:outline-2 focus-visible:outline-[#276f79] disabled:cursor-not-allowed disabled:opacity-50";
 
 export function EvaluationBadge({
   value,
@@ -40,13 +40,13 @@ export function EvaluationBadge({
       className={cn(
         "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium whitespace-nowrap",
         value === "passed"
-          ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+          ? "border-heritage-approved-border bg-heritage-approved-surface text-heritage-approved-foreground"
           : value === "failed" || value === "error"
-            ? "border-rose-200 bg-rose-50 text-rose-800"
+            ? "border-heritage-rejected-border bg-heritage-rejected-surface text-heritage-rejected-foreground"
             : value === "needs_review"
-              ? "border-amber-200 bg-amber-50 text-amber-800"
+              ? "border-heritage-disputed-border bg-heritage-disputed-surface text-heritage-disputed-foreground"
               : value === "running"
-                ? "border-cyan-200 bg-cyan-50 text-cyan-800"
+                ? "border-heritage-citation-border bg-heritage-citation-surface text-heritage-citation-foreground"
                 : "border-slate-200 bg-slate-50 text-slate-600",
       )}
     >
@@ -84,7 +84,7 @@ export function EvaluationJson({
       <div className="flex justify-end px-3 pt-2">
         <button
           type="button"
-          className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-white"
+          className="hover:text-primary-foreground inline-flex items-center gap-1 text-xs text-slate-400"
           aria-label={`复制${label}`}
           onClick={async () => {
             try {

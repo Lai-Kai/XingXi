@@ -1,4 +1,6 @@
-﻿import { ExternalLinkIcon } from "lucide-react";
+"use client";
+
+import { ExternalLinkIcon } from "lucide-react";
 import type { ComponentProps } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -13,13 +15,17 @@ import {
 } from "@/core/citations/sources";
 import { recordOperationEvent } from "@/core/operations/api";
 
+import { useEvidenceInspector } from "./evidence-inspector-context";
+import { evidenceIdFromDetailPath } from "./evidence-markdown";
+
 export function CitationLink({
   href,
   children,
   onClick,
   ...props
 }: ComponentProps<"a">) {
-  const evidenceId = parseEvidenceHref(href);
+  const inspector = useEvidenceInspector();
+  const evidenceId = parseEvidenceHref(href) ?? evidenceIdFromDetailPath(href);
   const domain = evidenceId ? "evidence" : extractDomain(href ?? "");
 
   // Priority: children > domain
@@ -32,7 +38,11 @@ export function CitationLink({
   const resolvedHref = evidenceId ? evidenceDetailPath(evidenceId) : href;
 
   return (
-    <HoverCard closeDelay={0} openDelay={0}>
+    <HoverCard
+      closeDelay={0}
+      openDelay={0}
+      open={evidenceId && inspector?.open ? false : undefined}
+    >
       <HoverCardTrigger asChild>
         <a
           href={resolvedHref}
@@ -50,6 +60,23 @@ export function CitationLink({
               metadata: { href: resolvedHref ?? "" },
             });
             onClick?.(event);
+            if (
+              evidenceId &&
+              inspector &&
+              !event.defaultPrevented &&
+              event.button === 0 &&
+              !event.ctrlKey &&
+              !event.metaKey &&
+              !event.shiftKey &&
+              !event.altKey &&
+              props.target !== "_blank"
+            ) {
+              event.preventDefault();
+              inspector.openEvidence(
+                { id: evidenceId, title: displayText ?? undefined },
+                event.currentTarget,
+              );
+            }
           }}
           {...props}
         >

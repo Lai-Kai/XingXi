@@ -187,7 +187,7 @@ test("explores one-hop relationships from a clicked subject", async ({
     });
   });
 
-  await page.goto("/workspace/knowledge-graph");
+  await page.goto("/workspace/knowledge-graph?manage=1");
   await expect(page.getByRole("heading", { name: "知识图谱" })).toBeVisible();
   await expect(page.getByText("主体索引")).toHaveCount(0);
 
@@ -217,7 +217,7 @@ test("explores one-hop relationships from a clicked subject", async ({
   ).toBeVisible();
   await expect(page.getByRole("heading", { name: /关系网总览/ })).toBeVisible();
   await page.getByRole("button", { name: "主体探索", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "李明" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "王芳" })).toBeVisible();
 });
 
 test("loads peripheral relationships and evidence beyond the local catalog", async ({
@@ -310,7 +310,7 @@ test("loads peripheral relationships and evidence beyond the local catalog", asy
     });
   });
 
-  await page.goto("/workspace/knowledge-graph");
+  await page.goto("/workspace/knowledge-graph?manage=1");
   await expect(
     page.getByRole("button", { name: "两层关系网", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");

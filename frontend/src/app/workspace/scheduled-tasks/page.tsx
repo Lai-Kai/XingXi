@@ -15,6 +15,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  WorkbenchGuide,
+  WorkbenchMetrics,
+} from "@/components/workspace/admin-workbench";
+import {
   ScheduledTaskScheduleInput,
   type ScheduleValue,
 } from "@/components/workspace/scheduled-task-schedule-input";
@@ -140,7 +144,7 @@ export default function ScheduledTasksPage() {
   const applyRecipe = (recipe: Recipe) => {
     const labels = st.recipes[recipe.titleKey];
     setTitle(labels.title);
-    setPrompt(recipe.prompt);
+    setPrompt(labels.prompt);
     setCreateSchedule(recipe.schedule);
     setContextMode("fresh_thread_per_run");
     setCreateNonce((n) => n + 1);
@@ -191,10 +195,53 @@ export default function ScheduledTasksPage() {
     <WorkspaceContainer>
       <WorkspaceHeader />
       <WorkspaceBody>
-        <div className="mx-auto flex w-full max-w-(--container-width-md) flex-col gap-4 p-6">
-          <h1 className="text-2xl font-semibold">{t.sidebar.scheduledTasks}</h1>
+        <div className="admin-workspace admin-workbench scheduled-workbench w-full p-4 sm:p-7">
+          <div className="scheduled-heading">
+            <WorkbenchGuide
+              title="定时研究"
+              steps={["设置研究任务", "核对时区与计划", "查看运行记录"]}
+            />
+            <h1 className="font-serif text-2xl font-semibold">
+              {t.sidebar.scheduledTasks}
+            </h1>
+            <p className="text-muted-foreground mt-2 text-sm">
+              让课题按计划开展，保留每次后台运行的结果与状态。
+            </p>
+          </div>
+          <div className="scheduled-heading">
+            <WorkbenchMetrics
+              items={[
+                {
+                  label: "当前任务",
+                  value: data ? data.length : null,
+                  hint: threadId ? "当前会话关联任务" : "已载入任务",
+                },
+                {
+                  label: "已启用",
+                  value: data
+                    ? data.filter((item) => item.status === "enabled").length
+                    : null,
+                  hint: "已载入任务中的启用项",
+                },
+                {
+                  label: "运行中",
+                  value: data
+                    ? data.filter((item) => item.status === "running").length
+                    : null,
+                  hint: "以服务端状态为准",
+                },
+                {
+                  label: "运行失败",
+                  value: data
+                    ? data.filter((item) => item.status === "failed").length
+                    : null,
+                  hint: "查看详情中的失败原因",
+                },
+              ]}
+            />
+          </div>
           <div
-            className="grid gap-2 rounded-lg border p-4"
+            className="scheduled-create grid gap-3 rounded-xl border p-5"
             data-testid="scheduled-task-create-form"
           >
             <div className="font-medium">{st.create.title}</div>
@@ -211,6 +258,7 @@ export default function ScheduledTasksPage() {
                   variant="outline"
                   size="sm"
                   onClick={() => applyRecipe(recipe)}
+                  title={st.recipes[recipe.titleKey].desc}
                 >
                   <span aria-hidden>{recipe.icon}</span>
                   {st.recipes[recipe.titleKey].title}
@@ -387,7 +435,7 @@ export default function ScheduledTasksPage() {
               {st.filters.once}
             </Button>
           </div>
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="scheduled-records grid gap-4">
             <div
               data-testid="scheduled-task-list"
               className="flex flex-col gap-3"
@@ -578,7 +626,7 @@ export default function ScheduledTasksPage() {
 
       {/* Delete confirm — follows the agent-card confirm pattern. */}
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <DialogContent>
+        <DialogContent className="admin-dialog">
           <DialogHeader>
             <DialogTitle>{st.actions.delete}</DialogTitle>
             <DialogDescription>{st.deleteConfirm}</DialogDescription>

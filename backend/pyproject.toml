@@ -26,6 +26,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+reconstruction = ["paramiko>=3.5,<5"]
 postgres = ["deerflow-harness[postgres]"]
 redis = ["deerflow-harness[redis]"]
 s3 = ["deerflow-harness[s3]"]

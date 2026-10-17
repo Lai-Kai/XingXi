@@ -3,7 +3,9 @@ import { expect, test } from "@playwright/test";
 import { mockLangGraphAPI } from "./utils/mock-api";
 
 test.describe("Sidebar navigation", () => {
-  test("sidebar contains Chats and Agents nav links", async ({ page }) => {
+  test("sidebar contains research history and the Xingxi assistant", async ({
+    page,
+  }) => {
     mockLangGraphAPI(page);
 
     await page.goto("/workspace/chats/new");
@@ -13,24 +15,27 @@ test.describe("Sidebar navigation", () => {
     await expect(sidebar.locator("a[href='/workspace/chats']")).toBeVisible({
       timeout: 15_000,
     });
-    await expect(sidebar.locator("a[href='/workspace/agents']")).toBeVisible();
+    await expect(sidebar.locator("a[href='/workspace/agent']")).toBeVisible();
+    await expect(sidebar.locator("a[href='/workspace/agents']")).toHaveCount(0);
   });
 
-  test("Agents link navigates to agents page", async ({ page }) => {
+  test("assistant link navigates to the single Xingxi assistant", async ({
+    page,
+  }) => {
     mockLangGraphAPI(page);
 
     await page.goto("/workspace/chats/new");
 
     const sidebar = page.locator("[data-sidebar='sidebar']");
-    const agentsLink = sidebar.locator("a[href='/workspace/agents']");
+    const agentsLink = sidebar.locator("a[href='/workspace/agent']");
     await expect(agentsLink).toBeVisible({ timeout: 15_000 });
     await agentsLink.click();
 
-    await page.waitForURL("**/workspace/agents");
-    await expect(page).toHaveURL(/\/workspace\/agents/);
+    await page.waitForURL("**/workspace/agent");
+    await expect(page).toHaveURL(/\/workspace\/agent$/);
   });
 
-  test("Agents button is disabled with a hover tooltip when agents_api is off", async ({
+  test("Xingxi stays reachable when the generic agents API is off", async ({
     page,
   }) => {
     mockLangGraphAPI(page);
@@ -51,27 +56,10 @@ test.describe("Sidebar navigation", () => {
     });
     await expect(sidebar.locator("a[href='/workspace/agents']")).toHaveCount(0);
 
-    // The disabled Agents button is rendered and announces its disabled state.
-    const agentsButton = sidebar.getByRole("button", { name: "Agents" });
-    await expect(agentsButton).toHaveAttribute("aria-disabled", "true");
-
-    // The button itself has pointer-events suppressed; force the hover so the
-    // event reaches the wrapping tooltip-trigger span that surfaces the tooltip.
-    await agentsButton.hover({ force: true });
-    await expect(page.getByText("Feature not enabled").first()).toBeVisible({
-      timeout: 5_000,
-    });
-
-    // Keyboard/screen-reader users get the reason too: the disabled entry
-    // stays in the tab order (focusable) and is wired to a visually-hidden
-    // description rather than relying on the hover-only tooltip.
-    const describedById = await agentsButton.getAttribute("aria-describedby");
-    expect(describedById).toBeTruthy();
-    await expect(page.locator(`#${describedById}`)).toHaveText(
-      "Feature not enabled",
-    );
-    await agentsButton.focus();
-    await expect(agentsButton).toBeFocused();
+    const assistantLink = sidebar.getByRole("link", { name: "星羲研究助手" });
+    await expect(assistantLink).toBeVisible();
+    await assistantLink.focus();
+    await expect(assistantLink).toBeFocused();
   });
 
   test("desktop sidebar can be reopened after collapsing", async ({ page }) => {
@@ -128,16 +116,19 @@ test.describe("Sidebar navigation", () => {
       await dragRailTo(80);
       await expect(sidebar).toHaveAttribute("data-state", "collapsed");
 
-      const collapsedBox = await rail.boundingBox();
-      expect(collapsedBox).not.toBeNull();
-      expect(collapsedBox!.x + collapsedBox!.width / 2).toBeCloseTo(48, 0);
+      await expect
+        .poll(async () => {
+          const box = await rail.boundingBox();
+          return box ? Math.abs(box.x + box.width / 2 - 64) : Infinity;
+        })
+        .toBeLessThanOrEqual(1);
 
       await dragRailTo(280);
       await expect(sidebar).toHaveAttribute("data-state", "expanded");
-      const expandedBox = await sidebar.boundingBox();
-      expect(expandedBox).not.toBeNull();
-      expect(expandedBox!.width).toBeGreaterThanOrEqual(224);
-      expect(expandedBox!.width).toBeLessThanOrEqual(480);
+      await expect
+        .poll(async () => (await sidebar.boundingBox())?.width ?? 0)
+        .toBeGreaterThanOrEqual(224);
+      expect((await sidebar.boundingBox())!.width).toBeLessThanOrEqual(480);
     }
 
     const railLineColor = await rail.evaluate(
@@ -183,9 +174,9 @@ test.describe("Sidebar navigation", () => {
     await page.mouse.move(360, point.y, { steps: 2 });
     await page.keyboard.press("Escape");
     await page.mouse.up();
-    const escapedBox = await sidebar.boundingBox();
-    expect(escapedBox).not.toBeNull();
-    expect(escapedBox!.width).toBeCloseTo(480, 0);
+    await expect
+      .poll(async () => Math.round((await sidebar.boundingBox())?.width ?? 0))
+      .toBe(480);
 
     point = await pointerDownOnRail();
     await page.mouse.move(80, point.y, { steps: 2 });
@@ -222,7 +213,7 @@ test.describe("Sidebar navigation", () => {
       expect(box!.x + box!.width).toBeLessThanOrEqual(viewportWidth + 1);
     };
 
-    await expectInsideViewport(page.getByText(/Welcome to|欢迎使用/).first());
+    await expectInsideViewport(page.getByText(/^(Xingxi|星羲弦沚)$/).first());
     await expectInsideViewport(page.getByRole("textbox").first());
     await expectInsideViewport(page.locator("[data-slot='suggestions-list']"));
 
@@ -240,7 +231,7 @@ test.describe("Sidebar navigation", () => {
       mobileSidebar.locator("a[href='/workspace/chats']"),
     ).toBeVisible();
     await expect(
-      mobileSidebar.locator("a[href='/workspace/agents']"),
+      mobileSidebar.locator("a[href='/workspace/agent']"),
     ).toBeVisible();
   });
 });

@@ -87,7 +87,9 @@ test("simple manual evaluation explains saved results and blocks empty answers",
   await page.getByRole("button", { name: "回归评测", exact: true }).click();
   const panel = page.getByRole("region", { name: "人工观测评测", exact: true });
   await expect(panel.getByText("1 / 1 条规则通过")).toBeVisible();
-  await expect(panel.getByText(answer, { exact: true })).toBeVisible();
+  await expect(
+    panel.getByLabel("最近一次结果").getByText(answer, { exact: true }),
+  ).toBeVisible();
   await panel.getByText("录入下一次回答", { exact: true }).click();
   await expect(panel.getByRole("heading", { name: "旧用例" })).toHaveCount(0);
   const submit = panel.getByRole("button", { name: "保存并查看结果" });
@@ -98,7 +100,9 @@ test("simple manual evaluation explains saved results and blocks empty answers",
   await submit.click();
   await expect(panel.getByText("0 / 1 条规则通过")).toBeVisible();
   await expect(
-    panel.getByText("期望拒答，本次标记为回答", { exact: true }),
+    panel
+      .getByLabel("最近一次结果")
+      .getByText("期望拒答，本次标记为回答", { exact: true }),
   ).toBeVisible();
   expect((posted!.observations as unknown[]).length).toBe(1);
   await page.reload();

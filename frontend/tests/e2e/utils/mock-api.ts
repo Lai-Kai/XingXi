@@ -218,6 +218,18 @@ function runStreamThreadId(route: Route) {
  * for a real backend.
  */
 export function mockLangGraphAPI(page: Page, options?: MockAPIOptions) {
+  // Map tests have no registered assets unless a case supplies its own fixture.
+  // Keep background reads inside the mock session instead of hitting an authenticated real Gateway.
+  void page.route("**/api/map/model-assets", (route) =>
+    route.fulfill(
+      route.request().method() === "GET"
+        ? { json: [] }
+        : {
+            status: 503,
+            json: { detail: "Model writes require an explicit test fixture" },
+          },
+    ),
+  );
   let threads = [...(options?.threads ?? [])];
   const agents = options?.agents ?? [];
   const skills = options?.skills ?? DEFAULT_SKILLS;

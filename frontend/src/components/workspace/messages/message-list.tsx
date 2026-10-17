@@ -72,6 +72,7 @@ import type { AgentThreadState } from "@/core/threads";
 import { cn } from "@/lib/utils";
 
 import { ArtifactFileList } from "../artifacts/artifact-file-list";
+import { ResearchTurnHeading } from "../citations/research-turn-heading";
 import { CopyButton } from "../copy-button";
 import { useMaybeSidecar } from "../sidecar/context";
 import { Tooltip } from "../tooltip";
@@ -730,12 +731,22 @@ export function MessageList({
   return (
     <>
       <Conversation
-        className={cn("flex size-full flex-col justify-center", className)}
+        className={cn(
+          "flex size-full flex-col justify-center",
+          !sidecarSurface && "research-main-conversation",
+          className,
+        )}
         data-testid={testId}
         initial={initialScroll}
         resize={resizeScroll}
       >
-        <ConversationContent className="mx-auto w-full max-w-(--container-width-md) gap-8 pt-8">
+        <ConversationContent
+          className={
+            sidecarSurface
+              ? "mx-auto w-full max-w-(--container-width-md) gap-8 pt-8"
+              : "research-conversation mx-auto w-full max-w-[880px] gap-6 px-4 pt-8 sm:px-6"
+          }
+        >
           <LoadMoreHistoryIndicator
             isLoading={isHistoryLoading}
             hasMore={hasMoreHistory}
@@ -758,6 +769,12 @@ export function MessageList({
                     group.type === "assistant" && "group/assistant-turn",
                   )}
                 >
+                  {group.type === "assistant" && !sidecarSurface && (
+                    <ResearchTurnHeading
+                      messages={group.messages}
+                      loading={groupIsLoading}
+                    />
+                  )}
                   {group.messages.map((msg) => {
                     const item = (
                       <MessageListItem

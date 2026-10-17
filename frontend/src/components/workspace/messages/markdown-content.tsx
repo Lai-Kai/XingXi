@@ -17,6 +17,8 @@ import {
 import { SafeMessageResponse } from "@/core/streamdown/components";
 import { cn } from "@/lib/utils";
 
+import { rehypeEvidenceLinks } from "../citations/evidence-markdown";
+
 import { createMarkdownLinkComponent } from "./markdown-link";
 
 export type MarkdownContentProps = {
@@ -108,7 +110,11 @@ export function MarkdownContent({
   const effectiveRehypePlugins = useMemo(() => {
     const base = streamdownPluginsWithoutRawHtml.rehypePlugins ?? [];
     const extra = rehypePlugins ?? [];
-    return [...base, ...extra] as ClipboardSafeStreamdownProps["rehypePlugins"];
+    return [
+      ...base,
+      ...extra,
+      rehypeEvidenceLinks,
+    ] as ClipboardSafeStreamdownProps["rehypePlugins"];
   }, [rehypePlugins]);
   const components = useMemo(() => {
     const baseComponents = {

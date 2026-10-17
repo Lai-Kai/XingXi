@@ -31,9 +31,9 @@ type Props = {
 };
 
 const field =
-  "w-full rounded-md border border-[#cbd8da] bg-white px-3 py-2 text-sm";
+  "w-full rounded-md border border-border bg-card px-3 py-2 text-sm";
 const button =
-  "rounded-md border border-[#cbd8da] px-3 py-2 text-sm disabled:opacity-40";
+  "rounded-md border border-border px-3 py-2 text-sm disabled:opacity-40";
 
 function RecordedResults({
   run,
@@ -50,28 +50,28 @@ function RecordedResults({
         return (
           <article
             key={result.case_id}
-            className="rounded-lg border border-[#d7e1e2] bg-white p-5"
+            className="border-border bg-card rounded-lg border p-5"
           >
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h3 className="font-semibold">{item?.name ?? "历史用例"}</h3>
                 {item && (
-                  <p className="mt-2 text-sm text-[#53676c]">{item.question}</p>
+                  <p className="text-primary mt-2 text-sm">{item.question}</p>
                 )}
               </div>
               <span
-                className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-sm ${result.passed ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"}`}
+                className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-sm ${result.passed ? "bg-heritage-approved-surface text-heritage-approved-foreground" : "bg-heritage-disputed-surface text-heritage-disputed-foreground"}`}
               >
                 <Icon className="size-4" />
                 {result.passed ? "通过" : "未通过"}
               </span>
             </div>
-            <p className="mt-3 text-xs text-[#697a7f]">
+            <p className="text-muted-foreground mt-3 text-xs">
               本次标记：{result.actual_status === "refused" ? "拒答" : "回答"} ·
               有效引用 {result.citation_count} 条
             </p>
-            <div className="mt-4 rounded-md bg-[#f5f8f8] p-4">
-              <p className="mb-2 text-xs font-semibold text-[#53676c]">
+            <div className="bg-card mt-4 rounded-md p-4">
+              <p className="text-primary mb-2 text-xs font-semibold">
                 已记录的模型回答
               </p>
               <p className="text-sm leading-7 break-words whitespace-pre-wrap">
@@ -79,11 +79,11 @@ function RecordedResults({
               </p>
             </div>
             {result.passed ? (
-              <p className="mt-4 text-sm text-emerald-800">
+              <p className="text-heritage-approved-foreground mt-4 text-sm">
                 录入内容满足此用例的状态、引用数和必含词要求。
               </p>
             ) : (
-              <ul className="mt-4 list-inside list-disc space-y-1 text-sm text-amber-900">
+              <ul className="text-heritage-disputed-foreground mt-4 list-inside list-disc space-y-1 text-sm">
                 {result.failure_reasons.map((reason) => (
                   <li key={reason}>{manualFailureLabel(reason)}</li>
                 ))}
@@ -120,17 +120,17 @@ export function ManualEvaluations({
     <section aria-label="人工观测评测" className="space-y-6">
       <div>
         <h2 className="text-xl font-semibold">简单测试</h2>
-        <p className="mt-2 text-sm text-[#697a7f]">
+        <p className="text-muted-foreground mt-2 text-sm">
           查看已录入回答的测试结果，也可以粘贴下一次回答再测。
         </p>
       </div>
       {latest && (
         <div className="space-y-4" aria-label="最近一次结果">
           <div
-            className={`flex flex-wrap items-center justify-between gap-4 rounded-lg border p-5 ${complete && latest.passed === latest.total ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"}`}
+            className={`flex flex-wrap items-center justify-between gap-4 rounded-lg border p-5 ${complete && latest.passed === latest.total ? "border-heritage-approved-border bg-heritage-approved-surface" : "border-heritage-disputed-border bg-heritage-disputed-surface"}`}
           >
             <div>
-              <p className="text-xs text-[#53676c]">
+              <p className="text-primary text-xs">
                 {latest.created_by === "local-demo"
                   ? "使用你提供的回答 · 演示记录"
                   : "最近一次人工观测"}
@@ -140,7 +140,7 @@ export function ManualEvaluations({
                   ? `${latest.passed} / ${latest.total} 条规则通过`
                   : "结果记录不完整"}
               </h3>
-              <p className="mt-2 text-xs text-[#697a7f]">
+              <p className="text-muted-foreground mt-2 text-xs">
                 {new Date(latest.created_at).toLocaleString("zh-CN")}
               </p>
             </div>
@@ -148,18 +148,18 @@ export function ManualEvaluations({
               <p className="text-3xl font-semibold">
                 {complete ? formatMetricRate(latest.pass_rate) : "未取得结果"}
               </p>
-              <p className="mt-1 text-xs text-[#53676c]">规则通过率</p>
+              <p className="text-primary mt-1 text-xs">规则通过率</p>
             </div>
           </div>
           <RecordedResults run={latest} cases={cases} />
-          <p className="text-xs leading-6 text-[#697a7f]">
+          <p className="text-muted-foreground text-xs leading-6">
             判定只比较录入状态、引用数和必含词；回答中的史料与出处仍需核验。这条记录没有发起新的模型调用。
           </p>
         </div>
       )}
       <details
         open={!latest}
-        className="rounded-lg border border-[#d7e1e2] bg-white p-5"
+        className="border-border bg-card rounded-lg border p-5"
       >
         <summary className="cursor-pointer font-semibold">
           {latest ? "录入下一次回答" : "填写回答并测试"}
@@ -178,8 +178,8 @@ export function ManualEvaluations({
             return (
               <article key={item.id} className="space-y-3">
                 <h3 className="text-sm font-semibold">{item.name}</h3>
-                <p className="text-sm text-[#53676c]">{item.question}</p>
-                <p className="text-xs text-[#697a7f]">
+                <p className="text-primary text-sm">{item.question}</p>
+                <p className="text-muted-foreground text-xs">
                   期望{item.expected_status === "refused" ? "拒答" : "回答"} ·{" "}
                   {item.min_citations === 0
                     ? "不要求引用"
@@ -200,7 +200,7 @@ export function ManualEvaluations({
                   className={field}
                 />
                 <div className="flex flex-wrap items-end gap-3">
-                  <label className="space-y-1 text-xs text-[#53676c]">
+                  <label className="text-primary space-y-1 text-xs">
                     <span className="block">本次回答状态</span>
                     <select
                       value={value.actual_status}
@@ -218,7 +218,7 @@ export function ManualEvaluations({
                       <option value="answered">本次已回答</option>
                     </select>
                   </label>
-                  <label className="w-28 space-y-1 text-xs text-[#53676c]">
+                  <label className="text-primary w-28 space-y-1 text-xs">
                     <span className="block">有效引用数</span>
                     <input
                       type="number"
@@ -255,7 +255,7 @@ export function ManualEvaluations({
             );
           })}
           {!active.length && (
-            <p className="text-sm text-[#697a7f]">
+            <p className="text-muted-foreground text-sm">
               暂无启用用例，可在下方新增。
             </p>
           )}
@@ -264,20 +264,20 @@ export function ManualEvaluations({
               type="button"
               disabled={saving || !ready}
               onClick={() => void onRun()}
-              className="flex items-center gap-2 rounded-md bg-[#205f68] px-4 py-2 text-sm text-white disabled:opacity-40"
+              className="bg-primary text-primary-foreground flex items-center gap-2 rounded-md px-4 py-2 text-sm disabled:opacity-40"
             >
               <BookCheck className="size-4" />
               {saving ? "正在保存…" : "保存并查看结果"}
             </button>
             {!ready && active.length > 0 && (
-              <p className="text-xs text-[#697a7f]">
+              <p className="text-muted-foreground text-xs">
                 请先填写每条启用用例的回答，并填入非负整数引用数。
               </p>
             )}
           </div>
         </div>
       </details>
-      <details className="rounded-lg border border-[#d7e1e2] bg-white p-5">
+      <details className="border-border bg-card rounded-lg border p-5">
         <summary className="cursor-pointer text-sm font-semibold">
           查看历史记录（{runs.length} 次）
         </summary>
@@ -285,24 +285,24 @@ export function ManualEvaluations({
           {runs.map((run) => (
             <details
               key={run.id}
-              className="rounded-md border border-[#d7e1e2] p-3"
+              className="border-border rounded-md border p-3"
             >
               <summary className="cursor-pointer text-sm">
                 {new Date(run.created_at).toLocaleString("zh-CN")} ·{" "}
                 {run.passed} / {run.total} 通过
               </summary>
-              <p className="my-3 text-xs break-all text-[#697a7f]">
+              <p className="text-muted-foreground my-3 text-xs break-all">
                 知识版本：{run.release_id ?? "未绑定"}
               </p>
               <RecordedResults run={run} cases={cases} />
             </details>
           ))}
           {!runs.length && (
-            <p className="text-sm text-[#697a7f]">尚未保存测试记录。</p>
+            <p className="text-muted-foreground text-sm">尚未保存测试记录。</p>
           )}
         </div>
       </details>
-      <details className="rounded-lg border border-[#d7e1e2] bg-white p-5">
+      <details className="border-border bg-card rounded-lg border p-5">
         <summary className="cursor-pointer text-sm font-semibold">
           高级设置：新增用例
         </summary>

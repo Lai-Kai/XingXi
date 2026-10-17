@@ -290,7 +290,9 @@ test("desktop exploration keeps the map primary and shows one traceable detail s
   await expect(
     pointDetails.getByRole("heading", { name: "永安桥", exact: true }),
   ).toBeVisible();
-  await pointDetails.getByRole("tab", { name: "概览", exact: true }).click();
+  await pointDetails
+    .getByRole("tab", { name: "史料考据", exact: true })
+    .click();
   await expect(
     pointDetails.getByText("估计中心", { exact: true }),
   ).toBeVisible();
@@ -312,10 +314,15 @@ test("desktop exploration keeps the map primary and shows one traceable detail s
       const markerBox = await yonganBridgeMarker.boundingBox();
       const currentMapBox = await mapCanvas.boundingBox();
       if (!markerBox || !currentMapBox) return Number.POSITIVE_INFINITY;
+      const detailBox = await page
+        .locator(".research-map-details")
+        .boundingBox();
+      const exposedRight =
+        detailBox?.x ?? currentMapBox.x + currentMapBox.width;
       return Math.abs(
         markerBox.x +
           markerBox.width / 2 -
-          (currentMapBox.x + currentMapBox.width / 2),
+          (currentMapBox.x + exposedRight) / 2,
       );
     })
     .toBeLessThan(48);
@@ -352,7 +359,9 @@ test("desktop exploration keeps the map primary and shows one traceable detail s
   await expect(
     page.getByText("暂无授权 GLB 三维模型", { exact: true }),
   ).toHaveCount(0);
-  await pointDetails.getByRole("tab", { name: "概览", exact: true }).click();
+  await pointDetails
+    .getByRole("tab", { name: "史料考据", exact: true })
+    .click();
   await expect(page.locator("[data-glb-id]")).toHaveCount(0);
 
   const mapLegend = page.locator('[data-map-legend="true"]');

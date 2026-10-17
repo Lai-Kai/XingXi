@@ -180,7 +180,9 @@ test("a research project becomes a scoped document workspace", async ({
   await page.getByPlaceholder("输入人物、地点、事件或史料原文").fill("范仲淹");
   await page.getByRole("button", { name: "检索", exact: true }).click();
   await expect(page.getByText("范文正公尝游于此。")).toBeVisible();
-  await expect(page.getByRole("link", { name: "查看关联证据" })).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "查看关联资料出处", exact: true }),
+  ).toBeVisible();
 
   const agentLink = page.getByRole("link", { name: "用项目文献研究" });
   await expect(agentLink).toHaveAttribute("href", /project_id=project-1/);

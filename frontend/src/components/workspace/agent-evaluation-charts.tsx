@@ -13,8 +13,7 @@ import {
   type AgentEvaluationSummary,
 } from "@/core/operations/evaluations";
 
-const card =
-  "min-w-0 rounded-xl border border-[#dce5e6] bg-white p-5 shadow-sm";
+const card = "min-w-0 rounded-xl border border-border bg-card p-5 shadow-sm";
 
 export function EvaluationHistoryChart({
   batches,
@@ -44,18 +43,18 @@ export function EvaluationHistoryChart({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="font-semibold">批次稳定性趋势</h3>
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="text-muted-foreground mt-1 text-xs">
             当前历史页 · {batches.length} 个批次 · 点击图形切换批次
           </p>
         </div>
-        <div className="flex gap-3 text-xs text-slate-500">
+        <div className="text-muted-foreground flex gap-3 text-xs">
           <span>▰ 计划数</span>
-          <span className="text-[#276f79]">▰ 通过数</span>
-          <span className="text-emerald-700">● 通过率</span>
+          <span className="text-primary">▰ 通过数</span>
+          <span className="text-heritage-approved-foreground">● 通过率</span>
         </div>
       </div>
       {points.length === 0 ? (
-        <div className="flex h-64 flex-col items-center justify-center gap-3 text-sm text-slate-500">
+        <div className="text-muted-foreground flex h-64 flex-col items-center justify-center gap-3 text-sm">
           <ChartNoAxesCombined className="size-8 text-slate-300" />
           暂无历史批次
         </div>
@@ -82,7 +81,7 @@ export function EvaluationHistoryChart({
                   y={plot.y + plot.height * fraction + 4}
                   textAnchor="end"
                   fontSize="10"
-                  fill="#64748b"
+                  fill="var(--muted-foreground)"
                 >
                   {Number((maxCount * (1 - fraction)).toFixed(1))}
                 </text>
@@ -90,7 +89,7 @@ export function EvaluationHistoryChart({
                   x={682}
                   y={plot.y + plot.height * fraction + 4}
                   fontSize="10"
-                  fill="#64748b"
+                  fill="var(--muted-foreground)"
                 >
                   {100 * (1 - fraction)}%
                 </text>
@@ -123,7 +122,7 @@ export function EvaluationHistoryChart({
                       y={223}
                       textAnchor="middle"
                       fontSize="10"
-                      fill="#64748b"
+                      fill="var(--muted-foreground)"
                     >
                       {point.label}
                     </text>
@@ -175,10 +174,10 @@ export function EvaluationHistoryChart({
           {hovered && (
             <div
               role="tooltip"
-              className="pointer-events-none absolute top-2 left-8 max-w-[85%] rounded-lg border bg-white/95 p-3 text-xs shadow-md"
+              className="bg-card/95 pointer-events-none absolute top-2 left-8 max-w-[85%] rounded-lg border p-3 text-xs shadow-md"
             >
               <p className="truncate font-mono font-medium">{hovered.id}</p>
-              <p className="mt-1 text-slate-500">
+              <p className="text-muted-foreground mt-1">
                 {new Date(hovered.createdAt).toLocaleString()}
               </p>
               <p className="mt-2">
@@ -195,7 +194,7 @@ export function EvaluationHistoryChart({
           )}
         </div>
       )}
-      <p className="text-xs leading-5 text-slate-500">
+      <p className="text-muted-foreground text-xs leading-5">
         {points.length === 1
           ? "仅有一个批次，暂无足够历史数据观察趋势。"
           : "各批次独立统计；用例和版本可能不同，未作同条件版本比较。"}
@@ -224,11 +223,11 @@ export function EvaluationDistributionChart({
   return (
     <section className={card} aria-label="未通过项分布">
       <h3 className="font-semibold">未通过项与未完成项</h3>
-      <p className="mt-1 text-xs text-slate-500">
+      <p className="text-muted-foreground mt-1 text-xs">
         当前批次 · 按执行状态或规则判定分类
       </p>
       {total === 0 ? (
-        <div className="flex h-64 flex-col items-center justify-center gap-3 text-sm text-slate-500">
+        <div className="text-muted-foreground flex h-64 flex-col items-center justify-center gap-3 text-sm">
           {batch && batch.total > 0 ? (
             <>
               <CheckCircle2 className="size-9 text-emerald-500" />
@@ -277,7 +276,7 @@ export function EvaluationDistributionChart({
                 textAnchor="middle"
                 fontSize="30"
                 fontWeight="600"
-                fill="#202b2e"
+                fill="var(--foreground)"
               >
                 {total}
               </text>
@@ -286,7 +285,7 @@ export function EvaluationDistributionChart({
                 y="122"
                 textAnchor="middle"
                 fontSize="11"
-                fill="#64748b"
+                fill="var(--muted-foreground)"
               >
                 未通过 / 未完成
               </text>
@@ -294,7 +293,7 @@ export function EvaluationDistributionChart({
             {tooltip && (
               <div
                 role="tooltip"
-                className="pointer-events-none absolute inset-x-0 bottom-0 rounded-md border bg-white px-2 py-1 text-center text-xs shadow-sm"
+                className="bg-card pointer-events-none absolute inset-x-0 bottom-0 rounded-md border px-2 py-1 text-center text-xs shadow-sm"
               >
                 {tooltip.label} · {tooltip.value} 项 ·{" "}
                 {((tooltip.value / total) * 100).toFixed(1)}%
@@ -322,7 +321,7 @@ export function EvaluationDistributionChart({
           </ul>
         </div>
       )}
-      <p className="text-xs leading-5 text-slate-500">
+      <p className="text-muted-foreground text-xs leading-5">
         分布用于定位待处理记录，不推断失败根因。预期内的超时或取消按规则判定统计。
       </p>
     </section>

@@ -1,0 +1,58 @@
+/* Workspace composition overrides; generated sidebar primitives stay intact. */
+.workspace-skip-link {
+  position: fixed;
+  inset: 0.5rem auto auto 0.5rem;
+  z-index: 100;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: var(--primary-foreground);
+  transform: translateY(-160%);
+}
+
+.workspace-skip-link:focus-visible {
+  transform: translateY(0);
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.workspace-sidebar [data-sidebar="menu-button"][data-active="true"],
+[data-mobile="true"] [data-sidebar="menu-button"][data-active="true"] {
+  box-shadow: inset 3px 0 0 var(--sidebar-primary);
+}
+
+.workspace-sidebar [data-sidebar="menu-button"]:focus-visible,
+[data-mobile="true"] [data-sidebar="menu-button"]:focus-visible {
+  outline: 2px solid var(--sidebar-ring);
+  outline-offset: -2px;
+}
+
+.workspace-sidebar[data-state="collapsed"] [data-sidebar="menu-button"],
+[data-state="collapsed"] > .workspace-sidebar [data-sidebar="menu-button"] {
+  width: 44px !important;
+  height: 44px !important;
+  padding: 14px !important;
+  margin-inline: auto;
+}
+
+/* The wrapper owns viewport height; legacy page containers fill its remainder. */
+.xingxi-workspace [data-slot="sidebar-inset"] > .workspace-page-container {
+  height: 100%;
+  min-height: 0;
+}
+
+[data-mobile="true"] [data-sidebar="menu-button"] {
+  min-height: 44px;
+}
+
+[data-mobile="true"][data-sidebar="sidebar"] {
+  max-width: calc(100vw - 3rem);
+}
+
+@media (pointer: coarse) {
+  .workspace-sidebar [data-sidebar="menu-button"],
+  [data-mobile="true"] [data-sidebar="menu-action"] {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}

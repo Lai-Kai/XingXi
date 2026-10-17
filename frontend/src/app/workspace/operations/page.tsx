@@ -14,6 +14,7 @@ import {
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { WorkbenchGuide } from "@/components/workspace/admin-workbench";
 import {
   BusinessEmptyState,
   BusinessErrorState,
@@ -130,7 +131,7 @@ export default function OperationsPage() {
 
   if (!allowed) {
     return (
-      <main className="size-full overflow-y-auto bg-[#f7fafb]">
+      <main className="admin-workspace size-full overflow-y-auto">
         <div className="mx-auto max-w-7xl px-4 py-8 sm:px-8">
           <BusinessEmptyState
             icon={ShieldCheck}
@@ -143,9 +144,13 @@ export default function OperationsPage() {
   }
 
   return (
-    <main className="size-full overflow-y-auto bg-[#f7fafb] text-[#202b2e]">
+    <main className="admin-workspace size-full overflow-y-auto">
       <BusinessMobileHeader title="运营中心" />
-      <div className="mx-auto min-h-full max-w-7xl px-4 py-7 sm:px-8 lg:px-10 lg:py-10">
+      <div className="admin-workbench mx-auto min-h-full max-w-7xl px-4 py-7 sm:px-8 lg:px-10 lg:py-10">
+        <WorkbenchGuide
+          title="持续治理"
+          steps={["观察真实指标", "核对异常与修订", "追踪版本与评测"]}
+        />
         <div className="flex flex-wrap items-start justify-between gap-4">
           <BusinessPageHeader
             title="运营中心"
@@ -155,7 +160,7 @@ export default function OperationsPage() {
           <button
             type="button"
             onClick={() => void load()}
-            className="flex h-9 items-center gap-2 rounded-md border border-[#cbd8da] bg-white px-3 text-sm hover:bg-[#eef5f5]"
+            className="border-border bg-card hover:bg-secondary flex h-9 items-center gap-2 rounded-md border px-3 text-sm"
           >
             <RefreshCw className="size-4" />
             刷新
@@ -163,7 +168,7 @@ export default function OperationsPage() {
         </div>
 
         <div
-          className="mt-6 flex gap-1 overflow-x-auto border-b border-[#d6e0e2]"
+          className="border-border mt-6 flex gap-1 overflow-x-auto border-b"
           role="tablist"
         >
           {views.map((item) => {
@@ -176,8 +181,8 @@ export default function OperationsPage() {
                 className={cn(
                   "flex h-10 shrink-0 items-center gap-2 border-b-2 px-3 text-sm",
                   view === item.id
-                    ? "border-[#276f79] text-[#174e56]"
-                    : "border-transparent text-[#66787d] hover:text-[#26383c]",
+                    ? "border-primary/50 text-primary"
+                    : "text-muted-foreground hover:text-primary border-transparent",
                 )}
               >
                 <Icon className="size-4" />
@@ -267,14 +272,14 @@ export default function OperationsPage() {
                     }
                   }}
                 />
-                <div className="rounded-xl border border-[#d7e1e2] bg-white p-5">
+                <div className="border-border bg-card rounded-xl border p-5">
                   <h3 className="font-semibold">自动流程评测已移至独立栏目</h3>
-                  <p className="mt-2 text-sm text-[#697a7f]">
+                  <p className="text-muted-foreground mt-2 text-sm">
                     从左侧「Agent 评测」查看批次指标、测试轨迹、证据和复核记录。
                   </p>
                   <Link
                     href="/workspace/evaluations"
-                    className="mt-3 inline-flex items-center gap-2 text-sm font-medium text-[#205f68] hover:underline"
+                    className="text-primary mt-3 inline-flex items-center gap-2 text-sm font-medium hover:underline"
                   >
                     <Target className="size-4" />
                     打开 Agent 评测
@@ -356,17 +361,17 @@ function Overview({
       "二维地图真实交互",
     ],
     ["人工修订量", String(dashboard.manual_correction_count), "追加式修订记录"],
-    ["三维加载成功率", "未接入", "三维完成后启用"],
+    ["三维加载成功率", "未接入", "尚无服务端统计"],
   ];
   return (
     <>
       <div className="flex justify-end">
-        <label className="flex items-center gap-2 text-sm text-[#617277]">
+        <label className="text-muted-foreground flex items-center gap-2 text-sm">
           统计范围
           <select
             value={days}
             onChange={(event) => onDaysChange(Number(event.target.value))}
-            className="h-9 rounded-md border border-[#cad7d9] bg-white px-3"
+            className="border-border bg-card h-9 rounded-md border px-3"
           >
             <option value={7}>近 7 天</option>
             <option value={30}>近 30 天</option>
@@ -378,33 +383,56 @@ function Overview({
         {metrics.map(([label, value, hint]) => (
           <div
             key={label}
-            className="rounded-md border border-[#d7e1e2] bg-white p-4"
+            className="shadow-heritage-card border-border bg-card rounded-xl border p-5"
           >
-            <p className="text-xs text-[#697b80]">{label}</p>
-            <p className="mt-2 text-2xl font-semibold text-[#193f45]">
-              {value}
-            </p>
-            <p className="mt-2 text-xs text-[#7a898d]">{hint}</p>
+            <p className="text-muted-foreground text-xs">{label}</p>
+            <p className="text-primary mt-2 text-2xl font-semibold">{value}</p>
+            <p className="text-muted-foreground mt-2 text-xs">{hint}</p>
           </div>
         ))}
       </div>
-      <section className="mt-7 border-t border-[#d7e1e2] pt-5">
+      <section className="border-border mt-7 border-t pt-5">
         <h2 className="text-base font-semibold">热门实体</h2>
         {dashboard.hot_entities.length ? (
-          <div className="mt-3 divide-y divide-[#e2e9ea] border-y border-[#d7e1e2] bg-white">
+          <div className="divide-border border-border bg-card mt-3 divide-y border-y">
             {dashboard.hot_entities.map((item, index) => (
               <div
                 key={item.entity_id}
-                className="grid grid-cols-[36px_1fr_auto] items-center gap-3 px-4 py-3 text-sm"
+                className="grid grid-cols-[36px_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 text-sm"
               >
-                <span className="text-[#819095]">{index + 1}</span>
+                <span className="text-muted-foreground">{index + 1}</span>
                 <span>{item.name}</span>
-                <span className="text-[#527078]">{item.views} 次</span>
+                <span className="text-primary tabular-nums">
+                  {item.views} 次
+                </span>
+                <svg
+                  viewBox="0 0 100 4"
+                  className="col-start-2 h-2 w-full"
+                  role="img"
+                  aria-label={item.name + " · " + item.views + " 次访问"}
+                >
+                  <rect width="100" height="4" rx="2" fill="var(--secondary)" />
+                  <rect
+                    width={
+                      (Math.max(0, item.views) /
+                        Math.max(
+                          1,
+                          ...dashboard.hot_entities.map((value) => value.views),
+                        )) *
+                      100
+                    }
+                    height="4"
+                    rx="2"
+                    fill="var(--primary)"
+                  />
+                </svg>
               </div>
             ))}
           </div>
         ) : (
-          <p className="mt-3 text-sm text-[#718186]">暂无实体访问数据。</p>
+          <p className="text-muted-foreground mt-3 text-sm">
+            暂无实体访问数据。
+          </p>
         )}
       </section>
     </>
@@ -438,19 +466,19 @@ function TaskPanel({
 
   return (
     <section>
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#d7e1e2] pb-4">
+      <div className="border-border flex flex-wrap items-start justify-between gap-3 border-b pb-4">
         <div>
           <h2 className="text-base font-semibold">后台任务</h2>
-          <p className="mt-1 text-sm text-[#697a7f]">
+          <p className="text-muted-foreground mt-1 text-sm">
             解析、识别、清洗、切分、复核和索引统一显示。
           </p>
         </div>
-        <label className="flex items-center gap-2 text-sm text-[#617277]">
+        <label className="text-muted-foreground flex items-center gap-2 text-sm">
           筛选
           <select
             value={filter}
             onChange={(event) => setFilter(event.target.value as typeof filter)}
-            className="h-9 rounded-md border border-[#cad7d9] bg-white px-3"
+            className="border-border bg-card h-9 rounded-md border px-3"
             aria-label="任务状态筛选"
           >
             <option value="all">全部</option>
@@ -464,15 +492,15 @@ function TaskPanel({
         </label>
       </div>
 
-      <div className="mt-4 divide-y divide-[#dbe5e6] border-y border-[#d7e1e2] bg-white">
+      <div className="divide-border border-border bg-card mt-4 divide-y border-y">
         {visibleTasks.map((task) => (
           <article key={task.id} className="p-4 sm:p-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
-                <h3 className="truncate text-sm font-semibold text-[#193f45]">
+                <h3 className="text-primary truncate text-sm font-semibold">
                   {task.title}
                 </h3>
-                <p className="mt-1 truncate text-xs text-[#748489]">
+                <p className="text-muted-foreground mt-1 truncate text-xs">
                   {task.filename ?? "未记录文件名"} · 任务 {task.id}
                 </p>
               </div>
@@ -480,13 +508,13 @@ function TaskPanel({
             </div>
 
             <div className="mt-4 flex items-center gap-3">
-              <div className="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-[#e7eeee]">
+              <div className="bg-secondary h-2 min-w-0 flex-1 overflow-hidden rounded-full">
                 <div
-                  className="h-full rounded-full bg-[#4e8d96] transition-[width]"
+                  className="bg-primary h-full rounded-full transition-[width]"
                   style={{ width: `${task.progress_percent}%` }}
                 />
               </div>
-              <span className="w-12 text-right text-xs text-[#607176]">
+              <span className="text-muted-foreground w-12 text-right text-xs">
                 {task.progress_percent}%
               </span>
             </div>
@@ -498,22 +526,22 @@ function TaskPanel({
                   className={cn(
                     "min-w-0 rounded-md border px-3 py-2",
                     step.status === "failed"
-                      ? "border-[#e3bdbd] bg-[#fdf1f1]"
+                      ? "border-border bg-card"
                       : step.status === "completed"
-                        ? "border-[#cce1d4] bg-[#f2f8f3]"
+                        ? "border-border bg-card"
                         : step.status === "running"
-                          ? "border-[#c6dfe2] bg-[#f0f8f9]"
-                          : "border-[#e0e7e8] bg-[#fafcfc]",
+                          ? "border-border bg-card"
+                          : "border-border bg-card",
                   )}
                 >
                   <div className="flex items-center justify-between gap-2 text-xs">
                     <span className="truncate font-medium">{step.label}</span>
-                    <span className="shrink-0 text-[#718186]">
+                    <span className="text-muted-foreground shrink-0">
                       {step.attempt_count} 次
                     </span>
                   </div>
                   {step.error_message && (
-                    <p className="mt-1 line-clamp-2 text-xs text-[#934747]">
+                    <p className="text-heritage-rejected-foreground mt-1 line-clamp-2 text-xs">
                       {step.error_message}
                     </p>
                   )}
@@ -522,8 +550,8 @@ function TaskPanel({
             </div>
 
             {task.status === "failed" && (
-              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-[#e3bdbd] bg-[#fdf4f4] px-3 py-2.5">
-                <div className="min-w-0 text-sm text-[#843f3f]">
+              <div className="border-border bg-card mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border px-3 py-2.5">
+                <div className="text-heritage-rejected-foreground min-w-0 text-sm">
                   <span className="font-medium">
                     {task.failure_step_label ?? "任务"}
                   </span>
@@ -543,7 +571,7 @@ function TaskPanel({
                     type="button"
                     disabled={saving}
                     onClick={() => void onRetry(task.id)}
-                    className="inline-flex h-9 shrink-0 items-center gap-2 rounded-md bg-[#205f68] px-3 text-sm text-white disabled:opacity-40"
+                    className="bg-primary text-primary-foreground inline-flex h-9 shrink-0 items-center gap-2 rounded-md px-3 text-sm disabled:opacity-40"
                   >
                     <RefreshCw className="size-4" />
                     {saving
@@ -551,11 +579,11 @@ function TaskPanel({
                       : `重试（第 ${task.retry_count + 1} 次）`}
                   </button>
                 ) : task.retryable ? (
-                  <span className="shrink-0 text-xs text-[#843f3f]">
+                  <span className="text-heritage-rejected-foreground shrink-0 text-xs">
                     请联系资料管理员恢复任务
                   </span>
                 ) : (
-                  <span className="shrink-0 text-xs text-[#843f3f]">
+                  <span className="text-heritage-rejected-foreground shrink-0 text-xs">
                     需要修正资料后重新入库
                   </span>
                 )}
@@ -564,7 +592,9 @@ function TaskPanel({
           </article>
         ))}
         {!visibleTasks.length && (
-          <p className="p-6 text-sm text-[#718186]">暂无符合条件的后台任务。</p>
+          <p className="text-muted-foreground p-6 text-sm">
+            暂无符合条件的后台任务。
+          </p>
         )}
       </div>
     </section>
@@ -611,7 +641,7 @@ function CorrectionsPanel({
         }}
       >
         <h2 className="text-base font-semibold">登记人工修订</h2>
-        <p className="text-sm text-[#697a7f]">
+        <p className="text-muted-foreground text-sm">
           修订记录只追加、不覆盖，用于追踪每次知识变化。
         </p>
         <select
@@ -658,7 +688,7 @@ function CorrectionsPanel({
         />
         <button
           disabled={saving}
-          className="flex h-9 items-center justify-center gap-2 rounded-md bg-[#205f68] text-sm text-white disabled:opacity-40"
+          className="bg-primary text-primary-foreground flex h-9 items-center justify-center gap-2 rounded-md text-sm disabled:opacity-40"
         >
           <Save className="size-4" />
           保存修订记录
@@ -666,25 +696,27 @@ function CorrectionsPanel({
       </form>
       <section>
         <h2 className="text-base font-semibold">历史修订</h2>
-        <div className="mt-3 divide-y divide-[#dde5e6] border-y border-[#d7e1e2] bg-white">
+        <div className="divide-border border-border bg-card mt-3 divide-y border-y">
           {records.map((item) => (
             <div key={item.id} className="p-4">
               <div className="flex flex-wrap justify-between gap-2">
                 <span className="text-sm font-medium">
                   {item.target_type} · {item.target_id}
                 </span>
-                <span className="text-xs text-[#748489]">
+                <span className="text-muted-foreground text-xs">
                   {new Date(item.created_at).toLocaleString("zh-CN")}
                 </span>
               </div>
-              <p className="mt-2 text-sm text-[#52666b]">{item.summary}</p>
-              <p className="mt-2 font-mono text-xs text-[#7b898d]">
+              <p className="text-primary mt-2 text-sm">{item.summary}</p>
+              <p className="text-muted-foreground mt-2 font-mono text-xs">
                 {JSON.stringify(item.before)} → {JSON.stringify(item.after)}
               </p>
             </div>
           ))}
           {!records.length && (
-            <p className="p-4 text-sm text-[#718186]">暂无人工修订记录。</p>
+            <p className="text-muted-foreground p-4 text-sm">
+              暂无人工修订记录。
+            </p>
           )}
         </div>
       </section>
@@ -706,7 +738,7 @@ function VersionsPanel({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-base font-semibold">知识、图谱与地图资产版本</h2>
-          <p className="mt-1 text-sm text-[#697a7f]">
+          <p className="text-muted-foreground mt-1 text-sm">
             每个知识发布版本绑定一份不可变的图谱和二维地图清单，可核验、可回溯。
           </p>
         </div>
@@ -714,14 +746,14 @@ function VersionsPanel({
           type="button"
           disabled={saving}
           onClick={() => void onReconcile()}
-          className="flex h-9 items-center gap-2 rounded-md border border-[#276f79] px-3 text-sm text-[#205f68] disabled:opacity-40"
+          className="border-primary/50 text-primary flex h-9 items-center gap-2 rounded-md border px-3 text-sm disabled:opacity-40"
         >
           <RefreshCw className="size-4" />
           同步缺失版本
         </button>
       </div>
-      <div className="mt-4 overflow-x-auto border-y border-[#d7e1e2] bg-white">
-        <div className="grid min-w-[820px] grid-cols-[110px_180px_100px_110px_1fr_150px] gap-3 border-b bg-[#eff5f5] px-4 py-3 text-xs text-[#607176]">
+      <div className="border-border bg-card mt-4 overflow-x-auto border-y">
+        <div className="bg-secondary text-muted-foreground grid min-w-[820px] grid-cols-[110px_180px_100px_110px_1fr_150px] gap-3 border-b px-4 py-3 text-xs">
           <span>知识版本</span>
           <span>发布 ID</span>
           <span>图谱实体</span>
@@ -755,13 +787,13 @@ function VersionsPanel({
               {item.graph_manifest_sha256.slice(0, 12)} /{" "}
               {item.map_manifest_sha256.slice(0, 12)}
             </span>
-            <span className="text-xs text-[#748489]">
+            <span className="text-muted-foreground text-xs">
               {new Date(item.created_at).toLocaleString("zh-CN")}
             </span>
           </div>
         ))}
         {!versions.length && (
-          <p className="p-5 text-sm text-[#718186]">
+          <p className="text-muted-foreground p-5 text-sm">
             暂无资产快照。发布知识版本后会自动生成，也可点击“同步缺失版本”。
           </p>
         )}

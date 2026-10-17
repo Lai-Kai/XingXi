@@ -41,6 +41,7 @@ const config = {
   },
   async rewrites() {
     const rewrites = [];
+    const fallback = [];
     const gatewayURL = getInternalServiceURL(
       "DEER_FLOW_INTERNAL_GATEWAY_BASE_URL",
       "http://127.0.0.1:8001",
@@ -82,13 +83,15 @@ const config = {
       // NOTE: this must come AFTER the /api/langgraph rewrite above so that
       // LangGraph-compatible routes keep their public prefix while Gateway
       // receives its native /api/* paths.
-      rewrites.push({
+      fallback.push({
         source: "/api/:path*",
         destination: `${gatewayURL}/api/:path*`,
       });
     }
 
-    return rewrites;
+    // App Router streaming handlers (including dynamic reconstruction paths)
+    // must run before the generic Gateway fallback.
+    return { beforeFiles: [], afterFiles: rewrites, fallback };
   },
 };
 

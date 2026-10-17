@@ -16,7 +16,13 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
+import {
+  BusinessButton,
+  BusinessSkeleton,
+  BusinessTextarea,
+} from "@/components/workspace/business-controls";
 import { BusinessMobileHeader } from "@/components/workspace/business-page";
+import { ResearchHero } from "@/components/workspace/research-hero";
 import { useI18n } from "@/core/i18n/hooks";
 import {
   type DailyResearchHistory,
@@ -30,6 +36,7 @@ import {
   type XingxiChatScope,
   xingxiChatHref,
 } from "@/core/threads/xingxi-entry";
+import { isIMEComposing } from "@/lib/ime";
 import { cn } from "@/lib/utils";
 
 type FeedTab = "trends" | "latest" | "collections";
@@ -139,6 +146,7 @@ export default function XingxiHomePage() {
     null,
   );
   const [showDailyHistory, setShowDailyHistory] = useState(false);
+  const [historyDate, setHistoryDate] = useState("all");
 
   useEffect(() => {
     document.title = `${t.pages.newChat} - ${t.pages.appName}`;
@@ -198,32 +206,39 @@ export default function XingxiHomePage() {
           : dailyFeed
             ? [dailyFeed]
             : [];
-      return feeds.flatMap((feed) =>
-        feed.items.map<ResearchItem>((item) => ({
-          id: `${feed.generated_for}-${item.id}`,
-          tab: "trends",
-          title: item.title,
-          date: feed.generated_for,
-          source: item.source_basis,
-          tag: item.tag,
-          summary: item.summary,
-          prompt: item.prompt,
-          scope: {
-            documentIds: item.sources?.map((source) => source.document_id),
-            evidenceIds: item.sources?.map((source) => source.evidence_id),
-            releaseId: item.knowledge_release_id,
-            retrievalQuery: item.retrieval_query,
-          },
-          sourceCount: item.sources?.length ?? item.evidence_count,
-          context: [item.time_label, item.place, ...(item.people ?? [])]
-            .filter(Boolean)
-            .join(" · "),
-          sources: item.sources ?? [],
-        })),
-      );
+      return feeds
+        .filter(
+          (feed) =>
+            !showDailyHistory ||
+            historyDate === "all" ||
+            feed.generated_for === historyDate,
+        )
+        .flatMap((feed) =>
+          feed.items.map<ResearchItem>((item) => ({
+            id: `${feed.generated_for}-${item.id}`,
+            tab: "trends",
+            title: item.title,
+            date: feed.generated_for,
+            source: item.source_basis,
+            tag: item.tag,
+            summary: item.summary,
+            prompt: item.prompt,
+            scope: {
+              documentIds: item.sources?.map((source) => source.document_id),
+              evidenceIds: item.sources?.map((source) => source.evidence_id),
+              releaseId: item.knowledge_release_id,
+              retrievalQuery: item.retrieval_query,
+            },
+            sourceCount: item.sources?.length ?? item.evidence_count,
+            context: [item.time_label, item.place, ...(item.people ?? [])]
+              .filter(Boolean)
+              .join(" · "),
+            sources: item.sources ?? [],
+          })),
+        );
     }
     return researchItems.filter((item) => item.tab === tab);
-  }, [dailyFeed, dailyHistory, showDailyHistory, tab]);
+  }, [dailyFeed, dailyHistory, showDailyHistory, tab, historyDate]);
 
   async function toggleDailyHistory() {
     if (showDailyHistory) {
@@ -264,338 +279,416 @@ export default function XingxiHomePage() {
   }
 
   return (
-    <main className="size-full overflow-y-auto bg-[#edf4f5] text-[#20282b]">
+    <main className="research-home bg-background text-foreground size-full overflow-y-auto">
       <BusinessMobileHeader title="文史检索" />
-
-      <section className="min-h-full px-4 py-9 sm:px-7 lg:px-10 lg:py-12">
-        <div className="mx-auto max-w-6xl">
-          <div className="mx-auto max-w-4xl text-center">
-            <div className="mb-3 flex flex-wrap items-center justify-center gap-2">
-              <p className="text-xs font-medium text-[#247f8c]">
-                吴文化 · 木渎地域文史
-              </p>
-            </div>
-            <h1 className="text-2xl font-semibold text-[#202b2e] sm:text-4xl">
-              今天想查阅哪一段木渎历史？
-            </h1>
-
+      <div className="mx-auto max-w-[1280px] px-4 py-5 sm:px-7 sm:py-8 lg:px-10">
+        <div className="mx-auto max-w-[960px]">
+          <ResearchHero>
             <form
-              className="mt-8 rounded-md border border-[#cbd9db] bg-white p-3 text-left shadow-[0_16px_38px_rgba(31,72,78,0.07)] sm:p-4"
+              className="bg-card/95 shadow-heritage-card mt-6 rounded-xl border p-3 sm:p-4"
               onSubmit={(event) => {
                 event.preventDefault();
                 submitResearch();
               }}
             >
-              <textarea
+              <BusinessTextarea
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey) {
+                  if (
+                    event.key === "Enter" &&
+                    !event.shiftKey &&
+                    !isIMEComposing(event)
+                  ) {
                     event.preventDefault();
                     submitResearch();
                   }
                 }}
                 aria-label="研究问题"
                 placeholder="例如：乾隆为什么多次到木渎？"
-                className="min-h-28 w-full resize-none bg-transparent px-1 py-1 text-sm leading-6 outline-none placeholder:text-[#8b999d] sm:min-h-32 sm:text-base"
+                className="min-h-24 resize-none border-0 bg-transparent px-2 shadow-none sm:text-base"
               />
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="flex h-9 items-center gap-1.5 px-2 text-xs font-medium text-[#40575d] sm:text-sm">
-                  <Bot className="size-4 text-[#247f8c]" />
-                  星羲
+              <div className="mt-2 flex flex-wrap items-center gap-2 border-t pt-3">
+                <span className="text-primary inline-flex items-center gap-1.5 px-2 text-sm">
+                  <Bot className="size-4" />
+                  星羲文史助手
                 </span>
-                <button
+                <BusinessButton
                   type="submit"
                   aria-label="开始研究"
                   disabled={!query.trim()}
-                  className="ml-auto flex size-10 shrink-0 items-center justify-center rounded-full bg-[#20282b] text-white transition hover:bg-[#247f8c] disabled:cursor-not-allowed disabled:opacity-35"
+                  className="ml-auto min-h-11 gap-2"
                 >
-                  <ArrowUp className="size-5" />
-                </button>
+                  <span>开始考据</span>
+                  <ArrowUp className="size-4" />
+                </BusinessButton>
               </div>
             </form>
-          </div>
-
-          <div className="relative mt-9 flex flex-col gap-3 border-b border-[#cfdcde] pb-4 sm:flex-row sm:items-center sm:justify-between">
             <div
-              className="flex w-fit rounded-md bg-[#dfe8ea] p-1"
-              role="tablist"
-              aria-label="研究动态"
+              className="mt-4 flex flex-wrap gap-2"
+              aria-label="文史研究方向"
             >
-              {tabs.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={tab === item.id}
-                  onClick={() => setTab(item.id)}
-                  className={cn(
-                    "h-8 rounded px-4 text-sm transition-colors",
-                    tab === item.id
-                      ? "bg-white font-medium text-[#176d79] shadow-sm"
-                      : "text-[#64757a] hover:text-[#20282b]",
-                  )}
+              {["古迹", "方志", "人物", "园林", "水系"].map((topic) => (
+                <BusinessButton
+                  key={topic}
+                  size="sm"
+                  variant="outline"
+                  className="bg-card/85 min-h-9 rounded-full"
+                  onClick={() =>
+                    setQuery((current) =>
+                      current
+                        ? `${current} ${topic}`
+                        : `请考证木渎${topic}，并列出可核验的出处。`,
+                    )
+                  }
                 >
-                  {item.label}
-                </button>
+                  {topic}
+                </BusinessButton>
               ))}
             </div>
-            <button
-              type="button"
-              aria-expanded={settingsOpen}
-              onClick={() => setSettingsOpen((open) => !open)}
-              className="flex h-9 w-fit items-center gap-2 rounded-full border border-[#8ebbc1] bg-[#e8f3f4] px-4 text-sm text-[#176d79] hover:bg-[#dcecee]"
-            >
-              <Settings2 className="size-4" />
-              个性化设置
-            </button>
+          </ResearchHero>
 
-            {settingsOpen && (
-              <div className="absolute top-full right-0 z-10 mt-2 w-full max-w-sm rounded-md border border-[#ccdadd] bg-white p-4 shadow-lg">
-                <p className="text-sm font-medium">关注的研究方向</p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {["古迹", "方志", "人物", "园林", "水系"].map((item) => {
-                    const active = preferences.includes(item);
-                    return (
-                      <button
-                        key={item}
-                        type="button"
-                        aria-pressed={active}
-                        onClick={() => togglePreference(item)}
-                        className={cn(
-                          "flex h-8 items-center gap-1 rounded border px-3 text-xs",
-                          active
-                            ? "border-[#70aeb7] bg-[#e5f1f2] text-[#175e68]"
-                            : "border-[#dce5e6] text-[#607176]",
-                        )}
-                      >
-                        {active && <Check className="size-3.5" />}
-                        {item}
-                      </button>
-                    );
-                  })}
-                </div>
+          <section className="mt-8" aria-label="研究动态">
+            <div className="relative flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+              <div
+                role="tablist"
+                aria-label="研究动态"
+                className="bg-muted flex max-w-full gap-1 overflow-x-auto rounded-lg p-1"
+              >
+                {tabs.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    role="tab"
+                    id={`feed-tab-${item.id}`}
+                    aria-controls="research-feed"
+                    aria-selected={tab === item.id}
+                    tabIndex={tab === item.id ? 0 : -1}
+                    onClick={() => setTab(item.id)}
+                    onKeyDown={(event) => {
+                      if (
+                        !["ArrowLeft", "ArrowRight", "Home", "End"].includes(
+                          event.key,
+                        )
+                      )
+                        return;
+                      event.preventDefault();
+                      const current = tabs.findIndex(
+                        (candidate) => candidate.id === item.id,
+                      );
+                      const index =
+                        event.key === "Home"
+                          ? 0
+                          : event.key === "End"
+                            ? tabs.length - 1
+                            : (current +
+                                (event.key === "ArrowRight" ? 1 : -1) +
+                                tabs.length) %
+                              tabs.length;
+                      const next = tabs[index]!;
+                      setTab(next.id);
+                      document.getElementById(`feed-tab-${next.id}`)?.focus();
+                    }}
+                    className={cn(
+                      "research-touch focus-visible:ring-ring min-h-10 shrink-0 rounded-md px-3 text-sm outline-none focus-visible:ring-2 sm:px-4",
+                      tab === item.id
+                        ? "bg-card text-primary shadow-sm"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {item.label}
+                  </button>
+                ))}
               </div>
-            )}
-          </div>
-
-          <div className="space-y-4 py-5">
-            {tab === "trends" &&
-              dailyFeedLoading &&
-              visibleItems.length === 0 && (
+              <BusinessButton
+                variant="outline"
+                aria-expanded={settingsOpen}
+                aria-controls="research-preferences"
+                onClick={() => setSettingsOpen((open) => !open)}
+                className="gap-2"
+              >
+                <Settings2 className="size-4" />
+                个性化设置
+              </BusinessButton>
+              {settingsOpen && (
                 <div
-                  role="status"
-                  aria-label="正在加载今日选题"
-                  className="space-y-4"
+                  id="research-preferences"
+                  className="bg-card shadow-heritage-overlay absolute top-full right-0 z-20 mt-2 w-full max-w-sm rounded-xl border p-4"
                 >
-                  {[1, 2, 3, 4].map((item) => (
-                    <div
-                      key={item}
-                      className="animate-pulse rounded-md border border-[#d2dfe1] bg-white p-5"
-                    >
-                      <div className="h-3 w-40 rounded bg-[#e4ecec]" />
-                      <div className="mt-4 h-6 w-3/4 rounded bg-[#e4ecec]" />
-                      <div className="mt-3 h-4 w-full rounded bg-[#edf2f2]" />
-                      <div className="mt-2 h-4 w-2/3 rounded bg-[#edf2f2]" />
-                    </div>
-                  ))}
+                  <p className="text-sm font-medium">关注的研究方向</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {["古迹", "方志", "人物", "园林", "水系"].map((item) => (
+                      <BusinessButton
+                        key={item}
+                        size="sm"
+                        variant={
+                          preferences.includes(item) ? "secondary" : "outline"
+                        }
+                        aria-pressed={preferences.includes(item)}
+                        onClick={() => togglePreference(item)}
+                      >
+                        {preferences.includes(item) && (
+                          <Check className="size-3.5" />
+                        )}
+                        {item}
+                      </BusinessButton>
+                    ))}
+                  </div>
+                  <BusinessButton
+                    variant="ghost"
+                    size="sm"
+                    className="mt-3"
+                    onClick={() => setSettingsOpen(false)}
+                  >
+                    收起设置
+                  </BusinessButton>
                 </div>
               )}
-            {tab === "trends" && dailyFeedError && visibleItems.length > 0 && (
-              <div
-                role="status"
-                className="rounded-md border border-[#e2d9b8] bg-[#fffaf0] px-3 py-2 text-sm text-[#755f26]"
-              >
-                {dailyFeedError}
-              </div>
-            )}
-            {tab === "trends" &&
-              !dailyFeedLoading &&
-              dailyFeedError &&
-              visibleItems.length === 0 && (
-                <div role="alert" className="py-10 text-center">
-                  <p className="text-sm text-[#607176]">{dailyFeedError}</p>
-                  <button
-                    type="button"
+            </div>
+            <div className="text-muted-foreground flex flex-wrap items-center justify-between gap-2 py-4 text-xs">
+              <span>
+                {tab === "trends"
+                  ? "循着出处，发现今日可研读的课题"
+                  : "既有文献专题线索，实时收录状态以文献库为准"}
+              </span>
+              {tab === "trends" && dailyFeed && (
+                <span className="inline-flex items-center gap-1">
+                  <CalendarDays className="size-3.5" />
+                  {dailyFeed.generated_for}
+                </span>
+              )}
+            </div>
+            <div
+              id="research-feed"
+              role="tabpanel"
+              aria-labelledby={`feed-tab-${tab}`}
+              className="space-y-4 pb-6"
+            >
+              {tab === "trends" && showDailyHistory && dailyHistory && (
+                <label className="text-muted-foreground flex flex-wrap items-center gap-2 text-sm">
+                  选题日期
+                  <select
+                    aria-label="选题日期"
+                    className="field max-w-64"
+                    value={historyDate}
+                    onChange={(event) => setHistoryDate(event.target.value)}
+                  >
+                    <option value="all">全部已加载日期</option>
+                    {[dailyHistory.current, ...dailyHistory.previous].map(
+                      (feed) => (
+                        <option
+                          key={feed.generated_for}
+                          value={feed.generated_for}
+                        >
+                          {feed.generated_for}
+                        </option>
+                      ),
+                    )}
+                  </select>
+                </label>
+              )}
+              {tab === "trends" &&
+                dailyFeedLoading &&
+                visibleItems.length === 0 && (
+                  <div
+                    role="status"
+                    aria-label="正在加载今日选题"
+                    className="grid gap-4 sm:grid-cols-2"
+                  >
+                    {[1, 2, 3, 4].map((item) => (
+                      <div
+                        key={item}
+                        className="bg-card space-y-4 rounded-xl border p-5"
+                      >
+                        <BusinessSkeleton className="h-3 w-28" />
+                        <BusinessSkeleton className="h-6 w-3/4" />
+                        <BusinessSkeleton className="h-16 w-full" />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              {tab === "trends" && dailyFeedError && (
+                <div
+                  role={visibleItems.length ? "status" : "alert"}
+                  className="bg-heritage-pending-surface text-heritage-pending-foreground flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3 text-sm"
+                >
+                  <span>{dailyFeedError}</span>
+                  <BusinessButton
+                    variant="outline"
+                    size="sm"
                     onClick={() =>
                       setDailyFeedAttempt((attempt) => attempt + 1)
                     }
-                    className="mt-3 h-9 rounded border border-[#8ebbc1] px-4 text-sm text-[#176d79] hover:bg-white"
                   >
                     重新加载
-                  </button>
+                  </BusinessButton>
                 </div>
               )}
-            {tab === "trends" &&
-              !dailyFeedLoading &&
-              !dailyFeedError &&
-              visibleItems.length === 0 && (
-                <div role="status" className="py-10 text-center">
-                  <p className="text-sm text-[#607176]">暂无今日选题</p>
-                </div>
-              )}
-            {visibleItems.map((item) => (
-              <article
-                key={item.id}
-                className="grid gap-5 rounded-md border border-[#d2dfe1] bg-white p-5 shadow-[0_8px_24px_rgba(44,76,82,0.04)] sm:grid-cols-[minmax(0,1fr)_138px]"
-              >
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-[#66777b]">
-                    <span>{item.date}</span>
-                    <span>{item.source}</span>
-                    {item.context && <span>{item.context}</span>}
-                    <span className="rounded-full bg-[#e0eef0] px-2.5 py-1 text-[#176d79]">
-                      {item.tag}
-                    </span>
-                    {item.sourceCount !== undefined && (
-                      <span>资料依据 {item.sourceCount} 条</span>
-                    )}
-                  </div>
-                  <Link
-                    href={xingxiChatHref(
-                      item.prompt ??
-                        `请围绕“${item.title}”开展研究，并列出可核验的原始出处。`,
-                      item.scope,
-                    )}
-                    className="mt-3 block text-lg leading-7 font-semibold hover:text-[#176d79] sm:text-xl"
+              {tab === "trends" &&
+                !dailyFeedLoading &&
+                !dailyFeedError &&
+                visibleItems.length === 0 && (
+                  <p
+                    role="status"
+                    className="text-muted-foreground py-10 text-center"
                   >
-                    {item.title}
-                  </Link>
-                  <p className="mt-2 max-w-4xl text-sm leading-6 text-[#4f6267] sm:text-[15px]">
-                    {item.summary}
+                    暂无今日选题
                   </p>
-                  {item.sources?.length ? (
-                    <p className="mt-2 text-xs leading-5 text-[#66777b]">
-                      资料依据：
-                      {item.sources.slice(0, 2).map((source, index) => (
-                        <span key={source.evidence_id}>
-                          {index > 0 ? "；" : ""}
-                          <Link
-                            href={`/workspace/library?evidence_id=${encodeURIComponent(source.evidence_id)}`}
-                            className="underline decoration-[#9eb8bc] underline-offset-2 hover:text-[#176d79]"
-                          >
-                            {source.document_title}（{sourcePageLabel(source)}）
-                          </Link>
-                        </span>
-                      ))}
-                    </p>
-                  ) : null}
-                  <div className="mt-4 flex flex-wrap items-center gap-2">
-                    <Link
-                      href={xingxiChatHref(
-                        item.prompt ??
-                          `请介绍“${item.title}”，并引用本地资料。`,
-                        item.scope,
-                      )}
-                      className="inline-flex h-9 items-center rounded-md bg-[#1f696f] px-3 text-sm font-medium text-white hover:bg-[#18565c]"
-                    >
-                      开始了解
-                    </Link>
-                    <button
-                      type="button"
-                      aria-label={`推荐 ${item.title}`}
-                      aria-pressed={votes[item.title] === "up"}
-                      onClick={() =>
-                        setVotes((current) => ({
-                          ...current,
-                          [item.title]: "up",
-                        }))
-                      }
-                      className={cn(
-                        "flex h-8 items-center gap-1.5 rounded-l-full border px-3 text-xs",
-                        votes[item.title] === "up"
-                          ? "border-[#70aeb7] bg-[#e5f1f2] text-[#175e68]"
-                          : "border-[#d3dfe0] text-[#65767a] hover:bg-white",
-                      )}
-                    >
-                      <ThumbsUp className="size-3.5" />
-                      {item.count ?? "推荐"}
-                    </button>
-                    <button
-                      type="button"
-                      aria-label={`减少推荐 ${item.title}`}
-                      aria-pressed={votes[item.title] === "down"}
-                      onClick={() =>
-                        setVotes((current) => ({
-                          ...current,
-                          [item.title]: "down",
-                        }))
-                      }
-                      className={cn(
-                        "flex size-8 items-center justify-center rounded-r-full border",
-                        votes[item.title] === "down"
-                          ? "border-[#70aeb7] bg-[#e5f1f2] text-[#175e68]"
-                          : "border-[#d3dfe0] text-[#65767a] hover:bg-white",
-                      )}
-                    >
-                      <ThumbsDown className="size-3.5" />
-                    </button>
-                  </div>
-                </div>
-
-                <Link
-                  href={xingxiChatHref(
-                    `查找“${item.title}”对应的原始文献和页码。`,
-                    item.scope,
-                  )}
-                  aria-label={`查看 ${item.title} 的文献线索`}
-                  className="hidden h-40 rounded-md border border-[#cbd8da] bg-[#fbfdfd] p-3 shadow-sm transition hover:border-[#70aeb7] sm:block"
-                >
-                  <div className="flex items-center justify-between border-b border-[#d9e2e3] pb-2 text-[9px] text-[#66777b]">
-                    <FileText className="size-3.5" />
-                    <span>文献摘录</span>
-                  </div>
-                  <div className="mt-3 space-y-2">
-                    <div className="h-1.5 w-full bg-[#d6dfe0]" />
-                    <div className="h-1.5 w-5/6 bg-[#d6dfe0]" />
-                    <div className="h-1.5 w-full bg-[#e2e8e9]" />
-                    <div className="h-1.5 w-3/4 bg-[#d6dfe0]" />
-                    <div className="mt-3 grid grid-cols-3 gap-1">
-                      <div className="h-10 bg-[#dbe9ea]" />
-                      <div className="col-span-2 h-10 border border-[#dbe3e4]" />
+                )}
+              <div className="grid gap-4 sm:grid-cols-2">
+                {visibleItems.map((item) => (
+                  <article
+                    key={item.id}
+                    className="research-topic bg-card shadow-heritage-card hover:shadow-heritage-overlay flex min-w-0 flex-col rounded-xl border p-5 transition-shadow"
+                  >
+                    <div className="text-muted-foreground mb-3 flex flex-wrap items-center justify-between gap-2 text-xs">
+                      <span>{item.date}</span>
+                      <span className="bg-secondary text-secondary-foreground rounded-full px-2.5 py-1">
+                        {item.tag}
+                      </span>
                     </div>
-                  </div>
-                </Link>
-              </article>
-            ))}
-            {tab === "trends" && showDailyHistory && dailyHistory && (
-              <p className="pt-2 text-center text-xs text-[#75868a]">
-                已显示今日全部 {dailyHistory.current.items.length} 条及最近
-                {dailyHistory.history_days - 1} 天选题
-              </p>
-            )}
-          </div>
-
-          {tab === "trends" && !dailyFeedLoading && !dailyFeedError && (
-            <div className="flex flex-col items-center py-5">
-              {dailyHistoryError && (
-                <p role="alert" className="mb-3 text-xs text-amber-800">
-                  {dailyHistoryError}
+                    <h2 className="font-serif text-lg leading-7 font-semibold">
+                      <Link
+                        className="focus-visible:ring-ring hover:text-primary rounded focus-visible:ring-2 focus-visible:outline-none"
+                        href={xingxiChatHref(
+                          item.prompt ??
+                            `请围绕“${item.title}”开展研究，并列出可核验的原始出处。`,
+                          item.scope,
+                        )}
+                      >
+                        {item.title}
+                      </Link>
+                    </h2>
+                    {item.context && (
+                      <p className="text-muted-foreground mt-2 text-xs">
+                        {item.context}
+                      </p>
+                    )}
+                    <p className="text-muted-foreground mt-3 flex-1 text-sm leading-6">
+                      {item.summary}
+                    </p>
+                    <div className="bg-muted/45 mt-4 rounded-lg p-3 text-xs leading-5">
+                      <p className="text-muted-foreground flex items-center gap-1.5">
+                        <FileText className="size-3.5 shrink-0" />
+                        <span>{item.source}</span>
+                      </p>
+                      {item.sourceCount !== undefined && (
+                        <p className="text-primary mt-1 font-medium">
+                          资料依据 {item.sourceCount} 条
+                        </p>
+                      )}
+                      {item.sources?.slice(0, 2).map((source) => (
+                        <Link
+                          key={source.evidence_id}
+                          href={`/workspace/library?evidence_id=${encodeURIComponent(source.evidence_id)}`}
+                          className="text-primary mt-1 block break-words underline underline-offset-4"
+                        >
+                          {source.document_title}（{sourcePageLabel(source)}）
+                        </Link>
+                      ))}
+                    </div>
+                    <div className="mt-4 flex flex-wrap items-center gap-2 border-t pt-3">
+                      <Link
+                        className="research-touch bg-primary text-primary-foreground inline-flex min-h-10 items-center gap-2 rounded-md px-3 text-sm"
+                        href={xingxiChatHref(
+                          item.prompt ??
+                            `请介绍“${item.title}”，并引用本地资料。`,
+                          item.scope,
+                        )}
+                      >
+                        开始了解<span aria-hidden="true">↗</span>
+                      </Link>
+                      <Link
+                        href={xingxiChatHref(
+                          `查找“${item.title}”对应的原始文献和页码。`,
+                          item.scope,
+                        )}
+                        aria-label={`查看 ${item.title} 的文献线索`}
+                        className="text-primary research-touch inline-flex min-h-10 items-center rounded px-2 text-xs underline underline-offset-4"
+                      >
+                        文献线索
+                      </Link>
+                      <div className="ml-auto flex gap-1">
+                        <BusinessButton
+                          size="icon"
+                          variant="ghost"
+                          aria-label={`推荐 ${item.title}`}
+                          aria-pressed={votes[item.title] === "up"}
+                          className={cn(
+                            "size-10",
+                            votes[item.title] === "up" &&
+                              "bg-secondary text-primary",
+                          )}
+                          onClick={() =>
+                            setVotes((current) => ({
+                              ...current,
+                              [item.title]: "up",
+                            }))
+                          }
+                        >
+                          <ThumbsUp className="size-4" />
+                        </BusinessButton>
+                        <BusinessButton
+                          size="icon"
+                          variant="ghost"
+                          aria-label={`减少推荐 ${item.title}`}
+                          aria-pressed={votes[item.title] === "down"}
+                          className={cn(
+                            "size-10",
+                            votes[item.title] === "down" &&
+                              "bg-secondary text-primary",
+                          )}
+                          onClick={() =>
+                            setVotes((current) => ({
+                              ...current,
+                              [item.title]: "down",
+                            }))
+                          }
+                        >
+                          <ThumbsDown className="size-4" />
+                        </BusinessButton>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+              {tab === "trends" && showDailyHistory && dailyHistory && (
+                <p className="text-muted-foreground pt-2 text-center text-xs">
+                  已显示今日全部 {dailyHistory.current.items.length} 条及最近
+                  {dailyHistory.history_days - 1} 天选题
                 </p>
               )}
-              <button
-                type="button"
-                onClick={() => void toggleDailyHistory()}
-                disabled={dailyHistoryLoading}
-                aria-expanded={showDailyHistory}
-                className="flex h-10 items-center gap-2 rounded-md border border-[#c6d6d8] bg-white px-4 text-sm text-[#42676d] hover:border-[#86b2b8] hover:text-[#176d79] disabled:opacity-50"
-              >
-                <CalendarDays className="size-4" />
-                {dailyHistoryLoading
-                  ? "正在加载更多选题…"
-                  : showDailyHistory
-                    ? "收起更多选题"
-                    : "查看更多今日与往日选题"}
-                {showDailyHistory ? (
-                  <ChevronUp className="size-4" />
-                ) : (
-                  <ChevronDown className="size-4" />
-                )}
-              </button>
             </div>
-          )}
+            {tab === "trends" && !dailyFeedLoading && !dailyFeedError && (
+              <div className="flex flex-col items-center py-4">
+                {dailyHistoryError && (
+                  <p role="alert" className="text-destructive mb-3 text-xs">
+                    {dailyHistoryError}
+                  </p>
+                )}
+                <BusinessButton
+                  variant="outline"
+                  disabled={dailyHistoryLoading}
+                  aria-expanded={showDailyHistory}
+                  onClick={() => void toggleDailyHistory()}
+                >
+                  <CalendarDays className="size-4" />
+                  {dailyHistoryLoading
+                    ? "正在加载更多选题…"
+                    : showDailyHistory
+                      ? "收起更多选题"
+                      : "查看更多今日与往日选题"}
+                  {showDailyHistory ? (
+                    <ChevronUp className="size-4" />
+                  ) : (
+                    <ChevronDown className="size-4" />
+                  )}
+                </BusinessButton>
+              </div>
+            )}
+          </section>
         </div>
-      </section>
+      </div>
     </main>
   );
 }

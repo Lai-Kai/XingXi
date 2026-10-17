@@ -13,7 +13,7 @@ const ModelViewer = dynamic(
     loading: () => (
       <div
         role="status"
-        className="grid h-[300px] place-items-center rounded-md border bg-[#edf3f2] text-sm text-[#52686c]"
+        className="bg-muted text-muted-foreground grid h-[300px] place-items-center rounded-md border text-sm"
       >
         正在准备模型预览…
       </div>

@@ -76,7 +76,7 @@ export default function ChatsPage() {
     <WorkspaceContainer>
       <WorkspaceHeader></WorkspaceHeader>
       <WorkspaceBody>
-        <div className="flex size-full flex-col">
+        <div className="bg-background text-foreground flex size-full flex-col">
           <header className="flex shrink-0 items-center justify-center pt-8">
             <Input
               type="search"

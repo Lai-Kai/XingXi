@@ -372,21 +372,29 @@ export const enUS: Translations = {
     },
     recipes: {
       label: "Quick create",
-      trending: {
-        title: "GitHub Trending daily",
-        desc: "Summarize today's top 10 trending repos",
+      mapSources: {
+        title: "Daily map source notes",
+        desc: "Review Mudu map sources and citations daily at 09:00",
+        prompt:
+          "Review gazetteers, inscriptions and archives you are authorized to access for the Mudu historical map. Summarize source leads about place names, waterways, bridges, historic buildings, people and events. Include excerpts, document titles, volume/page locators and available evidence IDs. Separate existing records from unverified leads; do not describe material as new without a verified update date. Produce a reading report only; do not modify or publish map data.",
       },
-      news: {
-        title: "Daily tech news digest",
-        desc: "Collect and summarize the day's top tech news",
+      mapPoints: {
+        title: "Map point evidence review",
+        desc: "Check citations, dates and open questions daily at 09:00",
+        prompt:
+          "Review authorized Mudu historical map points and their source evidence. List pending, disputed, undated and uncertain-location records, their existing evidence, missing information and next verification steps. Include document titles, volume/page locators and available evidence IDs. Distinguish exact coordinates from inferred areas; mark unknown locations explicitly and never invent or derive coordinates. Produce a review checklist only; do not modify points, review status or published data.",
       },
-      issues: {
-        title: "GitHub Issue triage",
-        desc: "Triage a repo's open issues (fill in {{repo}})",
+      placeNames: {
+        title: "Historical place-name review",
+        desc: "Review aliases and period-specific evidence daily at 09:00",
+        prompt:
+          "Review historical aliases, dynasties and present-day correspondences for place names in Mudu and its surrounding map. Use only authorized sources, listing candidate names, historical context, document titles, volume/page locators and available evidence IDs. Do not merge names from different contexts. Retain every candidate and mark uncertainty when evidence is ambiguous or insufficient. Produce a comparison and verification report only; do not merge entities, rename map points or publish knowledge.",
       },
-      weekly: {
-        title: "Weekly report",
-        desc: "Compile a weekly summary, every Monday",
+      mapWeekly: {
+        title: "Weekly historical map brief",
+        desc: "Summarize map research every Monday at 09:00",
+        prompt:
+          "Prepare a weekly Mudu historical map research brief from authorized map points, dated events, relationships and source material. Classify an item as a change this week only when its update date can be verified; otherwise label it material reviewed this time. Summarize findings, citations, disputes and missing information, then identify three verification priorities for next week. Include real document titles, volume/page locators and available evidence IDs. Do not invent change counts, coordinates or historical conclusions. Produce a brief only; do not modify or publish map data.",
       },
     },
   },

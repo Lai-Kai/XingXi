@@ -53,6 +53,7 @@ test.describe("Xingxi home", () => {
     await page.getByLabel("研究问题").fill("香溪沿岸有哪些古桥？");
     await page.getByRole("button", { name: "开始研究" }).click();
 
+    await expect(page).toHaveURL(/\/workspace\/chats\/new\?/);
     const destination = new URL(page.url());
     expect(destination.pathname).toBe("/workspace/chats/new");
     expect(destination.searchParams.has("mode")).toBe(false);
@@ -285,18 +286,22 @@ test.describe("Xingxi home", () => {
 
     await page.getByRole("button", { name: "个性化设置" }).click();
     await expect(page.getByText("关注的研究方向")).toBeVisible();
-    await page.getByRole("button", { name: "园林" }).click();
-    await expect(page.getByRole("button", { name: "园林" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    const gardenPreference = page
+      .locator("#research-preferences")
+      .getByRole("button", { name: "园林", exact: true });
+    await gardenPreference.click();
+    await expect(gardenPreference).toHaveAttribute("aria-pressed", "true");
   });
 
   test("daily topics come from the current backend feed", async ({ page }) => {
     await page.goto("/workspace");
 
     await expect(page.getByRole("tab", { name: "今日选题" })).toBeVisible();
-    await expect(page.getByText("2026-07-29")).toBeVisible();
+    await expect(
+      page
+        .getByRole("tabpanel", { name: "今日选题" })
+        .getByText("2026-07-29", { exact: true }),
+    ).toBeVisible();
     await expect(page.getByText("木渎古桥名称沿革")).toBeVisible();
     await expect(page.getByText("2026-07-18")).toHaveCount(0);
 
@@ -329,7 +334,7 @@ test.describe("Xingxi home", () => {
       page.getByText("地方文献怎样记载朱买臣与吴地的联系？", { exact: true }),
     ).toBeVisible();
     await expect(page.getByRole("link", { name: "开始了解" })).toHaveCount(6);
-    await expect(page.getByText(/资料依据：/)).toHaveCount(6);
+    await expect(page.getByText(/资料依据 \d+ 条/)).toHaveCount(6);
   });
 
   test("the research workspace no longer labels grounded topics as demo data", async ({

@@ -18,6 +18,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
+  WorkbenchMetrics,
+  WorkbenchGuide,
+  LibraryReleaseSummary,
+} from "@/components/workspace/admin-workbench";
+import {
   BusinessEmptyState,
   BusinessErrorState,
   BusinessInlineError,
@@ -47,6 +52,18 @@ import {
   type SourceUploadResult,
 } from "@/core/source-files/api";
 import { createLatestRequestTracker } from "@/core/source-files/latest-request";
+
+const sourceTypeLabels = {
+  gazetteer: "地方志",
+  inscription: "碑刻",
+  archive: "档案",
+  heritage_record: "文保记录",
+  scholarly_work: "研究著作",
+  oral_history: "口述史",
+  web: "网络资料",
+  inference: "推断资料",
+  other: "其他资料",
+};
 
 type LibraryDocument = {
   id: string;
@@ -93,6 +110,7 @@ export default function LibraryPage() {
   const [query, setQuery] = useState("");
   const [showNotes, setShowNotes] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploadSourceId, setUploadSourceId] = useState<string | undefined>();
   const [editSource, setEditSource] = useState<SourceDocumentSummary | null>(
     null,
   );
@@ -272,9 +290,9 @@ export default function LibraryPage() {
 
   if (!mayManageSources) {
     return (
-      <main className="size-full overflow-y-auto bg-[#f7fafb] text-[#202b2e]">
+      <main className="admin-workspace size-full overflow-y-auto">
         <BusinessMobileHeader title="文献库" />
-        <div className="mx-auto min-h-full max-w-7xl px-4 py-7 sm:px-8 lg:px-10 lg:py-10">
+        <div className="admin-workbench mx-auto min-h-full max-w-7xl px-4 py-7 sm:px-8 lg:px-10 lg:py-10">
           <BusinessPageHeader
             title="文献库"
             description="管理地方志、碑刻、档案与研究资料"
@@ -284,7 +302,7 @@ export default function LibraryPage() {
             icon={ShieldAlert}
             title="仅管理员可管理文献"
             description="当前账号是普通用户，不能登记来源、上传文件、复核或发布知识版本。请使用管理员账号登录；已发布资料仍可通过文史检索查看。"
-            className="mt-6 min-h-[440px] border-t border-[#dbe4e5]"
+            className="border-border mt-6 min-h-[440px] border-t"
           />
         </div>
       </main>
@@ -292,20 +310,23 @@ export default function LibraryPage() {
   }
 
   return (
-    <main className="size-full overflow-y-auto bg-[#f7fafb] text-[#202b2e]">
+    <main className="admin-workspace size-full overflow-y-auto">
       <BusinessMobileHeader title="文献库" />
-
-      <div className="mx-auto min-h-full max-w-7xl px-4 py-7 sm:px-8 lg:px-10 lg:py-10">
+      <div className="admin-workbench min-h-full px-4 py-7 sm:px-8 lg:px-10 lg:py-9">
+        <WorkbenchGuide
+          title="文献入藏与校勘"
+          steps={["登记来源", "原件与 OCR", "逐页校勘", "审核后发布"]}
+        />
         <BusinessPageHeader
           title="文献库"
-          description="管理地方志、碑刻、档案与研究资料"
+          description="古籍有本，考据有源。整理地方志、碑刻与档案，核对每一页文字。"
           icon={BookOpen}
           actions={
             <>
               <button
                 type="button"
                 onClick={() => setCorpusImportsOpen(true)}
-                className="flex h-10 items-center gap-2 rounded-md border border-[#80adb4] bg-white px-4 text-sm text-[#245e67] hover:bg-[#edf4f5]"
+                className="admin-action"
               >
                 <Import className="size-4" />
                 导入批次
@@ -313,80 +334,82 @@ export default function LibraryPage() {
               <button
                 type="button"
                 onClick={() => setReleaseOpen(true)}
-                className="flex h-10 items-center gap-2 rounded-md border border-[#80adb4] bg-white px-4 text-sm text-[#245e67] hover:bg-[#edf4f5]"
+                className="admin-action"
               >
                 <PackageCheck className="size-4" />
                 知识版本{selected.length > 0 ? ` (${selected.length})` : ""}
               </button>
-              <select
-                value={selectedProjectId}
-                onChange={(event) => setSelectedProjectId(event.target.value)}
-                className="h-10 rounded-md border px-2 text-sm"
-                aria-label="目标研究项目"
-              >
-                <option value="">选择目标项目</option>
-                {projectOptions.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
-                ))}
-              </select>
               <button
                 type="button"
-                onClick={() => setUploadOpen(true)}
-                className="flex h-10 items-center gap-2 rounded-md bg-[#202b2e] px-4 text-sm text-white hover:bg-[#354347]"
+                onClick={() => {
+                  setUploadSourceId(undefined);
+                  setUploadOpen(true);
+                }}
+                className="admin-action admin-primary"
               >
                 <FileUp className="size-4" />
                 上传文献
               </button>
-              <button
-                type="button"
-                aria-pressed={showNotes}
-                onClick={() => setShowNotes((current) => !current)}
-                className="flex h-10 items-center gap-2 rounded-md border border-[#cedadd] bg-white px-4 text-sm hover:bg-[#edf4f5]"
-              >
-                <Plus className="size-4" />
-                {showNotes ? "移除备注字段" : "添加备注字段"}
-              </button>
-              <button
-                type="button"
-                disabled={
-                  selected.length === 0 || !selectedProjectId || transferring
-                }
-                onClick={() => void transferSelected()}
-                className="flex h-10 items-center gap-2 rounded-md border border-[#80adb4] bg-[#e2eff0] px-4 text-sm text-[#245e67] hover:bg-[#d6e9eb] disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <ArrowRightLeft className="size-4" />
-                {transferring ? "正在转入…" : "转入项目"}
-                {!transferring && selected.length > 0
-                  ? ` (${selected.length})`
-                  : ""}
-              </button>
             </>
           }
         />
-
+        <div className="my-6">
+          <WorkbenchMetrics
+            items={[
+              {
+                label: "匹配来源",
+                value: loading || loadError ? null : totalSources,
+                hint: "服务端目录 · 随搜索与资料状态变化",
+              },
+              {
+                label: "本页原件",
+                value: loading || loadError ? null : documents.length,
+                hint: "当前来源页已上传的文件",
+              },
+              {
+                label: "本页待复核",
+                value:
+                  loading || loadError
+                    ? null
+                    : documents.filter(
+                        (item) => item.status === "awaiting_review",
+                      ).length,
+                hint: "导入流程已到人工复核阶段",
+              },
+              {
+                label: "本页已完成",
+                value:
+                  loading || loadError
+                    ? null
+                    : documents.filter((item) => item.status === "completed")
+                        .length,
+                hint: "流程完成不等于已发布",
+              },
+            ]}
+          />
+        </div>
+        <LibraryReleaseSummary refreshKey={releaseOpen ? 1 : 0} />
         {actionError && (
-          <div className="mt-4">
-            <BusinessInlineError
-              message={actionError}
-              onDismiss={() => setActionError(null)}
-            />
-          </div>
+          <BusinessInlineError
+            message={actionError}
+            onDismiss={() => setActionError(null)}
+          />
         )}
-
-        <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-[#66777c]">共 {documents.length} 份文献</p>
-          <label className="flex h-10 w-full max-w-sm items-center gap-2 rounded-md border border-[#d2dddf] bg-white px-3 text-[#67787c] focus-within:border-[#6ea7af]">
-            <Search className="size-4 shrink-0" />
+        <section
+          className="bg-card mb-5 flex flex-wrap items-center gap-3 rounded-xl border p-4"
+          aria-label="目录检索与批量操作"
+        >
+          <label className="bg-background flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-lg border px-3">
+            <Search className="text-muted-foreground size-4" />
             <input
               value={query}
               onChange={(event) => {
                 setQuery(event.target.value);
                 setPage(1);
               }}
+              aria-label="搜索标题或文件名"
               placeholder="搜索标题或文件名"
-              className="min-w-0 flex-1 bg-transparent text-sm text-[#243236] outline-none placeholder:text-[#95a1a4]"
+              className="min-w-0 flex-1 bg-transparent text-sm outline-none"
             />
           </label>
           <select
@@ -398,159 +421,210 @@ export default function LibraryPage() {
               setPage(1);
             }}
             aria-label="资料状态"
-            className="h-10 rounded-md border border-[#d2dddf] bg-white px-3 text-sm"
+            className="admin-field"
           >
             <option value="all">全部资料状态</option>
             <option value="registered">已登记</option>
             <option value="archived">已归档</option>
           </select>
-        </div>
-
-        <div className="mt-4 overflow-hidden rounded-md border border-[#d7e1e2] bg-white">
-          <div
-            className="grid min-w-[940px] grid-cols-[48px_minmax(280px,1fr)_90px_90px_120px_110px_180px] items-center border-b border-[#dce5e6] bg-[#f1f6f7] px-3 py-3 text-xs font-medium text-[#607176]"
-            style={
-              showNotes
-                ? {
-                    gridTemplateColumns:
-                      "48px minmax(240px,1fr) 80px 80px 110px minmax(180px,.65fr) 100px 180px",
-                  }
-                : undefined
-            }
+          <button
+            type="button"
+            aria-pressed={showNotes}
+            onClick={() => setShowNotes((current) => !current)}
+            className="admin-action"
           >
-            <span />
-            <span>标题</span>
-            <span>类型</span>
-            <span>大小</span>
-            <span>状态</span>
-            {showNotes && <span>备注</span>}
-            <span>添加时间</span>
-            <span>操作</span>
+            <Plus className="size-4" />
+            {showNotes ? "移除备注字段" : "添加备注字段"}
+          </button>
+          <div className="flex w-full flex-wrap items-center gap-2 border-t pt-3">
+            <span className="text-muted-foreground mr-auto text-xs">
+              已选 {selected.length} 份原件 · 来源等级与复核状态独立记录
+            </span>
+            <select
+              value={selectedProjectId}
+              onChange={(event) => setSelectedProjectId(event.target.value)}
+              className="admin-field max-w-full"
+              aria-label="目标研究项目"
+            >
+              <option value="">选择目标项目</option>
+              {projectOptions.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              disabled={
+                selected.length === 0 || !selectedProjectId || transferring
+              }
+              onClick={() => void transferSelected()}
+              className="admin-action"
+            >
+              <ArrowRightLeft className="size-4" />
+              {transferring ? "正在转入…" : "转入项目"}
+              {!transferring && selected.length ? ` (${selected.length})` : ""}
+            </button>
           </div>
-
-          <div className="overflow-x-auto">
-            {loading ? (
-              <BusinessLoadingState label="正在读取文献库…" />
-            ) : loadError ? (
-              <BusinessErrorState
-                description={loadError}
-                onRetry={() => void loadDocuments()}
-              />
-            ) : visibleDocuments.length === 0 ? (
-              <BusinessEmptyState
-                icon={FileText}
-                title={query ? "未找到匹配文献" : "文献库暂无资料"}
-                description={
-                  query
-                    ? "尝试更换关键词，或清空搜索条件。"
-                    : "上传地方志、碑刻拓片、档案或研究文献，建立可追溯的资料基础。"
-                }
-                action={
-                  !query ? (
-                    <button
-                      type="button"
-                      onClick={() => setUploadOpen(true)}
-                      className="mt-5 flex h-9 items-center gap-2 rounded-md border border-[#87afb5] px-4 text-sm text-[#286873] hover:bg-[#edf5f5]"
-                    >
-                      <FileUp className="size-4" />
-                      选择文件
-                    </button>
-                  ) : undefined
-                }
-              />
-            ) : (
-              visibleDocuments.map((document) => (
-                <div
-                  key={document.id}
-                  className="grid min-w-[940px] grid-cols-[48px_minmax(280px,1fr)_90px_90px_120px_110px_180px] items-center border-b border-[#edf1f2] px-3 py-3 text-sm last:border-b-0"
-                  style={
-                    showNotes
-                      ? {
-                          gridTemplateColumns:
-                            "48px minmax(240px,1fr) 80px 80px 110px minmax(180px,.65fr) 100px 180px",
-                        }
-                      : undefined
-                  }
+        </section>
+        {loading ? (
+          <BusinessLoadingState label="正在读取文献库…" />
+        ) : loadError ? (
+          <BusinessErrorState
+            description={loadError}
+            onRetry={() => void loadDocuments()}
+          />
+        ) : sources.length === 0 ? (
+          <BusinessEmptyState
+            icon={FileText}
+            title={query ? "未找到匹配文献" : "文献库暂无资料"}
+            description={
+              query
+                ? "尝试更换关键词，或清空搜索条件。"
+                : "先登记文献来源，再上传原件，开始逐页校勘。"
+            }
+            action={
+              !query ? (
+                <button
+                  type="button"
+                  onClick={() => setUploadOpen(true)}
+                  className="admin-action mt-5"
                 >
-                  <input
-                    type="checkbox"
-                    checked={selected.includes(document.id)}
-                    onChange={() => toggleSelected(document.id)}
-                    aria-label={`选择 ${document.title}`}
-                    className="size-4 accent-[#247f8c]"
-                  />
-                  <span className="flex min-w-0 items-center gap-2">
-                    <FileText className="size-4 shrink-0 text-[#568087]" />
-                    <span className="min-w-0">
-                      <span
-                        className="block truncate font-medium"
-                        title={document.title}
-                      >
-                        {document.title}
-                      </span>
-                      <span
-                        className="block truncate text-xs text-[#78878b]"
-                        title={`${document.source.title} · ${document.source.edition}`}
-                      >
-                        {document.source.title} · {document.source.edition}
-                      </span>
-                    </span>
-                  </span>
-                  <span className="text-[#68797e]">{document.type}</span>
-                  <span className="text-[#68797e]">{document.size}</span>
-                  <BusinessStatusBadge status={document.status} />
-                  {showNotes && (
+                  <FileUp className="size-4" />
+                  选择文件
+                </button>
+              ) : undefined
+            }
+          />
+        ) : (
+          <div className="library-catalog" aria-label="古籍方志目录">
+            {visibleDocuments.map((document) => (
+              <article
+                key={document.id}
+                className="library-volume"
+                data-library-file={document.id}
+              >
+                <div className="mb-4 flex items-start justify-between gap-3">
+                  <label className="flex min-h-11 items-center gap-2">
                     <input
-                      value={document.note}
-                      onChange={(event) =>
-                        setDocuments((current) =>
-                          current.map((item) =>
-                            item.id === document.id
-                              ? { ...item, note: event.target.value }
-                              : item,
-                          ),
-                        )
-                      }
-                      placeholder="添加备注"
-                      className="mr-4 min-w-0 rounded border border-[#d8e2e3] px-2 py-1.5 text-xs outline-none focus:border-[#74aab1]"
+                      type="checkbox"
+                      checked={selected.includes(document.id)}
+                      onChange={() => toggleSelected(document.id)}
+                      aria-label={`选择 ${document.title}`}
+                      className="accent-primary size-4"
                     />
-                  )}
-                  <span className="text-xs text-[#78878b]">
-                    {document.addedAt}
+                    <span className="text-muted-foreground text-xs">
+                      {document.type} · {document.size}
+                    </span>
+                  </label>
+                  <BusinessStatusBadge status={document.status} />
+                </div>
+                <div className="library-bookmark">
+                  <p className="text-primary mb-2 text-xs">
+                    {document.source.source_type_label ??
+                      sourceTypeLabels[document.source.source_type]}{" "}
+                    · 来源等级 {document.source.source_level}
+                  </p>
+                  <h2 className="font-serif text-lg leading-7 font-semibold break-words">
+                    {document.source.title}
+                  </h2>
+                  <p className="text-muted-foreground mt-2 text-xs">
+                    {document.source.edition || "版本待核"} ·{" "}
+                    {document.source.source_institution || "馆藏待登记"}
+                  </p>
+                </div>
+                <p
+                  className="text-muted-foreground mt-4 truncate text-xs"
+                  title={document.title}
+                >
+                  {document.title}
+                </p>
+                {showNotes && (
+                  <input
+                    value={document.note}
+                    onChange={(event) =>
+                      setDocuments((current) =>
+                        current.map((item) =>
+                          item.id === document.id
+                            ? { ...item, note: event.target.value }
+                            : item,
+                        ),
+                      )
+                    }
+                    placeholder="添加备注"
+                    className="admin-field mt-3 w-full"
+                  />
+                )}
+                <footer className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t pt-3">
+                  <span className="text-muted-foreground text-xs">
+                    入藏 {document.addedAt}
                   </span>
-                  <div className="flex items-center gap-1">
+                  <div className="flex flex-wrap gap-1">
                     <button
                       type="button"
                       title="编辑资料信息"
+                      aria-label={`编辑资料信息 ${document.title}`}
                       onClick={() => setEditSource(document.source)}
-                      className="flex size-8 items-center justify-center rounded-md text-[#526b70] hover:bg-[#edf5f5]"
+                      className="admin-icon"
                     >
-                      <Pencil className="size-3.5" />
+                      <Pencil className="size-4" />
                     </button>
                     <button
                       type="button"
                       title="上传新版本"
+                      aria-label={`上传新版本 ${document.title}`}
                       onClick={() => setVersionDocument(document)}
-                      className="flex size-8 items-center justify-center rounded-md text-[#526b70] hover:bg-[#edf5f5]"
+                      className="admin-icon"
                     >
-                      <GitBranch className="size-3.5" />
+                      <GitBranch className="size-4" />
                     </button>
                     <button
                       type="button"
                       onClick={() => setReviewDocument(document)}
-                      className="flex h-8 w-fit items-center gap-1.5 rounded-md border border-[#8aafb4] px-2.5 text-xs text-[#275f68] hover:bg-[#edf5f5]"
+                      className="admin-action"
                     >
-                      <ClipboardCheck className="size-3.5" />
+                      <ClipboardCheck className="size-4" />
                       复核
                     </button>
                   </div>
-                </div>
-              ))
-            )}
+                </footer>
+              </article>
+            ))}
+            {sources
+              .filter(
+                (source) =>
+                  !documents.some(
+                    (document) => document.documentId === source.id,
+                  ),
+              )
+              .map((source) => (
+                <article key={source.id} className="library-volume">
+                  <p className="text-muted-foreground mb-3 text-xs">
+                    已登记 · 尚无原件
+                  </p>
+                  <h2 className="font-serif text-lg font-semibold">
+                    {source.title}
+                  </h2>
+                  <p className="text-muted-foreground mt-2 text-sm">
+                    {source.edition} · {source.source_institution}
+                  </p>
+                  <button
+                    type="button"
+                    className="admin-action mt-5"
+                    onClick={() => {
+                      setUploadSourceId(source.id);
+                      setUploadOpen(true);
+                    }}
+                  >
+                    <FileUp className="size-4" />
+                    上传原件
+                  </button>
+                </article>
+              ))}
           </div>
-        </div>
+        )}
         {totalSources > 10 && (
-          <div className="mt-4 flex items-center justify-end gap-3 text-sm">
+          <div className="mt-5 flex flex-wrap items-center justify-end gap-3 text-sm">
             <span>
               第 {page} / {Math.ceil(totalSources / 10)} 页，共 {totalSources}{" "}
               个来源
@@ -559,7 +633,7 @@ export default function LibraryPage() {
               type="button"
               disabled={page === 1}
               onClick={() => setPage((value) => value - 1)}
-              className="h-8 rounded-md border px-3 disabled:opacity-40"
+              className="admin-action"
             >
               上一页
             </button>
@@ -567,14 +641,16 @@ export default function LibraryPage() {
               type="button"
               disabled={page * 10 >= totalSources}
               onClick={() => setPage((value) => value + 1)}
-              className="h-8 rounded-md border px-3 disabled:opacity-40"
+              className="admin-action"
             >
               下一页
             </button>
           </div>
         )}
       </div>
+
       <SourceUploadDialog
+        initialSourceId={uploadSourceId}
         open={uploadOpen}
         onOpenChange={setUploadOpen}
         onUploaded={addUploadedFile}
@@ -653,6 +729,7 @@ export default function LibraryPage() {
           documentId={reviewDocument.documentId}
           fileId={reviewDocument.sourceFileId}
           title={reviewDocument.title}
+          fileType={reviewDocument.type}
           ingestionJobId={reviewDocument.ingestionJobId}
           onFinalized={() => {
             setDocuments((current) =>

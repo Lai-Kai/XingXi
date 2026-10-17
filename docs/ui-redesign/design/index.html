@@ -1,0 +1,1320 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>星羲弦沚 — UI 重构设计原型 (方向 A: 典雅方志·人文水墨)</title>
+  <style>
+    :root {
+      --bg: #f8faf9;
+      --fg: #1c282a;
+      --card: #ffffff;
+      --card-fg: #1c282a;
+      --primary: #176d79;
+      --primary-hover: #125761;
+      --primary-light: #e8f4f6;
+      --secondary: #e2edf0;
+      --secondary-fg: #1f4e56;
+      --muted: #edf3f4;
+      --muted-fg: #5c7075;
+      --border: #cedbd8;
+      --sidebar-bg: #f1f6f7;
+      --sidebar-fg: #213033;
+      --sidebar-border: #d3e0df;
+      --radius: 6px;
+      --radius-lg: 10px;
+      --shadow-sm: 0 1px 3px rgba(23,109,121,0.06);
+      --shadow-md: 0 4px 14px rgba(23,109,121,0.08);
+      --font-serif: "Noto Serif SC", "Source Han Serif SC", "FangSong", "SimSun", serif;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+
+      /* Heritage Status Colors */
+      --status-approved-bg: #eaf5ee;
+      --status-approved-border: #b7dfc7;
+      --status-approved-fg: #1e663d;
+
+      --status-disputed-bg: #fdf7e7;
+      --status-disputed-border: #f4db9b;
+      --status-disputed-fg: #865d14;
+
+      --status-rejected-bg: #faecec;
+      --status-rejected-border: #f2bebe;
+      --status-rejected-fg: #9c2d2d;
+
+      --status-pending-bg: #edf2f4;
+      --status-pending-border: #d1dee2;
+      --status-pending-fg: #4b6369;
+    }
+
+    .dark-mode {
+      --bg: #131a1b;
+      --fg: #eef3f4;
+      --card: #1a2426;
+      --card-fg: #eef3f4;
+      --primary: #45b2c2;
+      --primary-hover: #58c0cf;
+      --primary-light: #1f373b;
+      --secondary: #243538;
+      --secondary-fg: #95d4de;
+      --muted: #202b2e;
+      --muted-fg: #8a9ea2;
+      --border: #2a383b;
+      --sidebar-bg: #101617;
+      --sidebar-fg: #eef3f4;
+      --sidebar-border: #202c2e;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.3);
+      --shadow-md: 0 4px 14px rgba(0,0,0,0.4);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font-sans);
+      background-color: #2b3537;
+      color: var(--fg);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* Top Demo Control Banner */
+    .prototype-bar {
+      height: 48px;
+      background: #182224;
+      color: #e5ecec;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 1.25rem;
+      border-bottom: 1px solid #2d3b3e;
+      font-size: 13px;
+      z-index: 1000;
+      flex-shrink: 0;
+    }
+    .prototype-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+    }
+    .badge-demo {
+      background: #176d79;
+      color: #ffffff;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .controls-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .btn-control {
+      background: #253336;
+      border: 1px solid #36484c;
+      color: #cfdbdc;
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-size: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      transition: all 0.15s;
+    }
+    .btn-control:hover, .btn-control.active {
+      background: #176d79;
+      color: white;
+      border-color: #176d79;
+    }
+
+    /* Device Preview Container */
+    .preview-viewport {
+      flex: 1;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 16px;
+      overflow: auto;
+      background: #374346;
+    }
+    .device-frame {
+      background: var(--bg);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+      display: flex;
+      transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1), height 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      position: relative;
+    }
+    .mode-desktop { width: 100%; max-width: 1440px; height: 100%; max-height: 860px; }
+    .mode-tablet { width: 1024px; height: 768px; }
+    .mode-mobile { width: 390px; height: 844px; border: 8px solid #1a2223; border-radius: 36px; }
+
+    /* App Layout */
+    .app-root {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      overflow: hidden;
+      background: var(--bg);
+    }
+
+    /* Sidebar */
+    .sidebar {
+      width: 240px;
+      background: var(--sidebar-bg);
+      border-right: 1px solid var(--sidebar-border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      transition: width 0.2s;
+    }
+    .sidebar-header {
+      padding: 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border-bottom: 1px solid var(--sidebar-border);
+    }
+    .brand-avatar-img {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 1px solid rgba(23,109,121,0.3);
+      box-shadow: 0 2px 6px rgba(23,109,121,0.15);
+      flex-shrink: 0;
+    }
+    .brand-text h1 {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--sidebar-fg);
+      letter-spacing: 0.5px;
+    }
+    .brand-text p {
+      font-size: 11px;
+      color: var(--muted-fg);
+    }
+    .sidebar-nav {
+      flex: 1;
+      padding: 12px 8px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .nav-label {
+      font-size: 10.5px;
+      font-weight: 600;
+      color: var(--muted-fg);
+      text-transform: uppercase;
+      padding: 8px 10px 4px;
+      letter-spacing: 0.8px;
+    }
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      border-radius: var(--radius);
+      color: var(--sidebar-fg);
+      font-size: 13.5px;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.15s;
+    }
+    .nav-item:hover {
+      background: var(--secondary);
+      color: var(--secondary-fg);
+    }
+    .nav-item.active {
+      background: var(--primary);
+      color: #ffffff;
+      font-weight: 500;
+      box-shadow: var(--shadow-sm);
+    }
+    .sidebar-footer {
+      padding: 12px 14px;
+      border-top: 1px solid var(--sidebar-border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--muted-fg);
+    }
+    .user-pill {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .avatar {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background: #70949a;
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+    }
+
+    /* Main Area Container */
+    .main-viewport {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* Scenario Panels */
+    .scenario-container {
+      flex: 1;
+      display: none;
+      overflow-y: auto;
+      background: var(--bg);
+    }
+    .scenario-container.active {
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* --- Scenario 1: Workspace Home --- */
+    .home-hero-banner {
+      width: 100%;
+      height: 180px;
+      position: relative;
+      overflow: hidden;
+      border-bottom: 1px solid var(--border);
+      background: #eef3f4;
+      flex-shrink: 0;
+    }
+    .hero-banner-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: center 60%;
+      opacity: 0.92;
+    }
+    .home-hero-overlay {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(to bottom, rgba(248,250,249,0.2) 0%, rgba(248,250,249,0.85) 100%);
+      pointer-events: none;
+    }
+    .home-hero {
+      max-width: 860px;
+      margin: -50px auto 20px;
+      width: 100%;
+      padding: 0 20px;
+      text-align: center;
+      position: relative;
+      z-index: 10;
+    }
+    .home-hero h2 {
+      font-family: var(--font-serif);
+      font-size: 28px;
+      font-weight: 600;
+      color: var(--fg);
+      margin-bottom: 8px;
+      letter-spacing: 0.5px;
+      text-shadow: 0 1px 2px rgba(255,255,255,0.8);
+    }
+    .home-hero p {
+      font-size: 14px;
+      color: var(--muted-fg);
+      margin-bottom: 24px;
+    }
+    .composer-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 14px 18px;
+      box-shadow: var(--shadow-md);
+      text-align: left;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .composer-card:focus-within {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(23,109,121,0.12);
+    }
+    .composer-input {
+      width: 100%;
+      min-height: 68px;
+      border: none;
+      background: transparent;
+      outline: none;
+      font-size: 15px;
+      line-height: 1.6;
+      color: var(--fg);
+      resize: none;
+      font-family: inherit;
+    }
+    .composer-input::placeholder {
+      color: #92a4a7;
+    }
+    .composer-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-top: 1px solid var(--muted);
+      padding-top: 10px;
+      margin-top: 6px;
+    }
+    .tag-cluster {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .tag-chip {
+      font-size: 11.5px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      background: var(--muted);
+      color: var(--muted-fg);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .tag-chip:hover {
+      background: var(--secondary);
+      color: var(--secondary-fg);
+    }
+    .btn-submit {
+      background: var(--primary);
+      color: white;
+      border: none;
+      border-radius: var(--radius);
+      padding: 6px 14px;
+      font-size: 13.5px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn-submit:hover {
+      background: var(--primary-hover);
+    }
+
+    /* Feed Tabs & Cards */
+    .feed-section {
+      max-width: 960px;
+      margin: 20px auto 40px;
+      width: 100%;
+      padding: 0 20px;
+    }
+    .feed-tabs {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 10px;
+      margin-bottom: 20px;
+    }
+    .tabs-left {
+      display: flex;
+      gap: 8px;
+    }
+    .tab-btn {
+      padding: 6px 14px;
+      font-size: 13.5px;
+      border-radius: var(--radius);
+      border: none;
+      background: transparent;
+      color: var(--muted-fg);
+      cursor: pointer;
+      font-weight: 500;
+      transition: all 0.15s;
+    }
+    .tab-btn.active {
+      background: var(--primary-light);
+      color: var(--primary);
+    }
+    .feed-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+      gap: 16px;
+    }
+    .feed-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 16px 18px;
+      box-shadow: var(--shadow-sm);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      transition: transform 0.15s, box-shadow 0.15s;
+      cursor: pointer;
+    }
+    .feed-card:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-md);
+      border-color: #b2c9cb;
+    }
+    .feed-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--muted-fg);
+    }
+    .feed-title {
+      font-size: 15.5px;
+      font-weight: 600;
+      color: var(--fg);
+      line-height: 1.45;
+    }
+    .feed-desc {
+      font-size: 13px;
+      color: var(--muted-fg);
+      line-height: 1.6;
+    }
+    .feed-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: auto;
+      padding-top: 10px;
+      border-top: 1px dashed var(--muted);
+      font-size: 12px;
+    }
+    .evidence-count-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 12px;
+      background: var(--primary-light);
+      color: var(--primary);
+      font-weight: 500;
+      font-size: 11.5px;
+    }
+
+    /* --- Scenario 2: Chat & Evidence Inspector --- */
+    .chat-layout {
+      flex: 1;
+      display: flex;
+      height: 100%;
+      overflow: hidden;
+    }
+    .chat-flow {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      overflow: hidden;
+      border-right: 1px solid var(--border);
+    }
+    .chat-header {
+      padding: 12px 20px;
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .chat-header h3 {
+      font-size: 14.5px;
+      font-weight: 600;
+    }
+    .chat-history {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px 28px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .msg-user {
+      align-self: flex-end;
+      background: var(--primary);
+      color: white;
+      padding: 12px 18px;
+      border-radius: 14px 14px 2px 14px;
+      max-width: 75%;
+      font-size: 14.5px;
+      line-height: 1.6;
+    }
+    .msg-agent {
+      align-self: flex-start;
+      background: var(--card);
+      border: 1px solid var(--border);
+      padding: 18px 22px;
+      border-radius: 14px 14px 14px 2px;
+      max-width: 85%;
+      box-shadow: var(--shadow-sm);
+      font-size: 14.5px;
+      line-height: 1.75;
+    }
+    .msg-agent-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--primary);
+      border-bottom: 1px solid var(--muted);
+      padding-bottom: 8px;
+    }
+    .agent-avatar-img {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      object-fit: cover;
+    }
+    .evidence-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      background: #e5f1f3;
+      color: #135d67;
+      border: 1px solid #b6d8dd;
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      margin: 0 3px;
+      vertical-align: baseline;
+      transition: all 0.15s;
+    }
+    .evidence-pill:hover {
+      background: var(--primary);
+      color: white;
+      border-color: var(--primary);
+    }
+    .chat-bottom-input {
+      padding: 14px 20px;
+      background: var(--card);
+      border-top: 1px solid var(--border);
+    }
+
+    /* Right Evidence Inspector */
+    .evidence-inspector {
+      width: 360px;
+      background: var(--sidebar-bg);
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      flex-shrink: 0;
+    }
+    .inspector-header {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 13.5px;
+      font-weight: 600;
+    }
+    .inspector-body {
+      flex: 1;
+      padding: 16px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .evidence-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px;
+      box-shadow: var(--shadow-sm);
+    }
+    .evidence-meta {
+      font-size: 12px;
+      color: var(--muted-fg);
+      margin-bottom: 6px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .evidence-quote {
+      font-family: var(--font-serif);
+      font-size: 13.5px;
+      line-height: 1.7;
+      color: var(--fg);
+      background: var(--muted);
+      border-left: 3px solid var(--primary);
+      padding: 8px 12px;
+      border-radius: 0 4px 4px 0;
+      margin: 8px 0;
+    }
+
+    /* --- Scenario 3: Map & GLB 3D Preview --- */
+    .map-layout {
+      flex: 1;
+      display: flex;
+      position: relative;
+      overflow: hidden;
+      height: 100%;
+    }
+    .osm-canvas-mock {
+      flex: 1;
+      background: #e4e0d7;
+      background-image:
+        radial-gradient(#b8cbce 2px, transparent 2px),
+        linear-gradient(to right, #cfd8d6 1px, transparent 1px),
+        linear-gradient(to bottom, #cfd8d6 1px, transparent 1px);
+      background-size: 32px 32px, 80px 80px, 80px 80px;
+      position: relative;
+      overflow: hidden;
+    }
+    /* Map HUD Top-Left */
+    .map-hud-layers {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      background: rgba(255,255,255,0.94);
+      backdrop-filter: blur(6px);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 12px 14px;
+      box-shadow: var(--shadow-md);
+      font-size: 12.5px;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .layer-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+    }
+
+    /* 28px Fixed Landmark Pins (44px Click Target) */
+    .map-pin-target {
+      position: absolute;
+      width: 44px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transform: translate(-50%, -50%);
+      transition: transform 0.2s;
+    }
+    .map-pin-target:hover {
+      transform: translate(-50%, -50%) scale(1.1);
+    }
+    .map-pin-badge {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--primary);
+      color: white;
+      font-size: 11px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 2px solid white;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
+
+    /* Map Bottom Timeline */
+    .map-timeline-bar {
+      position: absolute;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(255,255,255,0.96);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 8px 20px;
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      box-shadow: var(--shadow-md);
+      z-index: 10;
+      font-size: 13px;
+    }
+    .timeline-node {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      cursor: pointer;
+      color: var(--muted-fg);
+      transition: all 0.15s;
+    }
+    .timeline-node.active {
+      color: var(--primary);
+      font-weight: 600;
+    }
+    .timeline-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #99aeb1;
+    }
+    .timeline-node.active .timeline-dot {
+      background: var(--primary);
+      transform: scale(1.4);
+    }
+
+    /* Map Right Detail & 3D Drawer */
+    .map-detail-panel {
+      width: 380px;
+      background: var(--card);
+      border-left: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      box-shadow: -4px 0 16px rgba(0,0,0,0.04);
+      z-index: 20;
+    }
+    .glb-viewport-mock {
+      height: 220px;
+      background: #172022;
+      border-bottom: 1px solid var(--border);
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #b2c9cc;
+      overflow: hidden;
+    }
+    .glb-wireframe {
+      width: 80px;
+      height: 80px;
+      border: 2px dashed #3f5f64;
+      border-radius: 8px;
+      animation: spin 12s linear infinite;
+      margin-bottom: 10px;
+    }
+    @keyframes spin { 100% { transform: rotate(360deg); } }
+    .glb-badge {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(0,0,0,0.6);
+      color: #e2f1f3;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+    }
+
+    /* --- Scenario 4: Empty State & Scholar Vignette --- */
+    .empty-state-view {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 20px;
+    }
+    .empty-state-card {
+      max-width: 580px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 32px 28px;
+      box-shadow: var(--shadow-md);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+    }
+    .empty-vignette-img {
+      width: 240px;
+      height: 240px;
+      object-fit: cover;
+      border-radius: 50%;
+      margin-bottom: 20px;
+      border: 3px solid var(--muted);
+      box-shadow: 0 8px 24px rgba(23,109,121,0.08);
+    }
+    .empty-state-card h3 {
+      font-family: var(--font-serif);
+      font-size: 20px;
+      font-weight: 600;
+      color: var(--fg);
+      margin-bottom: 10px;
+    }
+    .empty-state-card p {
+      font-size: 13.5px;
+      color: var(--muted-fg);
+      line-height: 1.7;
+      margin-bottom: 24px;
+    }
+    .empty-actions {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+    }
+
+    /* Status Badges */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 11.5px;
+      font-weight: 500;
+      border: 1px solid transparent;
+    }
+    .badge-approved {
+      background: var(--status-approved-bg);
+      border-color: var(--status-approved-border);
+      color: var(--status-approved-fg);
+    }
+    .badge-disputed {
+      background: var(--status-disputed-bg);
+      border-color: var(--status-disputed-border);
+      color: var(--status-disputed-fg);
+    }
+    .badge-rejected {
+      background: var(--status-rejected-bg);
+      border-color: var(--status-rejected-border);
+      color: var(--status-rejected-fg);
+    }
+    .badge-pending {
+      background: var(--status-pending-bg);
+      border-color: var(--status-pending-border);
+      color: var(--status-pending-fg);
+    }
+
+    /* Responsive Overrides */
+    .mode-mobile .sidebar { display: none; }
+    .mode-mobile .evidence-inspector { display: none; }
+    .mode-mobile .map-detail-panel {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      height: 48%;
+      border-left: none;
+      border-top: 1px solid var(--border);
+      border-radius: 16px 16px 0 0;
+    }
+    .mode-mobile .feed-grid { grid-template-columns: 1fr; }
+    .mode-tablet .evidence-inspector { width: 300px; }
+    .mode-tablet .sidebar { width: 68px; }
+    .mode-tablet .sidebar .nav-text,
+    .mode-tablet .sidebar .nav-label,
+    .mode-tablet .sidebar .brand-text { display: none; }
+    .mode-tablet .sidebar-header { justify-content: center; }
+  </style>
+</head>
+<body>
+
+  <!-- Top Prototype Switcher Banner -->
+  <header class="prototype-bar">
+    <div class="prototype-title">
+      <span class="badge-demo">PROTOTYPE</span>
+      <span>星羲弦沚 UI 重构 — 方向 A：典雅方志·人文水墨</span>
+      <span style="color:#789397; font-size:11px;">(v1.0.0 规范实施样本)</span>
+    </div>
+
+    <div class="controls-group">
+      <!-- Scenario Select -->
+      <span style="color:#8ba2a6;">场景预览：</span>
+      <button class="btn-control active" onclick="switchScenario('home')">1. 文史检索首页</button>
+      <button class="btn-control" onclick="switchScenario('chat')">2. 深度考据会话</button>
+      <button class="btn-control" onclick="switchScenario('map')">3. 古舆地图与3D研学</button>
+      <button class="btn-control" onclick="switchScenario('empty')">4. 文史空状态规范</button>
+
+      <span style="color:#8ba2a6; margin-left:8px;">视口尺寸：</span>
+      <button class="btn-control active" id="btn-desktop" onclick="setDevice('desktop')">桌面 (1440px)</button>
+      <button class="btn-control" id="btn-tablet" onclick="setDevice('tablet')">平板 (1024px)</button>
+      <button class="btn-control" id="btn-mobile" onclick="setDevice('mobile')">手机 (390px)</button>
+
+      <button class="btn-control" onclick="toggleTheme()" style="margin-left:8px;">🌓 模式切换</button>
+    </div>
+  </header>
+
+  <!-- Canvas Container -->
+  <main class="preview-viewport">
+    <div class="device-frame mode-desktop" id="deviceFrame">
+      <div class="app-root">
+
+        <!-- Global Sidebar Navigation -->
+        <aside class="sidebar">
+          <div class="sidebar-header">
+            <img src="C:/Users/蒲煜元/.gemini/antigravity/brain/cd77d99f-5c52-4d28-b5ae-6c9bb4202348/xingxi_brand_celadon_emblem_1792033808162.jpg" alt="星羲徽标" class="brand-avatar-img" />
+            <div class="brand-text">
+              <h1>星羲弦沚</h1>
+              <p>吴文化文史智能体</p>
+            </div>
+          </div>
+
+          <nav class="sidebar-nav">
+            <div class="nav-label">核心研学</div>
+            <a class="nav-item active" onclick="switchScenario('home')">
+              <span>🔍</span>
+              <span class="nav-text">文史检索</span>
+            </a>
+            <a class="nav-item" onclick="switchScenario('chat')">
+              <span>💬</span>
+              <span class="nav-text">星羲助手</span>
+            </a>
+            <a class="nav-item">
+              <span>📁</span>
+              <span class="nav-text">研究项目</span>
+            </a>
+
+            <div class="nav-label" style="margin-top:10px;">时空人文</div>
+            <a class="nav-item" onclick="switchScenario('map')">
+              <span>🗺️</span>
+              <span class="nav-text">古舆地图</span>
+            </a>
+            <a class="nav-item">
+              <span>🕸️</span>
+              <span class="nav-text">知识图谱</span>
+            </a>
+            <a class="nav-item">
+              <span>📖</span>
+              <span class="nav-text">古文展签</span>
+            </a>
+            <a class="nav-item">
+              <span>⚖️</span>
+              <span class="nav-text">异名辨析</span>
+            </a>
+
+            <div class="nav-label" style="margin-top:10px;">史料与治理</div>
+            <a class="nav-item">
+              <span>📚</span>
+              <span class="nav-text">文献库与审核</span>
+            </a>
+            <a class="nav-item">
+              <span>📊</span>
+              <span class="nav-text">运营治理大盘</span>
+            </a>
+          </nav>
+
+          <div class="sidebar-footer">
+            <div class="user-pill">
+              <div class="avatar">蒲</div>
+              <span class="nav-text">文史研究员</span>
+            </div>
+            <span style="cursor:pointer;" title="系统设置">⚙️</span>
+          </div>
+        </aside>
+
+        <!-- Main Workspace Area -->
+        <section class="main-viewport">
+
+          <!-- SCENARIO 1: Workspace Home (/workspace) -->
+          <div class="scenario-container active" id="scenario-home">
+            <div class="home-hero-banner">
+              <img src="C:/Users/蒲煜元/.gemini/antigravity/brain/cd77d99f-5c52-4d28-b5ae-6c9bb4202348/xingxi_xianzhi_hero_banner_1792033797050.jpg" alt="木渎水墨烟岚" class="hero-banner-img" />
+              <div class="home-hero-overlay"></div>
+            </div>
+
+            <div class="home-hero">
+              <h2>探究吴地文史·钩沉木渎古今</h2>
+              <p>以可溯源文献为基准，穿透地方志、石刻档案与地理演迁</p>
+
+              <div class="composer-card">
+                <textarea class="composer-input" placeholder="输入文史研究课题，如：乾隆六下江南驻跸木渎行宫考证 / 严家花园山水意匠..."></textarea>
+                <div class="composer-footer">
+                  <div class="tag-cluster">
+                    <span class="tag-chip">🏛️ 古迹考</span>
+                    <span class="tag-chip">📜 方志源流</span>
+                    <span class="tag-chip">👤 名人文士</span>
+                    <span class="tag-chip">🌿 园林构筑</span>
+                    <span class="tag-chip">🌊 水系沿革</span>
+                  </div>
+                  <button class="btn-submit" onclick="switchScenario('chat')">
+                    开始考据 <span>↑</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="feed-section">
+              <div class="feed-tabs">
+                <div class="tabs-left">
+                  <button class="tab-btn active">今日选题 (每日考证)</button>
+                  <button class="tab-btn">最新收录</button>
+                  <button class="tab-btn">学者辑录</button>
+                </div>
+                <div style="font-size:12px; color:var(--muted-fg);">
+                  📅 今日历史精选 · 2026-10-15
+                </div>
+              </div>
+
+              <div class="feed-grid">
+                <!-- Card 1 -->
+                <article class="feed-card" onclick="switchScenario('chat')">
+                  <div class="feed-card-header">
+                    <span>苏州地方志数字化成果</span>
+                    <span class="badge badge-approved">已完成三重考证</span>
+                  </div>
+                  <h4 class="feed-title">民国时期木渎镇区商号名录与街巷格局空间考</h4>
+                  <p class="feed-desc">根据《吴县志》及商会原始档案，提取了香溪两岸54处商号与会馆分布，考证老街坊旧址坐标。</p>
+                  <div class="feed-footer">
+                    <span class="evidence-count-badge">📎 3份文献佐证 · 5条证据链</span>
+                    <span style="color:var(--primary); font-weight:500;">进入研讨 →</span>
+                  </div>
+                </article>
+
+                <!-- Card 2 -->
+                <article class="feed-card" onclick="switchScenario('chat')">
+                  <div class="feed-card-header">
+                    <span>灵岩山艺文专卷</span>
+                    <span class="badge badge-disputed">存在文献异说</span>
+                  </div>
+                  <h4 class="feed-title">馆娃宫琴台与玩月池在历代题咏中的称谓沿革</h4>
+                  <p class="feed-desc">比对唐代皮日休、陆龟蒙与宋代范成大诗作，厘清馆娃宫旧址地景在宋明两代的物移星转。</p>
+                  <div class="feed-footer">
+                    <span class="evidence-count-badge">📎 4份诗文总集 · 9条证据链</span>
+                    <span style="color:var(--primary); font-weight:500;">进入研讨 →</span>
+                  </div>
+                </article>
+              </div>
+            </div>
+          </div>
+
+          <!-- SCENARIO 2: Chat & Evidence Inspector (/workspace/chats/[id]) -->
+          <div class="scenario-container" id="scenario-chat">
+            <div class="chat-layout">
+              <div class="chat-flow">
+                <div class="chat-header">
+                  <div>
+                    <h3>乾隆六下江南驻跸木渎行宫考证</h3>
+                    <div style="font-size:11.5px; color:var(--muted-fg);">当前知识版本：Release-202610-WuCulture · 准确性核验激活</div>
+                  </div>
+                  <div style="display:flex; gap:8px;">
+                    <span class="badge badge-approved">证据库严格约束</span>
+                    <button class="btn-control" style="font-size:11.5px;">导出札记</button>
+                  </div>
+                </div>
+
+                <div class="chat-history">
+                  <div class="msg-user">
+                    请考证乾隆皇帝南巡时驻跸木渎的具体行宫地点与驻跸时间，在现有文献中有何确切记载？
+                  </div>
+
+                  <div class="msg-agent">
+                    <div class="msg-agent-header">
+                      <img src="C:/Users/蒲煜元/.gemini/antigravity/brain/cd77d99f-5c52-4d28-b5ae-6c9bb4202348/xingxi_brand_celadon_emblem_1792033808162.jpg" class="agent-avatar-img" alt="星羲" />
+                      <span>星羲弦沚 · 考据解答</span>
+                      <span style="margin-left:auto; font-size:11px; font-weight:normal; color:var(--muted-fg);">生成置信度：高 (96%)</span>
+                    </div>
+
+                    <p>依据入库文献《清实录·高宗纯皇帝实录》与民国《吴县志》载录，乾隆皇帝十六年（1751）首次南巡即驻跸木渎。</p>
+
+                    <p style="margin-top:8px;">
+                      其行馆主要设于灵岩山麓之
+                      <span class="evidence-pill" onclick="highlightEvidence(1)">[文献:木渎镇志 卷三]</span>
+                      ，即徐氏别业（后为虹饮山房
+                      <span class="evidence-pill" onclick="highlightEvidence(2)">[文献:吴县志 艺文考]</span>
+                      ）。乾隆帝曾在此驻跸并赐诗题额。后历次南巡（二十二年、二十七年、三十年、四十五年、四十九年）均以此为行宫别苑。
+                    </p>
+
+                    <div style="margin-top:12px; padding:10px 14px; background:var(--muted); border-radius:6px; font-size:12.5px;">
+                      <strong>⚠️ 考据提示：</strong> 民间相传严家花园前身沈氏羡园亦曾设接驾行馆，但查阅现存乾隆朝起居注，未见正式驻跸明文，仅作游憩经停记载。
+                    </div>
+                  </div>
+                </div>
+
+                <div class="chat-bottom-input">
+                  <div class="composer-card" style="padding:10px 14px; border-radius:8px;">
+                    <input type="text" class="composer-input" style="min-height:28px;" placeholder="继续追问文献细节，或要求对比不同方志版本...">
+                  </div>
+                </div>
+              </div>
+
+              <!-- Right Evidence Inspector -->
+              <aside class="evidence-inspector">
+                <div class="inspector-header">
+                  <span>📜 史料考据视窗 (Evidence)</span>
+                  <span style="font-size:11px; color:var(--primary);">共 2 条关联出处</span>
+                </div>
+                <div class="inspector-body">
+                  <div class="evidence-card" id="ev-card-1" style="border-left: 3px solid var(--primary);">
+                    <div class="evidence-meta">
+                      <strong>《木渎镇志》卷三·建置考</strong>
+                      <span>第 42 页</span>
+                    </div>
+                    <div class="evidence-quote">
+                      “虹饮山房，在灵岩山麓，前临香溪。清高宗乾隆帝南巡驻跸于此，赐匾题诗，为江南行馆之一。”
+                    </div>
+                    <div style="display:flex; justify-content:space-between; align-items:center; font-size:11.5px; color:var(--muted-fg); margin-top:8px;">
+                      <span>OCR置信度: 0.98</span>
+                      <span class="badge badge-approved">人工已审核</span>
+                    </div>
+                  </div>
+
+                  <div class="evidence-card" id="ev-card-2">
+                    <div class="evidence-meta">
+                      <strong>《吴县志》艺文考·御制诗集</strong>
+                      <span>第 118 页</span>
+                    </div>
+                    <div class="evidence-quote">
+                      “辛未春驻跸灵岩精舍，题虹饮山房：‘两岸香溪绿涨齐，名山迎驾步平堤。’...”
+                    </div>
+                    <div style="display:flex; justify-content:space-between; align-items:center; font-size:11.5px; color:var(--muted-fg); margin-top:8px;">
+                      <span>OCR置信度: 0.95</span>
+                      <span class="badge badge-approved">人工已审核</span>
+                    </div>
+                  </div>
+                </div>
+              </aside>
+            </div>
+          </div>
+
+          <!-- SCENARIO 3: Map & GLB 3D Preview (/workspace/map) -->
+          <div class="scenario-container" id="scenario-map">
+            <div class="map-layout">
+
+              <!-- Map Canvas Mock (OSM style) -->
+              <div class="osm-canvas-mock">
+                <!-- Top-Left HUD Layers -->
+                <div class="map-hud-layers">
+                  <div style="font-weight:600; margin-bottom:4px; color:var(--fg);">🗺️ 历史舆图层级</div>
+                  <label class="layer-item"><input type="checkbox" checked> 现代底图 (OSM 原色标准)</label>
+                  <label class="layer-item"><input type="checkbox" checked> 清·乾隆南巡古舆图范围</label>
+                  <label class="layer-item"><input type="checkbox"> 宋·平江图水系叠加</label>
+                  <label class="layer-item"><input type="checkbox" checked> 3D名胜模型标点 (7处)</label>
+                </div>
+
+                <!-- 28px Fixed Landmark Pins -->
+                <div class="map-pin-target" style="top:42%; left:48%;" onclick="selectPoint('虹饮山房', '清代徐氏别业，乾隆行馆', '3D')">
+                  <div class="map-pin-badge">3D</div>
+                </div>
+                <div class="map-pin-target" style="top:32%; left:58%;" onclick="selectPoint('古松园', '清末雕花名宅', '3D')">
+                  <div class="map-pin-badge">3D</div>
+                </div>
+                <div class="map-pin-target" style="top:60%; left:40%;" onclick="selectPoint('永安桥', '香溪宋代古石桥 (近似坐标)', '2D')">
+                  <div class="map-pin-badge" style="background:#856214;">桥</div>
+                </div>
+
+                <!-- Bottom Timeline -->
+                <div class="map-timeline-bar">
+                  <span style="font-weight:600; font-size:12px;">纪年跃迁:</span>
+                  <div class="timeline-node">
+                    <span class="timeline-dot"></span>
+                    <span>春秋</span>
+                  </div>
+                  <div class="timeline-node">
+                    <span class="timeline-dot"></span>
+                    <span>宋 (1127)</span>
+                  </div>
+                  <div class="timeline-node active">
+                    <span class="timeline-dot"></span>
+                    <span>清·乾隆 (1751)</span>
+                  </div>
+                  <div class="timeline-node">
+                    <span class="timeline-dot"></span>
+                    <span>民国 (1912)</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Right Detail Panel with GLB 3D Preview -->
+              <aside class="map-detail-panel">
+                <div class="glb-viewport-mock">
+                  <div class="glb-badge">3D GLB 预览 · ~48 MB</div>
+                  <div class="glb-wireframe"></div>
+                  <p style="font-size:12px; letter-spacing:0.5px;">@google/model-viewer 单实例按需载入</p>
+                  <span style="font-size:11px; color:#68868a; margin-top:4px;">[可拖拽旋转 · 滚轮缩放 · 双击复位]</span>
+                </div>
+
+                <div style="padding:18px; flex:1; overflow-y:auto;">
+                  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+                    <h3 id="point-title" style="font-size:17px; font-weight:600;">虹饮山房</h3>
+                    <span class="badge badge-approved">正式考证点位</span>
+                  </div>
+                  <p id="point-desc" style="font-size:13px; color:var(--muted-fg); line-height:1.6; margin-bottom:16px;">
+                    位于木渎古镇山塘街，为清初名士徐士元故邸。乾隆南巡驻跸于此，戏台、春晖楼、花篮厅构筑精巧。
+                  </p>
+
+                  <div style="border-top:1px solid var(--border); padding-top:14px;">
+                    <div style="font-size:12px; font-weight:600; margin-bottom:8px;">📌 坐标与依据</div>
+                    <div style="font-size:12px; color:var(--muted-fg); display:flex; flex-direction:column; gap:4px;">
+                      <span>经纬度：120.5142° E, 31.2587° N</span>
+                      <span>依据文献：《木渎古镇建筑实测图集》、《吴县志》</span>
+                      <span>关联人物：乾隆帝、徐士元、沈德潜</span>
+                    </div>
+                  </div>
+
+                  <button class="btn-submit" style="width:100%; justify-content:center; margin-top:20px;" onclick="switchScenario('chat')">
+                    围绕此地点展开问答考据 →
+                  </button>
+                </div>
+              </aside>
+            </div>
+          </div>
+
+          <!-- SCENARIO 4: Empty State & Scholar Vignette -->
+          <div class="scenario-container" id="scenario-empty">
+            <div class="empty-state-view">
+              <div class="empty-state-card">
+                <img src="C:/Users/蒲煜元/.gemini/antigravity/brain/cd77d99f-5c52-4d28-b5ae-6c9bb4202348/scholar_gazetteer_study_vignette_1792033794763.jpg" class="empty-vignette-img" alt="案头方志研读" />
+                <h3>暂无更深文献记载 · 需扩充考据范围</h3>
+                <p>当前检索范围覆盖了《木渎镇志》、《吴县志》等已发布方志，未发现符合该题目的明确记载。建议精简考证关键词、更换历史朝代或等待新一批方志批次入库。</p>
+                <div class="empty-actions">
+                  <button class="btn-submit" onclick="switchScenario('home')">返回文史检索</button>
+                  <button class="btn-control" style="padding:6px 14px;" onclick="switchScenario('chat')">向星羲发起背景推断分析</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    function switchScenario(name) {
+      document.querySelectorAll('.scenario-container').forEach(el => el.classList.remove('active'));
+      const target = document.getElementById('scenario-' + name);
+      if (target) target.classList.add('active');
+
+      const buttons = document.querySelectorAll('.prototype-bar .btn-control');
+      buttons.forEach(btn => {
+        if (btn.innerText.includes('1.') && name === 'home') btn.classList.add('active');
+        else if (btn.innerText.includes('2.') && name === 'chat') btn.classList.add('active');
+        else if (btn.innerText.includes('3.') && name === 'map') btn.classList.add('active');
+        else if (btn.innerText.includes('4.') && name === 'empty') btn.classList.add('active');
+        else if (btn.innerText.includes('1.') || btn.innerText.includes('2.') || btn.innerText.includes('3.') || btn.innerText.includes('4.')) btn.classList.remove('active');
+      });
+    }
+
+    function setDevice(mode) {
+      const frame = document.getElementById('deviceFrame');
+      frame.className = 'device-frame mode-' + mode;
+
+      document.getElementById('btn-desktop').classList.toggle('active', mode === 'desktop');
+      document.getElementById('btn-tablet').classList.toggle('active', mode === 'tablet');
+      document.getElementById('btn-mobile').classList.toggle('active', mode === 'mobile');
+    }
+
+    function toggleTheme() {
+      document.body.classList.toggle('dark-mode');
+    }
+
+    function selectPoint(title, desc, type) {
+      document.getElementById('point-title').innerText = title;
+      document.getElementById('point-desc').innerText = desc;
+    }
+
+    function highlightEvidence(id) {
+      const card = document.getElementById('ev-card-' + id);
+      if (card) {
+        card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        card.style.borderColor = 'var(--primary)';
+        card.style.boxShadow = '0 0 0 3px rgba(23,109,121,0.2)';
+        setTimeout(() => {
+          card.style.borderColor = 'var(--border)';
+          card.style.boxShadow = 'var(--shadow-sm)';
+        }, 1500);
+      }
+    }
+  </script>
+</body>
+</html>

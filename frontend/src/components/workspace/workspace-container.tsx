@@ -12,9 +12,14 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
-import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useI18n } from "@/core/i18n/hooks";
 import { cn } from "@/lib/utils";
+
+import {
+  WorkspaceSearchLink,
+  WorkspaceSidebarToggle,
+} from "./workspace-mobile-header";
+import { workspacePageTitle } from "./workspace-navigation";
 
 export function WorkspaceContainer({
   className,
@@ -22,7 +27,13 @@ export function WorkspaceContainer({
   ...props
 }: React.ComponentProps<"div">) {
   return (
-    <div className={cn("flex h-screen w-full flex-col", className)} {...props}>
+    <div
+      className={cn(
+        "workspace-page-container flex h-full min-h-0 w-full flex-col",
+        className,
+      )}
+      {...props}
+    >
       {children}
     </div>
   );
@@ -44,14 +55,17 @@ export function WorkspaceHeader({
   return (
     <header
       className={cn(
-        "top-0 right-0 left-0 z-20 flex h-16 shrink-0 items-center justify-between gap-2 border-b backdrop-blur-sm transition-[width,height] ease-out group-has-data-[collapsible=icon]/sidebar-wrapper:h-12",
+        "bg-background/95 text-foreground top-0 right-0 left-0 z-20 flex h-12 shrink-0 items-center justify-between gap-2 border-b backdrop-blur-sm md:h-16 md:group-has-data-[collapsible=icon]/sidebar-wrapper:h-12",
         className,
       )}
       {...props}
     >
       <div className="flex min-w-0 items-center gap-2 px-2 sm:px-4">
-        <SidebarTrigger className="md:hidden" />
-        <Breadcrumb>
+        <WorkspaceSidebarToggle className="md:hidden" />
+        <span className="truncate font-serif text-sm font-semibold md:hidden">
+          {workspacePageTitle(pathname)}
+        </span>
+        <Breadcrumb className="hidden md:block">
           <BreadcrumbList>
             {segments?.[0] && (
               <BreadcrumbItem className="hidden md:block">
@@ -89,6 +103,7 @@ export function WorkspaceHeader({
           </BreadcrumbList>
         </Breadcrumb>
       </div>
+      <WorkspaceSearchLink className="mr-2 md:hidden" />
     </header>
   );
 }
@@ -101,7 +116,7 @@ export function WorkspaceBody({
   return (
     <main
       className={cn(
-        "relative flex min-h-0 w-full flex-1 flex-col items-center",
+        "relative flex min-h-0 w-full flex-1 flex-col items-center overflow-y-auto",
         className,
       )}
       {...props}

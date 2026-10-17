@@ -5,11 +5,27 @@ import * as React from "react";
 import { SidebarProvider, useSidebar } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 
-const SIDEBAR_DEFAULT_WIDTH = 256;
-const SIDEBAR_COLLAPSED_WIDTH = 48;
+const SIDEBAR_DEFAULT_WIDTH = 260;
+const SIDEBAR_COLLAPSED_WIDTH = 64;
 const SIDEBAR_MIN_EXPANDED_WIDTH = 224;
 const SIDEBAR_MAX_WIDTH = 480;
 const SIDEBAR_COLLAPSE_THRESHOLD = 160;
+
+const COMPACT_QUERY = "(min-width: 768px) and (max-width: 1199px)";
+
+function subscribeCompact(callback: () => void) {
+  const media = window.matchMedia(COMPACT_QUERY);
+  media.addEventListener("change", callback);
+  return () => media.removeEventListener("change", callback);
+}
+
+function compactSnapshot() {
+  return window.matchMedia(COMPACT_QUERY).matches;
+}
+
+function serverCompactSnapshot() {
+  return false;
+}
 
 type SidebarResizeContextValue = {
   sidebarWidth: number;
@@ -30,7 +46,7 @@ function useSidebarResize() {
 }
 
 export function WorkspaceSidebarProvider({
-  defaultOpen = true,
+  defaultOpen,
   className,
   style,
   ...props
@@ -38,7 +54,15 @@ export function WorkspaceSidebarProvider({
   React.ComponentProps<typeof SidebarProvider>,
   "open" | "onOpenChange"
 >) {
-  const [open, setOpen] = React.useState(defaultOpen);
+  // A saved Cookie or an explicit user action takes precedence over the
+  // viewport default. Automatic breakpoint changes never write the Cookie.
+  const [preferredOpen, setOpen] = React.useState(defaultOpen);
+  const compact = React.useSyncExternalStore(
+    subscribeCompact,
+    compactSnapshot,
+    serverCompactSnapshot,
+  );
+  const open = preferredOpen ?? !compact;
   const [sidebarWidth, setSidebarWidthState] = React.useState(
     SIDEBAR_DEFAULT_WIDTH,
   );
@@ -89,7 +113,7 @@ type ActiveSidebarResize = {
 };
 
 export function WorkspaceSidebarRail({ className }: { className?: string }) {
-  const { open, setOpen, toggleSidebar } = useSidebar();
+  const { open, setOpen, toggleSidebar, isMobile } = useSidebar();
   const { sidebarWidth, setSidebarWidth } = useSidebarResize();
   const railRef = React.useRef<HTMLButtonElement | null>(null);
   const activeResizeRef = React.useRef<ActiveSidebarResize | null>(null);
@@ -152,16 +176,18 @@ export function WorkspaceSidebarRail({ className }: { className?: string }) {
     };
   }, [finishResize]);
 
+  if (isMobile) return null;
+
   return (
     <button
       ref={railRef}
       type="button"
       data-sidebar="rail"
       data-slot="sidebar-rail"
-      aria-label="Resize or toggle Sidebar"
+      aria-label="拖动调整侧栏宽度，或单击折叠侧栏"
       draggable={false}
       tabIndex={-1}
-      title="Resize or toggle Sidebar"
+      title="拖动调整宽度；Esc 取消调整"
       className={cn(
         "data-[resizing=true]:after:bg-sidebar-border focus-visible:after:bg-sidebar-ring absolute inset-y-0 z-30 hidden w-4 -translate-x-1/2 touch-none select-none group-data-[side=left]:-right-4 group-data-[side=right]:left-0 after:pointer-events-none after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] after:bg-transparent focus-visible:outline-none sm:flex",
         "in-data-[side=left]:cursor-w-resize in-data-[side=right]:cursor-e-resize",

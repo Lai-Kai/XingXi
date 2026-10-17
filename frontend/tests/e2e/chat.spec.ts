@@ -5,12 +5,32 @@ import { handleRunStream, mockLangGraphAPI } from "./utils/mock-api";
 test.describe("Chat workspace", () => {
   test.beforeEach(async ({ page }) => {
     mockLangGraphAPI(page);
+    // Xingxi intentionally blocks submission with no configured model.
+    await page.route("**/api/models", (route) =>
+      route.fulfill({
+        json: {
+          models: [
+            {
+              id: "test-chat",
+              name: "test-chat",
+              model: "test-chat",
+              display_name: "测试对话模型",
+              supports_thinking: false,
+              supports_reasoning_effort: false,
+            },
+          ],
+          token_usage: { enabled: false },
+        },
+      }),
+    );
   });
 
   test("new chat page loads with input box", async ({ page }) => {
     await page.goto("/workspace/chats/new");
 
-    const textarea = page.getByPlaceholder(/how can i assist you/i);
+    const textarea = page.getByPlaceholder(
+      /Ask about Mudu sites, people, gazetteers, or historical change|询问木渎古迹、人物、方志出处或历史沿革/i,
+    );
     await expect(textarea).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole("button", { name: /load more/i })).toBeHidden();
   });
@@ -18,7 +38,9 @@ test.describe("Chat workspace", () => {
   test("can type a message in the input box", async ({ page }) => {
     await page.goto("/workspace/chats/new");
 
-    const textarea = page.getByPlaceholder(/how can i assist you/i);
+    const textarea = page.getByPlaceholder(
+      /Ask about Mudu sites, people, gazetteers, or historical change|询问木渎古迹、人物、方志出处或历史沿革/i,
+    );
     await expect(textarea).toBeVisible({ timeout: 15_000 });
 
     await textarea.fill("Hello, DeerFlow!");
@@ -72,7 +94,9 @@ test.describe("Chat workspace", () => {
 
     await page.goto("/workspace/chats/new");
 
-    const textarea = page.getByPlaceholder(/how can i assist you/i);
+    const textarea = page.getByPlaceholder(
+      /Ask about Mudu sites, people, gazetteers, or historical change|询问木渎古迹、人物、方志出处或历史沿革/i,
+    );
     await expect(textarea).toBeVisible({ timeout: 15_000 });
 
     await textarea.fill("summarize report");
@@ -116,7 +140,9 @@ test.describe("Chat workspace", () => {
 
     await page.goto("/workspace/chats/new");
 
-    const textarea = page.getByPlaceholder(/how can i assist you/i);
+    const textarea = page.getByPlaceholder(
+      /Ask about Mudu sites, people, gazetteers, or historical change|询问木渎古迹、人物、方志出处或历史沿革/i,
+    );
     await expect(textarea).toBeVisible({ timeout: 15_000 });
 
     await textarea.fill("summarize report");
@@ -155,7 +181,9 @@ test.describe("Chat workspace", () => {
 
     await page.goto("/workspace/chats/new");
 
-    const textarea = page.getByPlaceholder(/how can i assist you/i);
+    const textarea = page.getByPlaceholder(
+      /Ask about Mudu sites, people, gazetteers, or historical change|询问木渎古迹、人物、方志出处或历史沿革/i,
+    );
     await expect(textarea).toBeVisible({ timeout: 15_000 });
 
     await textarea.fill("summarize report");
@@ -204,7 +232,9 @@ test.describe("Chat workspace", () => {
 
     await page.goto("/workspace/chats/new");
 
-    const textarea = page.getByPlaceholder(/how can i assist you/i);
+    const textarea = page.getByPlaceholder(
+      /Ask about Mudu sites, people, gazetteers, or historical change|询问木渎古迹、人物、方志出处或历史沿革/i,
+    );
     await expect(textarea).toBeVisible({ timeout: 15_000 });
 
     await textarea.fill("/dat");
@@ -219,7 +249,7 @@ test.describe("Chat workspace", () => {
 
     await expect(page.getByText("/data-analysis")).toBeVisible();
     const skillInput = page.getByRole("textbox", {
-      name: /how can i assist you/i,
+      name: /Ask about Mudu sites, people, gazetteers, or historical change|询问木渎古迹、人物、方志出处或历史沿革/i,
     });
     await expect(skillInput).toBeVisible();
 
@@ -239,7 +269,9 @@ test.describe("Chat workspace", () => {
       return route.fallback();
     });
 
-    const textarea = page.getByPlaceholder(/how can i assist you/i);
+    const textarea = page.getByPlaceholder(
+      /Ask about Mudu sites, people, gazetteers, or historical change|询问木渎古迹、人物、方志出处或历史沿革/i,
+    );
     await expect(textarea).toBeVisible({ timeout: 15_000 });
 
     await textarea.fill("/go");
@@ -260,7 +292,9 @@ test.describe("Chat workspace", () => {
   }) => {
     await page.goto("/workspace/chats/new");
 
-    const textarea = page.getByPlaceholder(/how can i assist you/i);
+    const textarea = page.getByPlaceholder(
+      /Ask about Mudu sites, people, gazetteers, or historical change|询问木渎古迹、人物、方志出处或历史沿革/i,
+    );
     await expect(textarea).toBeVisible({ timeout: 15_000 });
 
     await textarea.fill(
@@ -303,7 +337,9 @@ test.describe("Chat workspace", () => {
   }) => {
     await page.goto("/workspace/chats/new");
 
-    const textarea = page.getByPlaceholder(/how can i assist you/i);
+    const textarea = page.getByPlaceholder(
+      /Ask about Mudu sites, people, gazetteers, or historical change|询问木渎古迹、人物、方志出处或历史沿革/i,
+    );
     await expect(textarea).toBeVisible({ timeout: 15_000 });
 
     await textarea.fill("/");
@@ -335,7 +371,9 @@ test.describe("Chat workspace", () => {
 
     await expect(page.getByText("/frontend-design")).toBeVisible();
     await expect(
-      page.getByRole("textbox", { name: /how can i assist you/i }),
+      page.getByRole("textbox", {
+        name: /Ask about Mudu sites, people, gazetteers, or historical change|询问木渎古迹、人物、方志出处或历史沿革/i,
+      }),
     ).toBeVisible();
   });
 
@@ -344,7 +382,9 @@ test.describe("Chat workspace", () => {
   }) => {
     await page.goto("/workspace/chats/new");
 
-    const textarea = page.getByPlaceholder(/how can i assist you/i);
+    const textarea = page.getByPlaceholder(
+      /Ask about Mudu sites, people, gazetteers, or historical change|询问木渎古迹、人物、方志出处或历史沿革/i,
+    );
     await expect(textarea).toBeVisible({ timeout: 15_000 });
 
     await textarea.fill("/dat");
@@ -365,7 +405,9 @@ test.describe("Chat workspace", () => {
   }) => {
     await page.goto("/workspace/chats/new");
 
-    const textarea = page.getByPlaceholder(/how can i assist you/i);
+    const textarea = page.getByPlaceholder(
+      /Ask about Mudu sites, people, gazetteers, or historical change|询问木渎古迹、人物、方志出处或历史沿革/i,
+    );
     await expect(textarea).toBeVisible({ timeout: 15_000 });
 
     await textarea.fill("please /dat");
@@ -386,7 +428,9 @@ test.describe("Chat workspace", () => {
 
     await page.goto("/workspace/chats/new");
 
-    const textarea = page.getByPlaceholder(/how can i assist you/i);
+    const textarea = page.getByPlaceholder(
+      /Ask about Mudu sites, people, gazetteers, or historical change|询问木渎古迹、人物、方志出处或历史沿革/i,
+    );
     await expect(textarea).toBeVisible({ timeout: 15_000 });
 
     await textarea.fill("Hello");
@@ -430,7 +474,9 @@ test.describe("Chat workspace", () => {
 
     await page.goto("/workspace/chats/new");
 
-    const textarea = page.getByPlaceholder(/how can i assist you/i);
+    const textarea = page.getByPlaceholder(
+      /Ask about Mudu sites, people, gazetteers, or historical change|询问木渎古迹、人物、方志出处或历史沿革/i,
+    );
     await expect(textarea).toBeVisible({ timeout: 15_000 });
 
     await page.getByRole("button", { name: /research/i }).click();
@@ -500,7 +546,9 @@ test.describe("Chat workspace", () => {
 
     await page.goto("/workspace/chats/new");
 
-    const textarea = page.getByPlaceholder(/how can i assist you/i);
+    const textarea = page.getByPlaceholder(
+      /Ask about Mudu sites, people, gazetteers, or historical change|询问木渎古迹、人物、方志出处或历史沿革/i,
+    );
     await expect(textarea).toBeVisible({ timeout: 15_000 });
 
     await textarea.fill(slashCommand);
@@ -583,7 +631,9 @@ test.describe("Chat workspace", () => {
 
     await page.goto("/workspace/chats/new");
 
-    const textarea = page.getByPlaceholder(/how can i assist you/i);
+    const textarea = page.getByPlaceholder(
+      /Ask about Mudu sites, people, gazetteers, or historical change|询问木渎古迹、人物、方志出处或历史沿革/i,
+    );
     await expect(textarea).toBeVisible({ timeout: 15_000 });
 
     await page.getByLabel("Upload files").setInputFiles({
@@ -759,7 +809,9 @@ test.describe("Chat workspace", () => {
 
     await page.goto("/workspace/chats/new");
 
-    const textarea = page.getByPlaceholder(/how can i assist you/i);
+    const textarea = page.getByPlaceholder(
+      /Ask about Mudu sites, people, gazetteers, or historical change|询问木渎古迹、人物、方志出处或历史沿革/i,
+    );
     await expect(textarea).toBeVisible({ timeout: 15_000 });
     const promptForm = page.locator("form").filter({ has: textarea });
 
@@ -813,7 +865,9 @@ test.describe("Chat workspace", () => {
 
     await page.goto("/workspace/chats/new");
 
-    const textarea = page.getByPlaceholder(/how can i assist you/i);
+    const textarea = page.getByPlaceholder(
+      /Ask about Mudu sites, people, gazetteers, or historical change|询问木渎古迹、人物、方志出处或历史沿革/i,
+    );
     await expect(textarea).toBeVisible({ timeout: 15_000 });
 
     await textarea.fill("Hello");

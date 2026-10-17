@@ -66,7 +66,7 @@ const relations: Record<GraphRelation["relation_type"], string> = {
   mentioned_in_poetry: "诗文提及",
   documented_in: "出自文献",
 };
-const control = "rounded border bg-white px-3 py-2 text-sm disabled:opacity-50";
+const control = "rounded border bg-card px-3 py-2 text-sm disabled:opacity-50";
 
 export function GraphOverview({ isAdmin }: { isAdmin: boolean }) {
   const [mode, setMode] = useState<"overview" | "local">("overview");
@@ -332,12 +332,17 @@ export function GraphOverview({ isAdmin }: { isAdmin: boolean }) {
       }))
     : graphNodes.map((node) => ({
         id: node.id,
+        className: `admin-graph-node admin-graph-node--${node.entity_type}`,
         position: positions.get(node.id) ?? { x: 0, y: 0 },
         data: { label: `${node.canonical_name} · ${types[node.entity_type]}` },
         selected: selected?.id === node.id,
         style: {
-          width: 170,
-          minHeight: 55,
+          width: node.entity_type === "person" ? 140 : 170,
+          minHeight: node.entity_type === "person" ? 140 : 64,
+          borderRadius: node.entity_type === "person" ? 999 : 12,
+          display: "grid",
+          placeItems: "center",
+          borderStyle: node.review_status === "reviewed" ? "solid" : "dashed",
           background: node.entity_type === "person" ? "#fff8ed" : "#edf7f4",
           border: highlighted.has(node.id)
             ? "2px solid #24676c"
@@ -353,12 +358,21 @@ export function GraphOverview({ isAdmin }: { isAdmin: boolean }) {
         label: relations[edge.relation_type],
         markerEnd: { type: MarkerType.ArrowClosed },
         selected: edge.id === selectedEdge,
+        animated: edge.review_status === "disputed",
+        labelStyle: { fill: "var(--foreground)", fontSize: 11 },
+        labelBgStyle: { fill: "var(--card)" },
         style: {
           stroke:
             selected?.id &&
             [edge.subject_id, edge.object_id].includes(selected.id)
-              ? "#24676c"
-              : "#9baca8",
+              ? "var(--primary)"
+              : edge.review_status === "disputed"
+                ? "var(--heritage-disputed-foreground)"
+                : "var(--muted-foreground)",
+          strokeDasharray:
+            edge.is_inferred || edge.review_status !== "reviewed"
+              ? "6 4"
+              : undefined,
           strokeWidth: edge.id === selectedEdge ? 3 : 1.5,
         },
       }));
@@ -379,7 +393,7 @@ export function GraphOverview({ isAdmin }: { isAdmin: boolean }) {
       <article
         key={edge.id}
         data-testid={`overview-relation-${edge.id}`}
-        className="space-y-2 rounded border bg-white p-3 text-sm"
+        className="bg-card space-y-2 rounded border p-3 text-sm"
       >
         <p>
           {byId.get(edge.subject_id)?.canonical_name} →{" "}
@@ -397,7 +411,7 @@ export function GraphOverview({ isAdmin }: { isAdmin: boolean }) {
         {edge.evidence_ids.map((id) => (
           <a
             key={id}
-            className="block text-teal-800 underline"
+            className="text-primary block underline"
             href={`/api/knowledge-search/evidence/${encodeURIComponent(id)}`}
             target="_blank"
             rel="noreferrer"
@@ -444,7 +458,7 @@ export function GraphOverview({ isAdmin }: { isAdmin: boolean }) {
           {selected.evidence_ids.map((id) => (
             <a
               key={id}
-              className="block text-sm text-teal-800 underline"
+              className="text-primary block text-sm underline"
               href={`/api/knowledge-search/evidence/${encodeURIComponent(id)}`}
               target="_blank"
               rel="noreferrer"
@@ -464,7 +478,7 @@ export function GraphOverview({ isAdmin }: { isAdmin: boolean }) {
           )}
         </>
       ) : (
-        <p className="text-sm text-slate-600">
+        <p className="text-muted-foreground text-sm">
           点击任意主体或关系查看详情；总览图将保持显示。
         </p>
       )}
@@ -543,7 +557,7 @@ export function GraphOverview({ isAdmin }: { isAdmin: boolean }) {
         </button>
       </div>
       {error && (
-        <p role="alert" className="text-red-700">
+        <p role="alert" className="text-heritage-rejected-foreground">
           {error}{" "}
           <button className={control} onClick={() => void load()}>
             重试
@@ -558,7 +572,7 @@ export function GraphOverview({ isAdmin }: { isAdmin: boolean }) {
             {data.edges.length}/{data.total_edges} 条关系
           </p>
           {data.truncated && (
-            <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm">
+            <div className="border-heritage-disputed-border bg-heritage-disputed-surface rounded border p-3 text-sm">
               已达到本批加载上限，当前不是完整图谱。
               <button
                 className={`${control} ml-2`}
@@ -627,7 +641,7 @@ export function GraphOverview({ isAdmin }: { isAdmin: boolean }) {
       <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
         <div className="min-w-0">
           <div
-            className={`${listView ? "hidden lg:block" : ""} h-[55vh] min-h-80 overflow-hidden rounded border bg-white`}
+            className={`${listView ? "hidden lg:block" : ""} bg-card h-[55vh] min-h-80 overflow-hidden rounded border`}
             data-testid="global-graph"
             data-mode={mode}
           >
@@ -677,6 +691,8 @@ export function GraphOverview({ isAdmin }: { isAdmin: boolean }) {
               <Background />
               <Controls showInteractive={false} />
               <MiniMap
+                maskColor="var(--background)"
+                nodeColor="var(--primary)"
                 pannable
                 zoomable
                 position="top-right"
@@ -707,7 +723,7 @@ export function GraphOverview({ isAdmin }: { isAdmin: boolean }) {
           </div>
         </div>
         <aside
-          className="hidden max-h-[65vh] overflow-y-auto rounded border bg-white p-4 lg:block"
+          className="bg-card hidden max-h-[65vh] overflow-y-auto rounded border p-4 lg:block"
           aria-label="选中详情"
         >
           {details}
@@ -730,7 +746,7 @@ export function GraphOverview({ isAdmin }: { isAdmin: boolean }) {
       </Sheet>
       <section
         aria-label="主体目录"
-        className="space-y-3 rounded border bg-white p-4"
+        className="bg-card space-y-3 rounded border p-4"
       >
         <h3 className="font-semibold">主体目录</h3>
         <div className="flex flex-wrap gap-2">

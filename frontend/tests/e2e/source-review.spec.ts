@@ -8,6 +8,32 @@ const jobId = "ingestion-job-review-1";
 
 async function mockReviewAPI(page: Page) {
   mockLangGraphAPI(page);
+  await page.route("**/api/source-documents/library/page?**", (route) =>
+    route.fulfill({
+      json: {
+        items: [
+          {
+            source: {
+              id: documentId,
+              title: "木渎小志",
+              edition: "民国整理本",
+              source_institution: "测试资料室",
+              source_type: "gazetteer",
+              source_level: "C",
+              holder: "测试馆藏",
+              status: "registered",
+              created_at: "2026-07-21T00:00:00Z",
+              updated_at: "2026-07-21T00:00:00Z",
+            },
+            files: [],
+          },
+        ],
+        total: 1,
+        limit: 10,
+        offset: 0,
+      },
+    }),
+  );
   await page.route("**/api/source-documents/upload/limits", (route) =>
     route.fulfill({
       status: 200,
