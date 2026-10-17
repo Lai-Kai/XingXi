@@ -1,3 +1,4 @@
+import { fetch as authenticatedFetch } from "@/core/api/fetcher";
 import { getBackendBaseURL } from "@/core/config";
 
 import { getPointModelAsset, MAP_MODEL_ASSETS } from "./model-assets";
@@ -425,4 +426,41 @@ export async function planMapRoute(
     routeKind: raw.route_kind,
     message: raw.message,
   };
+}
+
+export async function fetchCustomMapPoints(
+  signal?: AbortSignal,
+): Promise<MapPoint[]> {
+  const response = await authenticatedFetch(
+    `${getBackendBaseURL()}/api/map/custom-points`,
+    { signal, cache: "no-store" },
+  );
+  if (!response.ok) throw new Error("暂时无法读取自建点位，请重试加载地图");
+  return ((await response.json()) as RawPoint[]).map(point);
+}
+
+export async function createMapPoint(
+  input: { name: string; lon: number; lat: number; request_id: string },
+  signal: AbortSignal,
+): Promise<MapPoint> {
+  const response = await authenticatedFetch(
+    `${getBackendBaseURL()}/api/map/custom-points`,
+    {
+      method: "POST",
+      signal,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    },
+  );
+  if (!response.ok) {
+    const error = (await response.json().catch(() => null)) as {
+      detail?: unknown;
+    } | null;
+    throw new Error(
+      typeof error?.detail === "string"
+        ? error.detail
+        : `点位保存失败 (${response.status})，请重试`,
+    );
+  }
+  return point((await response.json()) as RawPoint);
 }

@@ -230,6 +230,16 @@ export function mockLangGraphAPI(page: Page, options?: MockAPIOptions) {
           },
     ),
   );
+  void page.route("**/api/map/custom-points", (route) =>
+    route.fulfill(
+      route.request().method() === "GET"
+        ? { json: [] }
+        : {
+            status: 503,
+            json: { detail: "Point writes require an explicit test fixture" },
+          },
+    ),
+  );
   let threads = [...(options?.threads ?? [])];
   const agents = options?.agents ?? [];
   const skills = options?.skills ?? DEFAULT_SKILLS;

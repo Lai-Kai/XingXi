@@ -17,15 +17,16 @@ from starlette.datastructures import UploadFile
 from app.gateway.deps import get_current_user_from_request
 from app.gateway.reconstructions import model_files
 from app.gateway.routers import map_points
+from app.gateway.routers.custom_map_points import get_custom_points
 from app.gateway.routers.reconstructions import admin, get_service
 
 router = APIRouter(prefix="/api/map/model-assets", tags=["map-models"])
 
 
-async def get_model_points(source=Depends(map_points.get_versioned_catalog_source)):
+async def get_model_points(source=Depends(map_points.get_versioned_catalog_source), custom=Depends(get_custom_points)):
     catalog = await map_points.get_map_catalog(source)
     # Match the browser's exact ID-based merge of curated references and Release points.
-    return {point.id: point for point in [*map_points.POINTS, *catalog.points]}
+    return {point.id: point for point in [*map_points.POINTS, *catalog.points, *custom]}
 
 
 def descriptor(job, points):

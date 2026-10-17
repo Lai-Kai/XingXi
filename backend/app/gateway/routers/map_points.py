@@ -83,7 +83,7 @@ class MapPointOut(_Model):
     evidence: tuple[MapEvidenceOut, ...]
     review_status: ReviewStatus | None = None
     release_id: str | None = None
-    record_kind: Literal["reference", "corpus"] = "reference"
+    record_kind: Literal["reference", "corpus", "custom"] = "reference"
     start_year: int | None = None
     end_year: int | None = None
 

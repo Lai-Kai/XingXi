@@ -23,6 +23,7 @@ from app.gateway.routers import (
     channels,
     console,
     corpus_imports,
+    custom_map_points,
     entities,  # noqa: F401
     features,
     feedback,
@@ -675,6 +676,7 @@ This gateway provides Xingxi runtime endpoints plus supporting model, MCP, memor
     app.include_router(entities.router)
     app.include_router(map_points.router)
     app.include_router(map_models.router)
+    app.include_router(custom_map_points.router)
     app.include_router(reconstructions.router)
     app.include_router(operations.router)
     from app.gateway.evaluations.api import router as evaluation_router

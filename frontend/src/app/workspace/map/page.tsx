@@ -43,6 +43,10 @@ import {
   BusinessLoadingState,
 } from "@/components/workspace/business-page";
 import { CreateModelDialog } from "@/components/workspace/map/create-model-dialog";
+import {
+  CreatePointForm,
+  type PickedLocation,
+} from "@/components/workspace/map/create-point-form";
 import { HistoricalTimelineControl } from "@/components/workspace/map/historical-timeline-control";
 import { MapLibreCanvas } from "@/components/workspace/map/maplibre-canvas";
 import { PointModelPreview } from "@/components/workspace/map/point-model-preview";
@@ -54,6 +58,7 @@ import {
 import { useAuth } from "@/core/auth/AuthProvider";
 import {
   fetchMapCatalog,
+  fetchCustomMapPoints,
   planMapRoute,
   readCachedMapCatalog,
 } from "@/core/map/api";
@@ -149,7 +154,7 @@ const reviewLabels = {
 } as const;
 
 function mapRecordScope(record: {
-  recordKind: "reference" | "corpus";
+  recordKind: MapPoint["recordKind"];
   reviewStatus: MapPoint["reviewStatus"];
 }): MapRecordScope {
   return record.recordKind === "corpus" && record.reviewStatus !== "reviewed"
@@ -574,6 +579,11 @@ function PointDetails({
           >
             {confidenceLabels[point.confidence]}
           </span>
+          {point.recordKind === "custom" && (
+            <span className="bg-muted text-muted-foreground mt-1.5 ml-1.5 inline-flex rounded px-2 py-1 text-xs">
+              自建点位
+            </span>
+          )}
           {point.reviewStatus && (
             <span
               className={cn(
@@ -901,6 +911,11 @@ export default function MapPage() {
     [],
   );
   const [modelError, setModelError] = useState("");
+  const [creatingPoint, setCreatingPoint] = useState(false);
+  const [pickedLocation, setPickedLocation] = useState<PickedLocation | null>(
+    null,
+  );
+  const [resumeModelAfterPoint, setResumeModelAfterPoint] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
     void listMapModels(controller.signal)
@@ -990,6 +1005,30 @@ export default function MapPage() {
   const [locating, setLocating] = useState(false);
   const [routePlanning, setRoutePlanning] = useState(false);
   const [routeError, setRouteError] = useState<string | null>(null);
+
+  const startCreatePoint = (resumeModel = false) => {
+    setResumeModelAfterPoint(resumeModel);
+    setCreateModelOpen(false);
+    setDetailSheetOpen(false);
+    setEventDetailSheetOpen(false);
+    setToolPanel(null);
+    setPlaying(false);
+    setPickedLocation(null);
+    setCreatingPoint(true);
+  };
+  const cancelCreatePoint = useCallback(() => {
+    setCreatingPoint(false);
+    setPickedLocation(null);
+    if (resumeModelAfterPoint) setCreateModelOpen(true);
+  }, [resumeModelAfterPoint]);
+  useEffect(() => {
+    if (!creatingPoint || pickedLocation) return;
+    const cancelOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") cancelCreatePoint();
+    };
+    window.addEventListener("keydown", cancelOnEscape);
+    return () => window.removeEventListener("keydown", cancelOnEscape);
+  }, [creatingPoint, pickedLocation, cancelCreatePoint]);
 
   const selectPoint = useCallback(
     (pointId: string) => {
@@ -1102,8 +1141,16 @@ export default function MapPage() {
   useEffect(() => {
     const controller = new AbortController();
     setError(null);
-    fetchMapCatalog(controller.signal, { force: reloadKey > 0 })
-      .then((nextCatalog) => {
+    Promise.all([
+      fetchMapCatalog(controller.signal, { force: reloadKey > 0 }),
+      fetchCustomMapPoints(controller.signal),
+    ])
+      .then(([baseCatalog, customPoints]) => {
+        if (controller.signal.aborted) return;
+        const nextCatalog = {
+          ...baseCatalog,
+          points: [...baseCatalog.points, ...customPoints],
+        };
         setCatalog(nextCatalog);
         const firstRoute = nextCatalog.routes[0];
         setActiveRouteId((current) => current ?? firstRoute?.id ?? null);
@@ -2053,11 +2100,13 @@ export default function MapPage() {
 
   return (
     <div className="research-map bg-background text-foreground relative isolate flex h-full min-h-0 flex-col">
-      <header className="research-map-header bg-card/95 shadow-heritage-card absolute top-3 right-3 left-3 z-20 flex min-h-12 items-center gap-2 rounded-xl border px-2 backdrop-blur md:gap-3 md:px-4 md:py-2">
+      <header className="research-map-header bg-card/95 shadow-heritage-card absolute top-3 right-3 left-3 z-20 flex min-h-12 items-center gap-1 rounded-xl border px-2 backdrop-blur md:gap-3 md:px-4 md:py-2">
         <SidebarTrigger className="md:hidden" />
-        <MapIcon className="text-primary size-4 shrink-0" />
+        <MapIcon className="text-primary hidden size-4 shrink-0 sm:block" />
         <div className="min-w-0">
-          <h1 className="text-base font-semibold">古舆地图</h1>
+          <h1 className="text-sm font-semibold whitespace-nowrap sm:text-base">
+            古舆地图
+          </h1>
           <p className="text-muted-foreground truncate text-xs">
             木渎历史空间 · 现状定位 · 更新于 {catalog.updatedAt}
           </p>
@@ -2069,7 +2118,20 @@ export default function MapPage() {
         {user?.system_role === "admin" && (
           <button
             type="button"
-            className="bg-primary text-primary-foreground ml-auto inline-flex min-h-11 shrink-0 items-center gap-1 rounded-lg px-3 text-xs sm:ml-0"
+            aria-label="创建点位"
+            className="text-primary ml-auto inline-flex min-h-11 shrink-0 items-center gap-1 rounded-lg border px-2 text-xs sm:ml-0"
+            onClick={() => startCreatePoint()}
+            disabled={creatingPoint}
+          >
+            <MapPin className="size-4" />
+            <span>创建点位</span>
+          </button>
+        )}
+        {user?.system_role === "admin" && (
+          <button
+            type="button"
+            disabled={creatingPoint}
+            className="bg-primary text-primary-foreground inline-flex min-h-11 shrink-0 items-center gap-1 rounded-lg px-2 text-xs sm:ml-0 sm:px-3"
             onClick={() => setCreateModelOpen(true)}
           >
             <Plus className="size-4" />
@@ -2105,10 +2167,28 @@ export default function MapPage() {
               historyYear={year}
               activeEventId={activeEventId}
               selectedId={selectedId}
+              pickLocation={creatingPoint && pickedLocation === null}
+              pickedLocation={pickedLocation}
+              onPickLocation={setPickedLocation}
               onSelect={(point) => selectPoint(point.id)}
               onReload={() => setReloadKey((value) => value + 1)}
             />
 
+            {creatingPoint && !pickedLocation && (
+              <div
+                role="status"
+                className="bg-card shadow-heritage-overlay absolute top-36 left-3 z-30 flex max-w-[calc(100%-1.5rem)] items-center gap-3 rounded-lg border px-3 py-2 text-sm"
+              >
+                <span>请点击地图选择新点位，可拖动或缩放地图。</span>
+                <button
+                  type="button"
+                  className="text-primary min-h-11 shrink-0 px-2 underline"
+                  onClick={cancelCreatePoint}
+                >
+                  取消选点
+                </button>
+              </div>
+            )}
             <div className="research-map-hud bg-card/95 shadow-heritage-overlay absolute top-20 left-3 z-10 flex max-w-[calc(100%-5rem)] flex-wrap items-center gap-1 rounded-xl border p-1.5 backdrop-blur">
               <div
                 role="tablist"
@@ -2697,10 +2777,39 @@ export default function MapPage() {
           </button>
         </div>
       )}
+      {user?.system_role === "admin" && creatingPoint && pickedLocation && (
+        <CreatePointForm
+          location={pickedLocation}
+          onCancel={cancelCreatePoint}
+          onPickAgain={() => setPickedLocation(null)}
+          onCreated={(point) => {
+            setCatalog((current) =>
+              current
+                ? {
+                    ...current,
+                    points: [
+                      ...current.points.filter((item) => item.id !== point.id),
+                      point,
+                    ],
+                  }
+                : current,
+            );
+            clearFilters();
+            setSelectedId(point.id);
+            setDetailView("point");
+            setPointDetailTab("overview");
+            setCreatingPoint(false);
+            setPickedLocation(null);
+            setDetailSheetOpen(compactLayout && !resumeModelAfterPoint);
+            if (resumeModelAfterPoint) setCreateModelOpen(true);
+          }}
+        />
+      )}
       {user?.system_role === "admin" && (
         <CreateModelDialog
           open={createModelOpen}
           onOpenChange={setCreateModelOpen}
+          onCreatePoint={() => startCreatePoint(true)}
           points={catalog.points}
           defaultPointId={selectedId ?? undefined}
           onCreated={(pointId, mode) => {

@@ -21,12 +21,14 @@ export function CreateModelDialog({
   points,
   defaultPointId,
   onCreated,
+  onCreatePoint,
 }: {
   open: boolean;
   onOpenChange: (value: boolean) => void;
   points: MapPoint[];
   defaultPointId?: string;
   onCreated: (pointId: string, mode: "import" | "rebuild") => void;
+  onCreatePoint: () => void;
 }) {
   const [mode, setMode] = useState<"import" | "rebuild">("rebuild");
   const [pointId, setPointId] = useState(defaultPointId ?? "");
@@ -108,6 +110,15 @@ export function CreateModelDialog({
               ))}
             </select>
           </label>
+          <Button
+            type="button"
+            variant="outline"
+            className="min-h-11"
+            disabled={progress !== null}
+            onClick={onCreatePoint}
+          >
+            创建点位
+          </Button>
           <div
             role="group"
             aria-label="创建方式"

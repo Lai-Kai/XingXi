@@ -251,6 +251,18 @@ uv run python scripts/bootstrap_fuxianzhi_knowledge.py
 
 ## 迭代日志
 
+### 2026-10-17 20:40 — 模型新建与重新建立流程验收
+- 改动文件：backend/tests/test_map_model_workflow.py、frontend/tests/e2e/map-create-point.spec.ts、前后端 AGENTS.md、新 docs/MAP_MODEL_WORKFLOW_VALIDATION.md。
+- 内容：补充自建点位关联、已有模型导入、图片/视频重建、同素材用新请求重新建立、旧结果保留、幂等重试和重启恢复的组合回归；手机/桌面界面与大文件代理一并复核。
+- 原因：按用户要求确认新建模型、重新建立模型流程可用后再上传分支。
+- 影响/验证：后端专项 64、地图单元 42、浏览器 32 项全部通过，浏览器无失败或跳过；pnpm check 通过（4 条已有警告），当前产品构建上轮已通过，本轮未改产品逻辑。真实 SSH 严格公钥连接、当前 generate 参数与 67,584 字节 SFTP 上传下载/哈希校验通过；不启动新 GPU 训练。完整后端仍为相同 12 个既有收集错误、2 skipped。详见 docs/MAP_MODEL_WORKFLOW_VALIDATION.md。
+
+### 2026-10-17 18:12 — 地图新增选点命名与持久点位
+- 改动文件：地图页面、MapLibreCanvas、CreateModelDialog、新 CreatePointForm、地图 API/types 与测试；后端 custom_map_points 路由、map_points_store、0046_custom_map_points 迁移、应用挂载、模型点位解析及测试；前后端 AGENTS.md、docs/MAP_POINT_CREATION.md。
+- 内容：地图工具栏与创建模型弹窗增加「创建点位」；点击地图选取 WGS84 坐标、填写名称并保存，支持重新选点、取消和失败重试。新点位独立持久保存，刷新保留，并可关联 PLY/GLB 与重建任务；从模型弹窗进入后返回并自动选中新点位。保留管理员创建和登录用户读取权限，重复保存使用请求唯一键。
+- 原因：创建模型此前只能选择已有点位，需要允许为新的拍摄位置建立模型关联点位。
+- 影响/验证：后端专项 62 项、地图单元 42 项通过，前端 lint/类型检查通过（4 条已有警告）；生产构建通过，浏览器 22 项全部通过、无跳过；记录见 reports/integration/2026-10-17/create-map-point/README.md。完整后端改前/改后均为相同 12 个既有 skillscan.orchestrator 缺失收集错误、2 skipped。自建点位显式标识 custom，不发布知识版本或生成史料证据；本轮不启动 GPU 任务。
+
 ### 2026-10-17 17:32 — 地图新增创建模型与持久资产接入
 - 改动文件：前端地图页面、创建弹窗、点位预览/重建面板、registered-models 客户端、新流式路由及单元/浏览器测试；后端 map_models 路由、model_files 格式/文件处理、任务存储与列表、应用挂载及测试；两份 Nginx 配置、前后端 AGENTS.md、新 docs/MAP_MODEL_CREATION.md。
 - 内容：在地图顶部与点位详情增加管理员「创建模型」，支持上传影像发起现有 SSH 重建，或将彩色/高斯 PLY、GLB 持久保存并关联准确点位/实体；新增模型列表、预览与下载接口，普通登录用户可查看成果，任务管理权限保留；完成重建后刷新点位资产，支持多模型切换和 3D 标记；保留原七个 GLB、临时本地预览和地图业务功能。
