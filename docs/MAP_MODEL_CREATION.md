@@ -32,7 +32,7 @@
 - 模型读取需对应当前地图的有效点位/实体；已移出当前地图范围的资产不公开读取。列表目前查询最近 1000 条记录。
 - Next.js 新增独立流式路由，避免通用 rewrite 的 10 MiB 克隆限制。两份 Nginx 配置新增 `/api/map/model-assets`，257 MiB 请求体上限及关闭缓冲；使用 Nginx 的部署需要重载配置。本轮本地未运行 Nginx。
 
-本功能沿用现有直接 `splatstudio generate` 流程，未新增 GPU 检查、资源队列、结构/跨视角检查或人工审批，也未实现 FLUX 多阶段执行编排。本轮未启动新的 GPU 训练。
+默认沿用现有直接 `splatstudio generate` 流程；2026-10-17 新增可选 [FLUX3 图片预处理](FLUX3_PREPROCESSING.md)，已完成真实16图GPU联调。两条路径均不新增GPU资源检查/队列、结构/跨视角拒训或人工审批，原GLB及已有模型导入继续保留。
 
 ## 验证
 

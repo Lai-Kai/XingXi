@@ -10,6 +10,9 @@ export type Reconstruction = {
   quality: "fast" | "balanced" | "high";
   status: "transferring" | "running" | "completed" | "failed" | "cancelled";
   stage: string;
+  preprocessing?: "none" | "flux3";
+  pipeline_profile?: string;
+  preprocess_progress?: { completed: number; total: number };
   created_at: string;
   log?: string;
   error?: string | null;
@@ -27,6 +30,7 @@ export type Reconstruction = {
 };
 export type ReconstructionCapabilities = {
   enabled: boolean;
+  flux3_enabled?: boolean;
   max_bytes: number;
   max_files: number;
   extensions: string[];

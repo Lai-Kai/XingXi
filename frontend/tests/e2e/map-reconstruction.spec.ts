@@ -105,6 +105,59 @@ async function open(page: Page) {
   await expect(page.getByLabel("视频或多张照片")).toBeEnabled();
 }
 
+test("optional FLUX editing sends prompt and restores per-image progress", async ({
+  page,
+}) => {
+  await setup(page);
+  await page.route("**/api/reconstructions/capabilities", (route) =>
+    route.fulfill({
+      json: {
+        enabled: true,
+        flux3_enabled: true,
+        max_bytes: 2147483648,
+        max_files: 500,
+        extensions: [".png"],
+      },
+    }),
+  );
+  let posted = "";
+  const processing = {
+    ...job,
+    preprocessing: "flux3",
+    pipeline_profile: "flux3_rgb_subject_v1",
+    stage: "preprocessing",
+    preprocess_progress: { completed: 3, total: 16 },
+  };
+  await page.route("**/api/reconstructions", async (route) => {
+    posted = route.request().postDataBuffer()!.toString();
+    await route.fulfill({ status: 202, json: processing });
+  });
+  await page.route(`**/api/reconstructions/${job.id}`, (route) =>
+    route.fulfill({ json: processing }),
+  );
+  await open(page);
+  await expect(page.getByLabel("图片预处理", { exact: true })).toHaveValue(
+    "none",
+  );
+  await page.getByLabel("图片预处理", { exact: true }).selectOption("flux3");
+  await page
+    .getByLabel("图片编辑提示词", { exact: true })
+    .fill("Keep the bridge and replace the background with white.");
+  await page.getByLabel("视频或多张照片").setInputFiles([
+    { name: "a.png", mimeType: "image/png", buffer: Buffer.from("photo-a") },
+    { name: "b.png", mimeType: "image/png", buffer: Buffer.from("photo-b") },
+  ]);
+  await page.getByRole("button", { name: "上传并重建" }).click();
+  await expect(
+    page.getByText("FLUX3 预处理 · 3/16", { exact: true }),
+  ).toBeVisible();
+  expect(posted).toContain('name="preprocessing"');
+  expect(posted).toContain("flux3");
+  expect(posted).toContain(
+    "Keep the bridge and replace the background with white.",
+  );
+});
+
 test("uploads photos with point binding and CSRF then cancels only the returned task", async ({
   page,
 }) => {

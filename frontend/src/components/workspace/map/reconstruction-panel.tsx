@@ -30,6 +30,9 @@ const statuses = {
 };
 const stages: Record<string, string> = {
   starting: "启动引擎",
+  preparing_frames: "准备原始图片",
+  original_cameras: "原图相机重建",
+  preprocessing: "FLUX3 图片预处理",
   extracting: "视频抽帧",
   frames: "视频抽帧",
   features: "特征提取",
@@ -60,6 +63,8 @@ export function ReconstructionPanel({
   const [error, setError] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [quality, setQuality] = useState("fast");
+  const [preprocessing, setPreprocessing] = useState("none");
+  const [preprocessPrompt, setPreprocessPrompt] = useState("");
   const [title, setTitle] = useState(`${pointName}影像重建`);
   const [progress, setProgress] = useState<number | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -166,6 +171,9 @@ export function ReconstructionPanel({
     form.set("request_id", requestId.current);
     form.set("title", title.trim());
     form.set("quality", quality);
+    form.set("preprocessing", preprocessing);
+    if (preprocessing === "flux3" && preprocessPrompt.trim())
+      form.set("preprocess_prompt", preprocessPrompt.trim());
     form.set("point_id", pointId);
     form.set("point_name", pointName);
     for (const file of files) form.append("files", file);
@@ -303,6 +311,45 @@ export function ReconstructionPanel({
             <option value="high">精细</option>
           </select>
         </label>
+        <label className="block space-y-1">
+          <span>图片预处理</span>
+          <select
+            aria-label="图片预处理"
+            className="bg-background min-h-11 w-full rounded border px-3"
+            value={preprocessing}
+            disabled={progress !== null}
+            onChange={(event) => {
+              setPreprocessing(event.target.value);
+              requestId.current = "";
+            }}
+          >
+            <option value="none">原图直接重建</option>
+            <option value="flux3" disabled={!limits?.flux3_enabled}>
+              FLUX3 图片编辑{limits?.flux3_enabled ? "" : "（尚未配置）"}
+            </option>
+          </select>
+        </label>
+        {preprocessing === "flux3" && (
+          <label className="block space-y-1">
+            <span>图片编辑提示词</span>
+            <textarea
+              aria-label="图片编辑提示词"
+              rows={4}
+              maxLength={4000}
+              className="bg-background w-full rounded border p-3"
+              placeholder="留空使用默认指令：保留主体与视角，整理为白色背景，去除无关遮挡。"
+              value={preprocessPrompt}
+              disabled={progress !== null}
+              onChange={(event) => {
+                setPreprocessPrompt(event.target.value);
+                requestId.current = "";
+              }}
+            />
+            <span className="text-muted-foreground block text-xs">
+              编辑图用于重建，原图会保留。模型可能补画局部内容；白色背景不等于透明背景。
+            </span>
+          </label>
+        )}
         {progress !== null && (
           <div role="status" className="space-y-2">
             <progress value={progress} max={100} className="w-full" />
@@ -348,8 +395,18 @@ export function ReconstructionPanel({
             {isReconstructing(job) && (
               <p role="status" className="text-xs">
                 {job.cancel_requested
-                  ? "正在请求取消…"
+                  ? job.preprocessing === "flux3"
+                    ? "正在取消；当前 FLUX3 图片完成后停止"
+                    : "正在请求取消…"
                   : (stages[job.stage.toLowerCase()] ?? job.stage)}
+              </p>
+            )}
+            {job.preprocessing === "flux3" && (
+              <p className="text-muted-foreground text-xs">
+                FLUX3 预处理
+                {job.preprocess_progress
+                  ? ` · ${job.preprocess_progress.completed}/${job.preprocess_progress.total}`
+                  : " · 保留原图"}
               </p>
             )}
             {(job.error ?? job.connection_error) && (

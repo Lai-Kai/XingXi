@@ -74,6 +74,32 @@ cd ../frontend
 pnpm dev
 ```
 
+## 地图三维重建链路
+
+管理员在古舆地图 `/workspace/map` 选择或创建点位，点击「创建模型 → 上传影像重建」，上传图片或视频并选择精度。「图片预处理」默认使用原图，可选 FLUX3 图片编辑并填写提示词；已有 PLY／GLB 可通过同一入口直接接入。
+
+```mermaid
+flowchart LR
+    A[地图上传图片或视频] --> B[Gateway 保存任务与原件]
+    B --> C[SFTP 上传 / SSH 监督]
+    C --> D{预处理方式}
+    D -->|原图直接重建| E[OOOSplat generate]
+    D -->|FLUX3 图片编辑| F[原图 COLMAP 定姿]
+    F --> G[FLUX3 提示词编辑]
+    G --> H[原相机与编辑图组装]
+    H --> I[Brush GPU 训练]
+    E --> J[原生彩色 Gaussian PLY]
+    I --> J
+    J --> K[点位模型列表 / 地图预览 / 下载]
+```
+
+连接由 Gateway 通过 SSH／SFTP 完成；FLUX3 分支在远端服务器内部访问 ComfyUI（默认 `http://127.0.0.1:18188`）。浏览器只访问 XingXi，部署配置填写在 Gateway 环境中，模板见 [`.env.example`](.env.example)。SSH 凭据与实际环境配置保存在部署环境。
+
+- [FLUX3 预处理：使用、连接配置、执行链与实测范围](docs/FLUX3_PREPROCESSING.md)
+- [OOOSplat SSH：连接方式、可信公钥与原图重建](docs/OOOSPLAT_SSH_INTEGRATION.md)
+- [地图创建模型：上传重建与接入已有模型](docs/MAP_MODEL_CREATION.md)
+- [彩色 PLY：高斯、点云与地图预览适配](docs/COLORED_PLY_MAP_PREVIEW.md)
+
 ## Docker PostgreSQL
 
 当 `config.yaml` 使用 `database.backend: postgres` 时，`make up` / `scripts/deploy.sh` 会自动加载 `docker/docker-compose.postgres.yaml`，启动仅供内部网络访问的 PostgreSQL 17，并等待数据库健康后再启动 Gateway。数据保存在 `deer-flow_postgres-data` Docker volume；数据库密码保存在 `backend/.deer-flow/.postgres-password`，不会写入仓库或日志。
@@ -250,6 +276,18 @@ uv run python scripts/bootstrap_fuxianzhi_knowledge.py
 本次重构采用 Gemini CLI／IDE 设计、Codex 实现与验证的分工。协作入口、设计任务和分批验收见 [UI 重构工作流](docs/ui-redesign/README.md)。设计阶段不改变运行界面，已有功能与业务协议作为保留边界。
 
 ## 迭代日志
+
+### 2026-10-17 23:34 — 补充地图重建链路与分支交付入口
+- 改动文件：README.md（与本轮FLUX3代码、测试及接入文档一并提交）。
+- 内容：在本地启动说明后增加地图上传、SSH/SFTP、原图或FLUX3分支、Brush训练及彩色PLY预览链路图，集中链接部署配置和使用文档。
+- 原因：便于从仓库首页定位本轮版本的执行流程与连接方式，并按用户要求交付功能分支。
+- 影响/验证：默认仍使用原图直接重建；新增链接目标存在，沿用本轮已完成的63项后端专项、42项地图单元、16项浏览器及生产构建验证。仅交付源码、测试与文档，运行素材、模型、报告和凭据保留在本地。
+
+### 2026-10-17 23:23 — 接入FLUX3可选图片预处理并完成真实GPU联调
+- 改动文件：backend/app/gateway/reconstructions/{config,service,ssh,runner,flux_pipeline}.py、routers/reconstructions.py、tests/test_flux3_pipeline.py；前端重建表单、API类型与浏览器用例；.env.example、前后端AGENTS.md及FLUX/地图接入说明。
+- 内容：在原重建入口增加可选FLUX3提示词编辑，保留默认直接路径；原图COLMAP定姿后逐图编辑、保存prompt ID/工作流/映射，再用原相机组装RGB训练集并调用已有Brush。提供配置示例、进度和精确取消；保留全部输入预处理记录，不添加SAM、结构拒训、GPU检查/排队或全局中断。
+- 原因：用户要求尝试将FLUX3融入图片前处理，并允许复用反重力已验证案例与部署。
+- 影响/验证：复用反重力乐高；首轮16图只注册2图，仅作连通性记录；第二轮16/16注册与编辑，fast档8000步，Brush44.027秒，生成17,853高斯、4,214,858字节彩色PLY，训练后相机SHA不变。真实任务使用隔离数据库，正式地图未添加测试内容；正常登录本地3000验证新表单和本轮PLY临时预览，无API mock、无浏览器异常。后端专项63、地图单元42、浏览器16项通过，构建/类型与规范检查通过；全后端改前/改后仍为相同12个既有收集错误、2 skipped。小批链路通过不代表独立几何精度或泛化提升；视频融合分支未做真实GPU端到端验收。指南见 docs/FLUX3_PREPROCESSING.md。
 
 ### 2026-10-17 22:05 — 完成100图GPU联调并清理乐高测试内容
 - 改动文件：README.md；本地正式数据库的本次测试点位/任务，以及对应本机、服务器运行产物和测试报告（均非版本化产品代码）。

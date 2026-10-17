@@ -1,5 +1,7 @@
 # AGENTS.md
 
+The existing reconstruction form optionally selects FLUX3 and a prompt when capabilities reports `flux3_enabled`; default is original images. `core/map/reconstructions.ts` carries optional preprocessing/profile/progress fields for old-job compatibility. Reset the idempotency key after prompt/profile changes, show per-image progress and pending cancellation, keep explicit accessible field names and never send deployment settings to the client. See `../docs/FLUX3_PREPROCESSING.md`; the additional map-reconstruction browser case covers prompt submission and restored progress. Legacy map/GLB/import behavior is unchanged.
+
 Map point creation is available from the map header and `CreateModelDialog`. `CreatePointForm` names the coordinate picked by `MapLibreCanvas`; pick mode uses a crosshair, a disposable draft marker and current callback refs. `core/map/api.ts` owns authenticated custom-point reads/CSRF writes. Merge custom points separately from cached Release catalog reads; saving clears filters and selects the new point, and creation from the model dialog returns there with the new association. Preserve mobile cancel/reselect/retry and explicit `custom` origin. Tests: `tests/e2e/map-create-point.spec.ts` also covers failed reconstruction followed by re-uploading the same photos with a new request ID and retained history; guide: `../docs/MAP_POINT_CREATION.md`.
 
 

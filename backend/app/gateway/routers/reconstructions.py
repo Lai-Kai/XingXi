@@ -43,7 +43,7 @@ async def get_service(request: Request):
 @router.get("/capabilities")
 async def capabilities(user=Depends(admin), service=Depends(get_service)):
     config = service.config
-    return {"enabled": await asyncio.to_thread(lambda: config.enabled), "max_bytes": config.max_bytes, "max_files": config.max_files, "extensions": sorted(IMAGE_EXTENSIONS | VIDEO_EXTENSIONS)}
+    return {"enabled": await asyncio.to_thread(lambda: config.enabled), "max_bytes": config.max_bytes, "max_files": config.max_files, "extensions": sorted(IMAGE_EXTENSIONS | VIDEO_EXTENSIONS), "flux3_enabled": config.flux3_enabled}
 
 
 @router.post("", status_code=202)
@@ -54,6 +54,9 @@ async def create(
     point_id: Annotated[str | None, Form(max_length=255)] = None,
     point_name: Annotated[str | None, Form(max_length=255)] = None,
     request_id: Annotated[str | None, Form(max_length=128)] = None,
+    preprocessing: Annotated[Literal["none", "flux3"], Form()] = "none",
+    preprocess_prompt: Annotated[str | None, Form(max_length=4000)] = None,
+    preprocess_seed: Annotated[int, Form(ge=0, le=2**53 - 1)] = 42,
     user=Depends(admin),
     service=Depends(get_service),
 ):
@@ -65,7 +68,18 @@ async def create(
         uploads = form.getlist("files")
         if not all(isinstance(item, UploadFile) for item in uploads):
             raise HTTPException(400, "素材格式无效")
-        return await service.create(uploads, owner_id=str(user.id), title=title.strip(), quality=quality, point_id=point_id, point_name=point_name, request_id=request_id)
+        return await service.create(
+            uploads,
+            owner_id=str(user.id),
+            title=title.strip(),
+            quality=quality,
+            point_id=point_id,
+            point_name=point_name,
+            request_id=request_id,
+            preprocessing=preprocessing,
+            preprocess_prompt=preprocess_prompt,
+            preprocess_seed=preprocess_seed,
+        )
 
 
 @router.get("")

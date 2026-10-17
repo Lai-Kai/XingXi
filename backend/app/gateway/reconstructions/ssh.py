@@ -119,6 +119,11 @@ class SSHRemote:
                     sftp.put(str(directory / "source" / item["stored_name"]), temporary)
                     sftp.posix_rename(temporary, destination)
                 config = {"executable": self.config.executable, "quality": job["quality"], "input": job["files"][0]["stored_name"] if job["input_type"] == "video" else "."}
+                if job.get("preprocessing") == "flux3":
+                    config.update(preprocessing="flux3", flux3=job["flux3"], preprocess_prompt=job["preprocess_prompt"], preprocess_seed=job["preprocess_seed"])
+                    module = root + "/flux_pipeline." + uuid.uuid4().hex + ".part"
+                    sftp.put(str(Path(__file__).with_name("flux_pipeline.py")), module)
+                    sftp.posix_rename(module, root + "/flux_pipeline.py")
                 self.write_json(sftp, root + "/config.json", config)
                 temporary = root + "/runner." + uuid.uuid4().hex + ".part"
                 sftp.put(str(Path(__file__).with_name("runner.py")), temporary)
@@ -144,7 +149,7 @@ class SSHRemote:
                 projects = []
             if len(projects) == 1 and "/" not in projects[0]:
                 state = self.read_json(sftp, root + "/projects/" + projects[0] + "/state.json")
-                if result["status"] not in TERMINAL and state.get("stage"):
+                if result["status"] not in TERMINAL and not result.get("pipeline_profile") and state.get("stage"):
                     result["stage"] = str(state["stage"])[:100]
             try:
                 with sftp.open(root + "/runner.log", "rb") as log:

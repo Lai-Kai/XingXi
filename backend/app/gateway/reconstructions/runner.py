@@ -24,14 +24,20 @@ def read_json(path):
 
 
 def validate_result(root):
-    projects = list((root / "projects").glob("*/project.json"))
-    if len(projects) != 1:
-        raise ValueError("未找到唯一的重建项目记录")
-    project = read_json(projects[0])
-    if project.get("status") != "completed":
-        raise ValueError("OOOSplat 未报告重建完成")
-    output = project.get("output") or {}
-    path = Path(output.get("finalPly") or projects[0].parent / "final.ply").resolve()
+    fused = read_json(root / "pipeline_result.json")
+    if fused:
+        if fused.get("schema_version") != 1 or fused.get("pipeline_profile") != "flux3_rgb_subject_v1" or fused.get("status") != "completed":
+            raise ValueError("FLUX3 融合重建尚未完成")
+        path = Path(fused["output"]["finalPly"]).resolve()
+    else:
+        projects = list((root / "projects").glob("*/project.json"))
+        if len(projects) != 1:
+            raise ValueError("未找到唯一的重建项目记录")
+        project = read_json(projects[0])
+        if project.get("status") != "completed":
+            raise ValueError("OOOSplat 未报告重建完成")
+        output = project.get("output") or {}
+        path = Path(output.get("finalPly") or projects[0].parent / "final.ply").resolve()
     path.relative_to((root / "projects").resolve())
     size = path.stat().st_size
     if size <= 0 or size > 8 * 1024**3:
@@ -84,13 +90,24 @@ def run(root):
     config = read_json(root / "config.json")
     try:
         arguments = [config["executable"], "generate", "--projects-root", str(root / "projects"), "--quality", config["quality"], str(root / "source" / config["input"])]
+        fused = config.get("preprocessing") == "flux3"
+        if fused:
+            arguments = [config["flux3"]["python"], str(root / "flux_pipeline.py"), str(root)]
         with (root / "runner.log").open("ab", buffering=0) as log:
             process = subprocess.Popen(arguments, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
-            write_json(status, {"status": "running", "stage": "starting", "pid": process.pid})
+            initial = {"status": "running", "stage": "starting", "pid": process.pid}
+            if fused:
+                initial["pipeline_profile"] = "flux3_rgb_subject_v1"
+            write_json(status, initial)
             cancelled = False
             while process.poll() is None:
                 if (root / "cancel.request").exists():
                     cancelled = True
+                    if fused:
+                        # Adapter cancels only its own subprocess / queued prompt.
+                        # An active FLUX image finishes before cancellation is acknowledged.
+                        time.sleep(1)
+                        continue
                     # Only the process group created for this exact job is signalled.
                     try:
                         os.killpg(process.pid, signal.SIGTERM)
@@ -102,7 +119,7 @@ def run(root):
                     break
                 time.sleep(1)
             code = process.wait()
-        if cancelled:
+        if cancelled or (fused and code == 130):
             write_json(status, {"status": "cancelled", "stage": "cancelled"})
         elif code != 0:
             write_json(status, {"status": "failed", "stage": "failed", "error": "OOOSplat 运行失败，退出码 " + str(code)})

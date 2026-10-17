@@ -11,6 +11,7 @@ from pathlib import Path
 from fastapi import HTTPException
 
 from .config import IMAGE_EXTENSIONS, TERMINAL, VIDEO_EXTENSIONS, ReconstructionConfig
+from .flux_pipeline import DEFAULT_PROMPT, PROFILE
 from .store import JobStore
 
 
@@ -24,12 +25,26 @@ class ReconstructionService:
         fields = ("id", "title", "point_id", "point_name", "quality", "input_type", "status", "stage", "created_at", "log", "error", "connection_error", "cancel_requested")
         result = {key: job.get(key) for key in fields}
         result["files"] = [{"name": item["name"], "size": item["size"]} for item in job["files"]]
+        result["preprocessing"] = job.get("preprocessing", "none")
+        result["pipeline_profile"] = job.get("pipeline_profile", "direct")
+        if job.get("preprocess_progress"):
+            progress = dict(job["preprocess_progress"])
+            if job.get("status") == "completed" and job.get("preprocessing") == "flux3":
+                progress["completed"] = progress["total"]
+            result["preprocess_progress"] = progress
         if job.get("artifact"):
             result["artifact"] = {key: job["artifact"][key] for key in ("size", "sha256", "kind", "splat_count", "point_count") if key in job["artifact"]}
             result["artifact_url"] = f"/api/reconstructions/{job['id']}/artifact/final.ply"
         return result
 
-    async def create(self, uploads, *, owner_id, title, quality, point_id, point_name, request_id):
+    async def create(self, uploads, *, owner_id, title, quality, point_id, point_name, request_id, preprocessing="none", preprocess_prompt=None, preprocess_seed=42):
+        if preprocessing not in {"none", "flux3"}:
+            raise HTTPException(400, "未知图片预处理方式")
+        if preprocessing == "flux3" and not self.config.flux3_enabled:
+            raise HTTPException(503, "FLUX3 预处理尚未配置，请联系管理员")
+        prompt = (preprocess_prompt or DEFAULT_PROMPT).strip() or DEFAULT_PROMPT
+        if not isinstance(preprocess_seed, int) or not 0 <= preprocess_seed <= 2**53 - 1 or len(prompt) > 4000:
+            raise HTTPException(400, "FLUX3 提示词或种子无效")
         if not uploads or len(uploads) > self.config.max_files:
             raise HTTPException(400, "请选择一个视频或至少两张图片，最多 500 个文件")
         names = [item.filename or "" for item in uploads]
@@ -68,7 +83,10 @@ class ReconstructionService:
                     return {"name": upload.filename, "stored_name": stored_name, "size": size, "sha256": digest.hexdigest()}
 
                 records.append(await asyncio.to_thread(copy_upload))
-            fingerprint = hashlib.sha256(json.dumps([title, quality, point_id, point_name, records], sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+            identity = [title, quality, point_id, point_name, records]
+            if preprocessing == "flux3":
+                identity.append({"pipeline_profile": PROFILE, "prompt": prompt, "seed": preprocess_seed})
+            fingerprint = hashlib.sha256(json.dumps(identity, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
             data = {
                 "id": job_id,
                 "owner_id": owner_id,
@@ -85,6 +103,8 @@ class ReconstructionService:
                 "created_at": datetime.now(UTC).isoformat(),
                 "log": "",
             }
+            if preprocessing == "flux3":
+                data.update(preprocessing="flux3", pipeline_profile=PROFILE, preprocess_prompt=prompt, preprocess_seed=preprocess_seed, flux3=self.config.flux3_snapshot())
             try:
                 data, saved = await self.store.create(data)
             except ValueError as error:
