@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.gateway.evaluations.api import repository, router
+from app.gateway.evaluations.api import case_repository, repository, router
 
 
 def _app(role: str, repo):
@@ -14,6 +14,9 @@ def _app(role: str, repo):
     app.state.evaluation_service = object()
     app.include_router(router)
     app.dependency_overrides[repository] = lambda: repo
+    cases = AsyncMock()
+    cases.list.return_value = []
+    app.dependency_overrides[case_repository] = lambda: cases
 
     @app.middleware("http")
     async def identity(request, call_next):

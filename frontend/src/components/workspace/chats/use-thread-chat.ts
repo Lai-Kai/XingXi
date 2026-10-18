@@ -1,6 +1,6 @@
 "use client";
 
-import { useParams, usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { uuid } from "@/core/utils/uuid";
@@ -25,8 +25,12 @@ export function resetThreadChatAfterDelete(detail: ThreadChatResetDetail) {
 }
 
 export function useThreadChat() {
-  const { thread_id: threadIdFromPath } = useParams<{ thread_id: string }>();
   const pathname = usePathname();
+  // Native history updates the pathname without replacing the route tree.
+  // The static /chats/new route has no thread_id param, even after the first
+  // run replaces the URL with /chats/{id}. Read the ID from that canonical URL
+  // so syncing the route cannot erase the newly created conversation.
+  const threadIdFromPath = pathname.substring(pathname.lastIndexOf("/") + 1);
   // Render-time values use the committed browser URL. The sync effect below
   // intentionally watches the reactive pathname so client navigation still
   // schedules a reset when window.location is stale during render.
@@ -68,12 +72,6 @@ export function useThreadChat() {
       return;
     }
     newThreadIdRef.current = null;
-    // Native history updates the canonical pathname but preserves the route
-    // tree, so useParams may still return the stale "new" value. Avoid passing
-    // it to downstream hooks (e.g. useStream), which would cause a 422.
-    if (threadIdFromPath === "new") {
-      return;
-    }
     setIsNewThreadState(false);
     setThreadIdState(threadIdFromPath);
   }, [pathname, threadIdFromPath]);

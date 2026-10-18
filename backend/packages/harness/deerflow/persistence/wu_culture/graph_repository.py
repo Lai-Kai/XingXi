@@ -22,6 +22,7 @@ from deerflow.persistence.wu_culture.model import (
     AliasIndexRow,
     EvidenceRow,
     KnowledgeReleaseItemRow,
+    KnowledgeReleaseRow,
     SourceDocumentRow,
     TextChunkRow,
     WuEntityEvidenceRow,
@@ -69,19 +70,32 @@ def _entity_evidence_expression(entity_id, release_id: str | None):  # noqa: ANN
     return statement.exists()
 
 
+def _graph_release_expression(column, release_id: str):  # noqa: ANN001
+    """Internal working editions retain earlier facts supported by their manifest.
+
+    The row's Release remains its provenance; neither that row nor an earlier
+    snapshot is rewritten. Public editions retain their exact row scope.
+    Callers must also enforce exact Chunk/document Evidence membership.
+    """
+    target = KnowledgeReleaseRow.__table__.alias("target_working_release")
+    target_version = select(target.c.version_number).where(target.c.id == release_id, target.c.scope == "internal").scalar_subquery()
+    previous_internal = select(KnowledgeReleaseRow.id).where(KnowledgeReleaseRow.scope == "internal", KnowledgeReleaseRow.version_number <= target_version)
+    return or_(column == release_id, column.is_(None), column.in_(previous_internal))
+
+
 def _entity_scope_expression(release_id: str | None, entity_id=None):  # noqa: ANN001
     target_id = WuEntityRow.id if entity_id is None else entity_id
     has_evidence = _entity_evidence_expression(target_id, release_id)
     if release_id is None:
         return has_evidence
     if entity_id is None:
-        return and_(or_(WuEntityRow.release_id == release_id, WuEntityRow.release_id.is_(None)), has_evidence)
+        return and_(_graph_release_expression(WuEntityRow.release_id, release_id), has_evidence)
     entity_in_release = (
         select(1)
         .select_from(WuEntityRow)
         .where(
             WuEntityRow.id == entity_id,
-            or_(WuEntityRow.release_id == release_id, WuEntityRow.release_id.is_(None)),
+            _graph_release_expression(WuEntityRow.release_id, release_id),
         )
         .exists()
     )
@@ -107,7 +121,7 @@ def _relation_scope_expression(release_id: str | None):
     if release_id is None:
         return or_(has_evidence, and_(WuRelationRow.is_inferred.is_(True), ~_relation_evidence_expression(WuRelationRow.id, None)))
     return and_(
-        or_(WuRelationRow.release_id == release_id, WuRelationRow.release_id.is_(None)),
+        _graph_release_expression(WuRelationRow.release_id, release_id),
         or_(has_evidence, and_(WuRelationRow.is_inferred.is_(True), ~_relation_evidence_expression(WuRelationRow.id, None))),
     )
 

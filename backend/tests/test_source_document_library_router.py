@@ -7,6 +7,7 @@ from _router_auth_helpers import make_authed_test_app
 from fastapi.testclient import TestClient
 from wu_culture import (
     CopyrightStatus,
+    ReviewStatus,
     SourceDocument,
     SourceDocumentLibraryFile,
     SourceDocumentLibraryItem,
@@ -74,7 +75,7 @@ def _library_item() -> SourceDocumentLibraryItem:
     )
     return SourceDocumentLibraryItem(
         document=_source(),
-        files=(SourceDocumentLibraryFile(file=source_file, ingestion_job=job),),
+        files=(SourceDocumentLibraryFile(file=source_file, ingestion_job=job, chunk_set_id="chunk-set-1", review_status=ReviewStatus.REVIEWED),),
     )
 
 
@@ -94,9 +95,7 @@ def test_library_page_returns_sources_files_and_latest_ingestion_job() -> None:
     app.include_router(source_documents.router)
 
     with TestClient(app) as client:
-        response = client.get(
-            "/api/source-documents/library/page?query=木渎&status_filter=registered&limit=10&offset=20"
-        )
+        response = client.get("/api/source-documents/library/page?query=木渎&status_filter=registered&limit=10&offset=20")
 
     assert response.status_code == 200
     payload = response.json()
@@ -106,4 +105,6 @@ def test_library_page_returns_sources_files_and_latest_ingestion_job() -> None:
     assert payload["items"][0]["source"]["id"] == "source-1"
     assert payload["items"][0]["files"][0]["file"]["id"] == "file-1"
     assert payload["items"][0]["files"][0]["ingestion_job"]["id"] == "job-1"
+    assert payload["items"][0]["files"][0]["chunk_set_id"] == "chunk-set-1"
+    assert payload["items"][0]["files"][0]["review_status"] == "reviewed"
     assert repository.calls == [{"query": "木渎", "status": "registered", "limit": 10, "offset": 20}]

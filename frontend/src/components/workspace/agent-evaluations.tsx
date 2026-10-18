@@ -38,6 +38,7 @@ import {
 } from "@/core/operations/evaluations";
 import { cn } from "@/lib/utils";
 
+import { AgentEvaluationCases } from "./agent-evaluation-cases";
 import {
   EvaluationDistributionChart,
   EvaluationHistoryChart,
@@ -67,6 +68,7 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
   const [outcome, setOutcome] = useState("all");
   const [query, setQuery] = useState("");
   const [exportError, setExportError] = useState<string | null>(null);
+  const [caseManagerOpen, setCaseManagerOpen] = useState(false);
   const catalog = useQuery({
     queryKey: ["agent-evaluations", "catalog"],
     queryFn: ({ signal }) => loadAgentCatalog(signal),
@@ -116,8 +118,8 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
     await updateBatch(next);
   };
   const start = useMutation({
-    mutationFn: (smoke: boolean) =>
-      startAgentEvaluation(smoke, crypto.randomUUID()),
+    mutationFn: (input: { smoke: boolean; caseIds?: string[] }) =>
+      startAgentEvaluation(input.smoke, crypto.randomUUID(), input.caseIds),
     onSuccess: adopt,
   });
   const cancel = useMutation({
@@ -129,6 +131,8 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
     onSuccess: adopt,
   });
   const busy = start.isPending || cancel.isPending || rerun.isPending;
+  const coreCount = catalog.data?.core_count ?? 6;
+  const totalCount = catalog.data?.cases.length ?? 30;
   const batch = detail.data;
   const metrics = evaluationMetrics(batch);
   const visible = filterObservations(batch?.results ?? [], {
@@ -167,16 +171,25 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
         : "";
   const scenarioOptions = [
     ...new Set(
-      (
-        catalog.data?.cases ??
-        batch?.results.map((item) => item.case) ??
-        []
-      ).map((item) => item.scenario),
+      [
+        ...(catalog.data?.cases ?? []),
+        ...(batch?.results.map((item) => item.case) ?? []),
+      ].map((item) => item.scenario),
     ),
   ];
 
   return (
     <>
+      <AgentEvaluationCases
+        open={caseManagerOpen}
+        onOpenChange={setCaseManagerOpen}
+        canManage={canExecute}
+        canRun={Boolean(catalog.data?.available) && !busy}
+        onRun={(id) => {
+          start.mutate({ smoke: false, caseIds: [id] });
+          setCaseManagerOpen(false);
+        }}
+      />
       <section className="space-y-5" aria-label="Agent 自动评测">
         <div className="rounded-xl border border-[#d4e2e4] bg-[#edf5f5] p-5">
           <div className="flex flex-wrap items-start justify-between gap-4">
@@ -195,6 +208,14 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
               <button
                 type="button"
                 className={evaluationButton}
+                onClick={() => setCaseManagerOpen(true)}
+              >
+                <ListChecks className="size-4" />
+                测试问题与方法
+              </button>
+              <button
+                type="button"
+                className={evaluationButton}
                 onClick={refresh}
                 disabled={batches.isFetching && detail.isFetching}
               >
@@ -209,20 +230,27 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
                       evaluationButton,
                       "border-[#276f79] bg-[#276f79] text-white hover:bg-[#205f68]",
                     )}
-                    disabled={busy || !catalog.data?.available}
-                    onClick={() => start.mutate(true)}
+                    disabled={
+                      busy || !catalog.data?.available || coreCount === 0
+                    }
+                    onClick={() => start.mutate({ smoke: true })}
                   >
                     <Play className="size-4" />
-                    运行核心 6 项
+                    运行核心 {coreCount} 项
                   </button>
                   <button
                     type="button"
                     className={evaluationButton}
-                    disabled={busy || !catalog.data?.available}
-                    onClick={() => start.mutate(false)}
+                    disabled={
+                      busy ||
+                      !catalog.data?.available ||
+                      totalCount === 0 ||
+                      totalCount > 100
+                    }
+                    onClick={() => start.mutate({ smoke: false })}
                   >
                     <ListChecks className="size-4" />
-                    运行全部 30 项
+                    运行全部 {totalCount} 项
                   </button>
                 </>
               )}
@@ -243,8 +271,9 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
               查看用例集与覆盖范围（{catalog.data?.cases.length ?? 0} 项）
             </summary>
             <p className="mt-2">
-              当前完整集合为 10 类场景 × 3 种模式，不代表覆盖 30
-              类独立领域问题。真实模型评分、Token 和费用尚未采集。
+              当前启用 {totalCount} 项测试。内置方法为 10 类场景 × 3 种模式，
+              可在“测试问题与方法”中查看完整题目和规则；管理员可新增、删除或恢复问题。
+              真实模型评分、Token 和费用尚未采集。单批最多运行 100 项。
             </p>
             <ul className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {catalog.data?.cases.map((item) => (
@@ -273,7 +302,7 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
           <BusinessEmptyState
             icon={FlaskConical}
             title="暂无自动评测记录"
-            description="管理员运行核心 6 项或全部 30 项后，这里会显示实际批次、指标与执行轨迹。"
+            description="管理员运行启用的测试问题后，这里会显示实际批次、指标与执行轨迹。"
           />
         ) : null}
 

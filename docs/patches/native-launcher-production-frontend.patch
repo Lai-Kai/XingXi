@@ -1,0 +1,34 @@
+--- a/launch.py
++++ b/launch.py
+@@ -303,17 +303,29 @@
+ def start(config, env):
+     if any(alive(item) for item in records()):
+         raise RuntimeError("本启动器已有服务在运行；先执行 status 查看，或 stop 后重新启动。")
++    frontend_mode = env.get("DEERFLOW_FRONTEND_MODE", "production")
++    if frontend_mode not in ("production", "development"):
++        raise RuntimeError("DEERFLOW_FRONTEND_MODE 必须是 production 或 development。")
+     check_dependencies()
+     preflight()
+     prepare(config)
+     subprocess.run(nginx_command() + ["-t"], check=True)
+     frontend_env = env.copy()
+-    frontend_env.update({"PORT": "3000", "NODE_ENV": "development", "NEXT_PUBLIC_BACKEND_BASE_URL": "", "NEXT_PUBLIC_LANGGRAPH_BASE_URL": ""})
++    frontend_env.update({"PORT": "3000", "NODE_ENV": frontend_mode, "NEXT_PUBLIC_BACKEND_BASE_URL": "", "NEXT_PUBLIC_LANGGRAPH_BASE_URL": ""})
++    frontend_command = [str(NODE), str(NEXT)]
++    if frontend_mode == "production":
++        print("正在构建生产前端，完成后启动服务；页面访问无需现场编译……", flush=True)
++        subprocess.run(frontend_command + ["build", "--webpack"], cwd=ROOT / "frontend", env=frontend_env, check=True)
++        frontend_command += ["start"]
++    else:
++        print("前端使用开发模式，首次打开模块仍会按需编译。", flush=True)
++        frontend_command += ["dev", "--webpack"]
++    frontend_command += ["--hostname", "127.0.0.1", "--port", "3000"]
+     processes = []
+     items = []
+     services = (
+         ("gateway", [str(PYTHON), "-B", "-m", "uvicorn", "app.gateway.app:app", "--host", "127.0.0.1", "--port", "8001", "--workers", "1"], ROOT / "backend", env, "http://127.0.0.1:8001/health", 180, True),
+-        ("frontend", [str(NODE), str(NEXT), "dev", "--webpack", "--hostname", "127.0.0.1", "--port", "3000"], ROOT / "frontend", frontend_env, "http://127.0.0.1:3000/", 180, False),
++        ("frontend", frontend_command, ROOT / "frontend", frontend_env, "http://127.0.0.1:3000/", 180, False),
+         ("nginx", nginx_command() + ["-g", "daemon off;"], STATE, env, "http://127.0.0.1:12026/health", 30, True),
+     )
+     try:

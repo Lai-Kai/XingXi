@@ -1,3 +1,4 @@
+import { fetch as authenticatedFetch } from "@/core/api/fetcher";
 import { getBackendBaseURL } from "@/core/config";
 
 import { getPointModelAsset, MAP_MODEL_ASSETS } from "./model-assets";
@@ -252,6 +253,49 @@ function point(raw: RawPoint): MapPoint {
   };
 }
 
+function timelineEvent(raw: RawEvent): TimelineEvent {
+  return {
+    id: raw.id,
+    title: raw.title,
+    yearStart: raw.year_start,
+    yearEnd: raw.year_end,
+    timeLabel: raw.time_label,
+    precision: raw.precision,
+    pointId: raw.point_id,
+    summary: raw.summary,
+    evidence: raw.evidence.map(evidence),
+    reviewStatus: raw.review_status ?? null,
+    releaseId: raw.release_id ?? null,
+    recordKind: raw.record_kind ?? "reference",
+    featured: raw.featured ?? false,
+    importance: raw.importance ?? "context",
+    participants: (raw.participants ?? []).map((participant) => ({
+      id: participant.id,
+      name: participant.name,
+      entityType: participant.entity_type,
+    })),
+  };
+}
+
+async function referenceTimelineEvents(
+  pointIds: string[],
+): Promise<RawEvent[]> {
+  if (!pointIds.length) return [];
+  try {
+    const params = new URLSearchParams();
+    pointIds.forEach((id) => params.append("point_id", id));
+    const response = await fetch(
+      `${getBackendBaseURL()}/api/map/reference-events?${params.toString()}`,
+      { cache: "no-store", signal: AbortSignal.timeout(3000) },
+    );
+    if (!response.ok) return [];
+    const rows: unknown = await response.json();
+    return Array.isArray(rows) ? (rows as RawEvent[]) : [];
+  } catch {
+    return [];
+  }
+}
+
 export async function fetchMapCatalog(
   signal?: AbortSignal,
   options: { force?: boolean } = {},
@@ -269,6 +313,16 @@ export async function fetchMapCatalog(
     const missingModelIds = MAP_MODEL_ASSETS.filter(
       (asset) => !existingIds.has(asset.pointId),
     ).map((asset) => asset.pointId);
+    // Load the optional chronology alongside point references, with its own
+    // deadline. Neither request can replace a failed knowledge snapshot.
+    const referenceEventsLoad = referenceTimelineEvents([
+      ...new Set([
+        ...catalogPoints
+          .filter((item) => item.recordKind === "reference" && !item.releaseId)
+          .map((item) => item.id),
+        ...missingModelIds,
+      ]),
+    ]);
     let modelReferences: MapPoint[] = [];
     if (missingModelIds.length > 0) {
       try {
@@ -276,7 +330,7 @@ export async function fetchMapCatalog(
         missingModelIds.forEach((id) => params.append("point_id", id));
         const referenceResponse = await fetch(
           `${getBackendBaseURL()}/api/map/reference-points?${params.toString()}`,
-          { cache: "no-store" },
+          { cache: "no-store", signal: AbortSignal.timeout(3000) },
         );
         if (referenceResponse.ok) {
           const references: unknown = await referenceResponse.json();
@@ -294,13 +348,38 @@ export async function fetchMapCatalog(
     }
     const modelNotice =
       "独立三维模型参考点沿用景点定位，模型为生成示意；定位准确性见详情。";
+    const referencePointIds = new Set(
+      [...catalogPoints, ...modelReferences]
+        .filter((item) => item.recordKind === "reference" && !item.releaseId)
+        .map((item) => item.id),
+    );
+    const existingEventIds = new Set(raw.events.map((item) => item.id));
+    let referenceEvents: TimelineEvent[] = [];
+    try {
+      referenceEvents = (await referenceEventsLoad)
+        .filter(
+          (item) =>
+            item?.record_kind === "reference" &&
+            item.release_id == null &&
+            Array.isArray(item.evidence) &&
+            item.evidence.length > 0 &&
+            referencePointIds.has(item.point_id) &&
+            !existingEventIds.has(item.id),
+        )
+        .map(timelineEvent);
+    } catch {
+      // Malformed supplementary records cannot discard the released catalog.
+    }
+    const dataNotice = modelReferences.length
+      ? raw.updated_at === "unpublished"
+        ? `当前尚未发布知识版本；以下为${modelNotice}`
+        : `${raw.data_notice} ${modelNotice}`
+      : raw.data_notice;
     const catalog: MapCatalog = {
       updatedAt: raw.updated_at,
-      dataNotice: modelReferences.length
-        ? raw.updated_at === "unpublished"
-          ? `当前尚未发布知识版本；以下为${modelNotice}`
-          : `${raw.data_notice} ${modelNotice}`
-        : raw.data_notice,
+      dataNotice: referenceEvents.length
+        ? `${dataNotice} 历史时间轴另含带出处的景点参考事件，独立于知识版本，仍需史料复核。`
+        : dataNotice,
       points: [...catalogPoints, ...modelReferences],
       layers: raw.layers.map((layer) => ({
         id: layer.id,
@@ -312,27 +391,7 @@ export async function fetchMapCatalog(
         calibrationNote: layer.calibration_note,
         tileUrl: layer.tile_url,
       })),
-      events: raw.events.map((eventItem) => ({
-        id: eventItem.id,
-        title: eventItem.title,
-        yearStart: eventItem.year_start,
-        yearEnd: eventItem.year_end,
-        timeLabel: eventItem.time_label,
-        precision: eventItem.precision,
-        pointId: eventItem.point_id,
-        summary: eventItem.summary,
-        evidence: eventItem.evidence.map(evidence),
-        reviewStatus: eventItem.review_status ?? null,
-        releaseId: eventItem.release_id ?? null,
-        recordKind: eventItem.record_kind ?? "reference",
-        featured: eventItem.featured ?? false,
-        importance: eventItem.importance ?? "context",
-        participants: (eventItem.participants ?? []).map((participant) => ({
-          id: participant.id,
-          name: participant.name,
-          entityType: participant.entity_type,
-        })),
-      })),
+      events: [...raw.events.map(timelineEvent), ...referenceEvents],
       relations: (raw.relations ?? []).map((relation) => ({
         id: relation.id,
         subjectId: relation.subject_id,
@@ -425,4 +484,41 @@ export async function planMapRoute(
     routeKind: raw.route_kind,
     message: raw.message,
   };
+}
+
+export async function fetchCustomMapPoints(
+  signal?: AbortSignal,
+): Promise<MapPoint[]> {
+  const response = await authenticatedFetch(
+    `${getBackendBaseURL()}/api/map/custom-points`,
+    { signal, cache: "no-store" },
+  );
+  if (!response.ok) throw new Error("暂时无法读取自建点位，请重试");
+  return ((await response.json()) as RawPoint[]).map(point);
+}
+
+export async function createMapPoint(
+  input: { name: string; lon: number; lat: number; request_id: string },
+  signal: AbortSignal,
+): Promise<MapPoint> {
+  const response = await authenticatedFetch(
+    `${getBackendBaseURL()}/api/map/custom-points`,
+    {
+      method: "POST",
+      signal,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    },
+  );
+  if (!response.ok) {
+    const error = (await response.json().catch(() => null)) as {
+      detail?: unknown;
+    } | null;
+    throw new Error(
+      typeof error?.detail === "string"
+        ? error.detail
+        : `点位保存失败 (${response.status})，请重试`,
+    );
+  }
+  return point((await response.json()) as RawPoint);
 }

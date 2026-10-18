@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from wu_culture.ingestion import IngestionJob
-from wu_culture.models import EvidenceRecord, SourceAuthorizationEvent, SourceDocument, SourceFile
+from wu_culture.models import EvidenceRecord, ReviewStatus, SourceAuthorizationEvent, SourceDocument, SourceFile
 from wu_culture.parsing import ParsedDocument
 from wu_culture.storage import StoredObject
 
@@ -54,6 +54,8 @@ class SourceDocumentRepository(Protocol):
 class SourceDocumentLibraryFile:
     file: SourceFile
     ingestion_job: IngestionJob | None
+    chunk_set_id: str | None = None
+    review_status: ReviewStatus | None = None
 
 
 @dataclass(frozen=True)

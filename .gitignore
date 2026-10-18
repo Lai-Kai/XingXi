@@ -1,5 +1,6 @@
 # DeerFlow docker image cache
 docker/.cache/
+.cache/
 # oh-my-claudecode state
 .omc/
 # OS generated files

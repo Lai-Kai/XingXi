@@ -1,4 +1,4 @@
-﻿"""Sanitize Xingxi answers so inline citations only reference evidence-pack IDs."""
+"""Sanitize Xingxi answers so inline citations only reference evidence-pack IDs."""
 
 from __future__ import annotations
 
@@ -17,45 +17,10 @@ from wu_culture.citations.validator import (
 )
 from wu_culture.evidence_pack import EvidencePack
 
+from ._message_content import message_text as _message_text
+from ._message_content import set_message_text as _set_message_text
+
 logger = logging.getLogger(__name__)
-
-
-def _message_text(content: Any) -> str | None:
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        pieces: list[str] = []
-        for part in content:
-            if isinstance(part, str):
-                pieces.append(part)
-            elif isinstance(part, dict) and isinstance(part.get("text"), str):
-                pieces.append(part["text"])
-            else:
-                return None
-        return "\n".join(pieces) if pieces else None
-    return None
-
-
-def _set_message_text(message: AIMessage, text: str) -> AIMessage:
-    content = message.content
-    if isinstance(content, str) or content is None:
-        return message.model_copy(update={"content": text})
-    if isinstance(content, list):
-        replaced = False
-        new_parts: list[Any] = []
-        for part in content:
-            if not replaced and isinstance(part, str):
-                new_parts.append(text)
-                replaced = True
-            elif not replaced and isinstance(part, dict) and part.get("type") in {"text", "output_text"}:
-                new_parts.append({**part, "text": text})
-                replaced = True
-            else:
-                new_parts.append(part)
-        if not replaced:
-            new_parts.append({"type": "text", "text": text})
-        return message.model_copy(update={"content": new_parts})
-    return message.model_copy(update={"content": text})
 
 
 def _has_tool_calls(message: AIMessage) -> bool:

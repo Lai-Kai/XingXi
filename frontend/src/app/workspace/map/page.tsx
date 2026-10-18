@@ -22,6 +22,7 @@ import {
   Network,
   Pause,
   Play,
+  Plus,
   Route as RouteIcon,
   Send,
   Quote,
@@ -36,27 +37,40 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   BusinessErrorState,
   BusinessLoadingState,
 } from "@/components/workspace/business-page";
-import { GlbViewerSlot } from "@/components/workspace/map/glb-viewer-slot";
-import { MapLibreCanvas } from "@/components/workspace/map/maplibre-canvas";
+import { CreateModelDialog } from "@/components/workspace/map/create-model-dialog";
 import {
-  fetchMapCatalog,
-  planMapRoute,
-  readCachedMapCatalog,
-} from "@/core/map/api";
+  CreatePointForm,
+  type PickedLocation,
+} from "@/components/workspace/map/create-point-form";
+import { HistoricalTimelineControl } from "@/components/workspace/map/historical-timeline-control";
+import { MapLibreCanvas } from "@/components/workspace/map/maplibre-canvas";
+import { PointModelPreview } from "@/components/workspace/map/point-model-preview";
+import { ReconstructionPanel } from "@/components/workspace/map/reconstruction-panel";
+import {
+  WorkspaceSearchLink,
+  WorkspaceSidebarToggle as SidebarTrigger,
+} from "@/components/workspace/workspace-mobile-header";
+import { useAuth } from "@/core/auth/AuthProvider";
+import { planMapRoute } from "@/core/map/api";
 import {
   defaultMapLayerOpacity,
   getRenderableMapLayers,
 } from "@/core/map/layers";
 import {
+  formatModelAssetSize,
   getPointModelAsset,
   type GlbAssetDescriptor,
 } from "@/core/map/model-assets";
+import {
+  listMapModels,
+  modelsForPoint,
+  type RegisteredMapModel,
+} from "@/core/map/registered-models";
 import {
   buildTimelineLayout,
   type TimelineEventGroup,
@@ -66,7 +80,6 @@ import {
   filterMapPoints,
   nextTimelineEventIndex,
   type DynastyLayer,
-  type MapCatalog,
   type MapEvidence,
   type MapRelation,
   type MapPoint,
@@ -76,6 +89,7 @@ import {
   type TimelineEvent,
   type UserMapLocation,
 } from "@/core/map/types";
+import { useMapCatalog } from "@/core/map/use-map-catalog";
 import { recordOperationEvent } from "@/core/operations/api";
 import { xingxiChatHref } from "@/core/threads/xingxi-entry";
 import { cn } from "@/lib/utils";
@@ -135,7 +149,7 @@ const reviewLabels = {
 } as const;
 
 function mapRecordScope(record: {
-  recordKind: "reference" | "corpus";
+  recordKind: MapPoint["recordKind"];
   reviewStatus: MapPoint["reviewStatus"];
 }): MapRecordScope {
   return record.recordKind === "corpus" && record.reviewStatus !== "reviewed"
@@ -147,7 +161,7 @@ type MapMode = "explore" | "route";
 type MapDisplayMode = "modern" | "comparison";
 type MapToolPanel = "filters" | "layers" | "route";
 const TIMELINE_ITEM_WIDTH = 136;
-const TIMELINE_LANE_HEIGHT = 104;
+const TIMELINE_LANE_HEIGHT = 56;
 
 const relationLabels: Record<string, string> = {
   located_in: "位于",
@@ -251,14 +265,14 @@ function EvidenceTrail({
             key={source.id}
             className={cn(
               "text-xs leading-5",
-              compact ? "text-[#66544c]" : "text-[#5e4b43]",
+              compact ? "text-muted-foreground" : "text-foreground",
             )}
           >
             <a
               href={source.url}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-1 font-medium text-[#276b75] hover:underline"
+              className="text-primary inline-flex items-center gap-1 font-medium hover:underline"
             >
               {source.title} <ExternalLink className="size-3" />
             </a>
@@ -266,7 +280,7 @@ function EvidenceTrail({
               {evidenceDateLabel(source)}
             </div>
             {source.quote && (
-              <blockquote className="mt-1 border-l-2 border-[#cba995] pl-2 text-[#72564a]">
+              <blockquote className="border-border text-muted-foreground mt-1 border-l-2 pl-2">
                 <Quote className="mr-1 inline size-3" />“{source.quote}”
               </blockquote>
             )}
@@ -276,7 +290,7 @@ function EvidenceTrail({
                 href={media.url}
                 target="_blank"
                 rel="noreferrer"
-                className="mt-1 inline-flex items-center gap-1 text-[#276b75] underline underline-offset-2"
+                className="text-primary mt-1 inline-flex items-center gap-1 underline underline-offset-2"
               >
                 {media.caption} <ExternalLink className="size-3" />
               </a>
@@ -291,7 +305,7 @@ function EvidenceTrail({
       {!hasMedia && (
         <p
           data-map-media-status="unavailable"
-          className="flex items-center gap-1.5 border-t border-dashed border-[#ead8cd] pt-2 text-[11px] leading-4 text-[#8b7467]"
+          className="border-border text-muted-foreground flex items-center gap-1.5 border-t border-dashed pt-2 text-[11px] leading-4"
         >
           <ImageOff className="size-3.5 shrink-0" />
           暂无授权影像、碑刻拓本或三维模型
@@ -317,24 +331,29 @@ function HistoricalEventDetails({
   return (
     <section
       aria-label="历史事件详情"
-      className="flex min-h-0 flex-1 flex-col bg-white"
+      className="bg-card flex min-h-0 flex-1 flex-col"
     >
       <header className="border-b px-5 py-5 pr-14">
-        <p className="text-xs font-medium tracking-[0.08em] text-[#8a5b45]">
+        <p className="text-primary text-xs font-medium tracking-[0.08em]">
           历史事件详情
         </p>
-        <h2 className="mt-2 text-lg leading-7 font-semibold text-[#253f42]">
+        <h2 className="text-foreground mt-2 text-lg leading-7 font-semibold">
           {event.title}
         </h2>
         <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-          <span className="rounded-full bg-[#e5f0ee] px-2.5 py-1 font-medium text-[#276b75]">
+          <span className="text-primary bg-secondary rounded-full px-2.5 py-1 font-medium">
             {eventDynastyLabel(event, point)}
           </span>
-          <span className="rounded-full border border-[#d8e2e0] px-2.5 py-1 text-[#5b6d70]">
+          <span className="border-border text-muted-foreground rounded-full border px-2.5 py-1">
             {eventYearLabel(event)}
           </span>
           {event.precision !== "exact" && (
-            <span className="text-[#8a6a5b]">{event.timeLabel}</span>
+            <span className="text-muted-foreground">{event.timeLabel}</span>
+          )}
+          {event.recordKind === "reference" && (
+            <span className="border-border text-muted-foreground rounded-full border px-2.5 py-1">
+              景点参考
+            </span>
           )}
         </div>
       </header>
@@ -342,7 +361,7 @@ function HistoricalEventDetails({
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
         <dl className="grid grid-cols-[76px_1fr] gap-x-3 gap-y-4 text-sm">
           <dt className="text-muted-foreground">朝代</dt>
-          <dd className="font-medium text-[#276b75]">
+          <dd className="text-primary font-medium">
             {eventDynastyLabel(event, point)}
           </dd>
 
@@ -372,7 +391,7 @@ function HistoricalEventDetails({
                 {participants.map((participant) => (
                   <span
                     key={participant.id}
-                    className="rounded bg-[#f5eee8] px-2 py-1 text-xs text-[#72564a]"
+                    className="bg-muted text-muted-foreground rounded px-2 py-1 text-xs"
                   >
                     {participant.name}
                   </span>
@@ -385,8 +404,8 @@ function HistoricalEventDetails({
         </dl>
 
         <section className="mt-6 border-t pt-4" aria-label="事件描述">
-          <h3 className="mb-2 flex items-center gap-2 text-sm font-medium text-[#253f42]">
-            <Info className="size-4 text-[#276b75]" /> 事件描述
+          <h3 className="text-foreground mb-2 flex items-center gap-2 text-sm font-medium">
+            <Info className="text-primary size-4" /> 事件描述
           </h3>
           <p className="text-muted-foreground text-sm leading-6">
             {event.summary}
@@ -394,8 +413,8 @@ function HistoricalEventDetails({
         </section>
 
         <section className="mt-6 border-t pt-4" aria-label="资料出处">
-          <h3 className="mb-3 flex items-center gap-2 text-sm font-medium text-[#253f42]">
-            <BookOpen className="size-4 text-[#276b75]" /> 资料出处
+          <h3 className="text-foreground mb-3 flex items-center gap-2 text-sm font-medium">
+            <BookOpen className="text-primary size-4" /> 资料出处
           </h3>
           <EvidenceTrail sources={event.evidence} />
         </section>
@@ -410,7 +429,7 @@ function HistoricalEventDetails({
           type="button"
           disabled={!point}
           onClick={onViewPlace}
-          className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-[#b8d1cd] bg-[#f1f7f5] px-3 text-sm font-medium text-[#276b75] hover:bg-[#e5f0ee] disabled:cursor-not-allowed disabled:opacity-50"
+          className="text-primary border-border bg-secondary hover:bg-secondary inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border px-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
         >
           <MapPin className="size-4" /> 查看地点资料
         </button>
@@ -433,13 +452,13 @@ function HistoricalYearDetails({
   return (
     <section
       aria-label={`${year}年历史事件`}
-      className="flex min-h-0 flex-1 flex-col bg-white"
+      className="bg-card flex min-h-0 flex-1 flex-col"
     >
       <header className="border-b px-5 py-5">
-        <p className="text-xs font-medium tracking-[0.08em] text-[#8a5b45]">
+        <p className="text-primary text-xs font-medium tracking-[0.08em]">
           同年事件
         </p>
-        <h2 className="mt-2 text-lg font-semibold text-[#253f42]">
+        <h2 className="text-foreground mt-2 text-lg font-semibold">
           {year} 年 · {events.length} 件事件
         </h2>
         <p className="text-muted-foreground mt-2 text-xs leading-5">
@@ -454,15 +473,15 @@ function HistoricalYearDetails({
               <button
                 type="button"
                 onClick={() => onSelectEvent(event)}
-                className="w-full rounded-md border border-[#d8e2e0] px-3 py-3 text-left hover:border-[#8ebbc1] hover:bg-[#f4f9f8]"
+                className="border-border hover:border-primary hover:bg-accent w-full rounded-md border px-3 py-3 text-left"
               >
-                <span className="block text-xs text-[#718286]">
+                <span className="text-muted-foreground block text-xs">
                   {event.timeLabel}
                 </span>
-                <span className="mt-1 block text-sm font-medium text-[#253f42]">
+                <span className="text-foreground mt-1 block text-sm font-medium">
                   {event.title}
                 </span>
-                <span className="mt-1 block text-xs leading-5 text-[#66777b]">
+                <span className="text-muted-foreground mt-1 block text-xs leading-5">
                   {point?.name ?? "地点待考"} · {event.evidence.length} 条资料
                 </span>
               </button>
@@ -474,6 +493,11 @@ function HistoricalYearDetails({
   );
 }
 
+function modelTabLabel(asset: GlbAssetDescriptor): string {
+  const size = formatModelAssetSize(asset.sizeBytes);
+  return size ? `3D 建筑研习 (${size})` : "3D 建筑研习";
+}
+
 function PointDetails({
   asset,
   tab,
@@ -483,6 +507,9 @@ function PointDetails({
   relations,
   dataNotice,
   onClose,
+  models,
+  onCreateModel,
+  onModelsChanged,
 }: {
   asset: GlbAssetDescriptor | null;
   tab: string;
@@ -492,7 +519,11 @@ function PointDetails({
   relations: MapRelation[];
   dataNotice: string;
   onClose?: () => void;
+  models: RegisteredMapModel[];
+  onCreateModel: () => void;
+  onModelsChanged: () => void;
 }) {
+  const { user } = useAuth();
   const pointEvents = events
     .filter((event) => event.pointId === point.id)
     .sort(
@@ -505,9 +536,35 @@ function PointDetails({
       relation.subjectId === point.entityId ||
       relation.objectId === point.entityId,
   );
+  const relatedPeople = [
+    ...new Map(
+      [
+        ...pointEvents
+          .flatMap((event) => event.participants ?? [])
+          .filter((person) => person.entityType === "person"),
+        ...pointRelations
+          .flatMap((relation) => [
+            {
+              id: relation.subjectId,
+              name: relation.subjectName,
+              entityType: relation.subjectType,
+            },
+            {
+              id: relation.objectId,
+              name: relation.objectName,
+              entityType: relation.objectType,
+            },
+          ])
+          .filter((person) => person.entityType === "person"),
+      ].map((person) => [person.id, person]),
+    ).values(),
+  ];
 
   return (
-    <section aria-label="点位详情" className="flex min-h-0 flex-1 flex-col">
+    <section
+      aria-label="点位详情"
+      className="research-map-point bg-card text-card-foreground flex min-h-0 flex-1 flex-col"
+    >
       <div className="flex items-start justify-between gap-3 border-b py-4 pr-14 pl-5">
         <div className="min-w-0">
           <h2 className="truncate text-lg font-semibold">{point.name}</h2>
@@ -522,6 +579,11 @@ function PointDetails({
           >
             {confidenceLabels[point.confidence]}
           </span>
+          {point.recordKind === "custom" && (
+            <span className="bg-muted text-muted-foreground mt-1.5 ml-1.5 inline-flex rounded px-2 py-1 text-xs">
+              自建点位
+            </span>
+          )}
           {point.reviewStatus && (
             <span
               className={cn(
@@ -535,13 +597,24 @@ function PointDetails({
             </span>
           )}
         </div>
+        {user?.system_role === "admin" && (
+          <button
+            type="button"
+            aria-label={`为${point.name}创建模型`}
+            className="text-primary inline-flex min-h-11 shrink-0 items-center gap-1 rounded border px-2 text-xs"
+            onClick={onCreateModel}
+          >
+            <Plus className="size-4" />
+            创建模型
+          </button>
+        )}
         {onClose && (
           <button
             type="button"
             aria-label="关闭点位详情"
             title="关闭点位详情"
             onClick={onClose}
-            className="grid size-9 shrink-0 place-items-center rounded-md text-[#52686c] hover:bg-[#eef5f4]"
+            className="text-muted-foreground hover:bg-accent grid size-9 shrink-0 place-items-center rounded-md"
           >
             <X className="size-4" />
           </button>
@@ -556,18 +629,24 @@ function PointDetails({
         <TabsList
           variant="line"
           aria-label="点位资料"
-          className="mx-5 mt-2 w-[calc(100%-2.5rem)] justify-start border-b"
+          className="mx-4 mt-2 w-[calc(100%-2rem)] justify-start overflow-x-auto border-b"
         >
           <TabsTrigger value="overview" className="flex-none px-3">
-            概览
+            史料考据
           </TabsTrigger>
-          {asset && (
-            <TabsTrigger value="model" className="flex-none px-3">
-              模型
+          {user?.system_role === "admin" && (
+            <TabsTrigger value="reconstruct" className="flex-none px-3">
+              影像重建
             </TabsTrigger>
           )}
+          <TabsTrigger value="model" className="flex-none px-3">
+            {asset ? modelTabLabel(asset) : "三维预览"}
+          </TabsTrigger>
           <TabsTrigger value="history" className="flex-none px-3">
             沿革
+          </TabsTrigger>
+          <TabsTrigger value="people" className="flex-none px-3">
+            关联人物
           </TabsTrigger>
           <TabsTrigger value="sources" className="flex-none px-3">
             来源
@@ -611,7 +690,7 @@ function PointDetails({
                 </>
               )}
             </dl>
-            <div className="rounded border border-[#e1d5af] bg-[#fffaf0] px-3 py-2 text-xs leading-5 text-[#755f26]">
+            <div className="border-border bg-muted text-muted-foreground rounded border px-3 py-2 text-xs leading-5">
               <div className="mb-1 flex items-center gap-1.5 font-medium">
                 <Info className="size-3.5" /> 定位依据
               </div>
@@ -633,9 +712,20 @@ function PointDetails({
             </section>
           </TabsContent>
 
-          {asset && tab === "model" && (
+          {tab === "model" && (
             <TabsContent value="model">
-              <GlbViewerSlot asset={asset} />
+              <PointModelPreview key={point.id} asset={asset} models={models} />
+            </TabsContent>
+          )}
+
+          {user?.system_role === "admin" && tab === "reconstruct" && (
+            <TabsContent value="reconstruct">
+              <ReconstructionPanel
+                key={point.id}
+                pointId={point.id}
+                pointName={point.name}
+                onCompleted={onModelsChanged}
+              />
             </TabsContent>
           )}
 
@@ -643,11 +733,8 @@ function PointDetails({
             {pointEvents.length ? (
               <ol className="space-y-4">
                 {pointEvents.map((event) => (
-                  <li
-                    key={event.id}
-                    className="border-l-2 border-[#9ebcba] pl-3"
-                  >
-                    <div className="text-xs font-medium text-[#276b75]">
+                  <li key={event.id} className="border-border border-l-2 pl-3">
+                    <div className="text-primary text-xs font-medium">
                       {event.timeLabel}
                     </div>
                     <div className="mt-1 text-sm font-medium">
@@ -675,7 +762,7 @@ function PointDetails({
                     return (
                       <li
                         key={relation.id}
-                        className="border-l-2 border-[#cba995] pl-3"
+                        className="border-border border-l-2 pl-3"
                       >
                         <p className="text-sm font-medium">
                           {relationSentence(relation)}
@@ -695,6 +782,53 @@ function PointDetails({
             )}
           </TabsContent>
 
+          <TabsContent value="people" className="space-y-4">
+            <h3 className="font-serif text-base font-semibold">
+              文献中的人物线索
+            </h3>
+            {relatedPeople.length ? (
+              relatedPeople.map((person) => (
+                <article
+                  key={person.id}
+                  className="bg-muted/30 rounded-lg border p-3"
+                >
+                  <h4 className="font-serif font-semibold">{person.name}</h4>
+                  {pointEvents
+                    .filter((event) =>
+                      event.participants?.some(
+                        (participant) => participant.id === person.id,
+                      ),
+                    )
+                    .map((event) => (
+                      <div key={event.id} className="mt-3">
+                        <p className="text-muted-foreground text-xs">
+                          {event.timeLabel} · {event.title}
+                        </p>
+                        <EvidenceTrail sources={event.evidence} compact />
+                      </div>
+                    ))}
+                  {pointRelations
+                    .filter(
+                      (relation) =>
+                        relation.subjectId === person.id ||
+                        relation.objectId === person.id,
+                    )
+                    .map((relation) => (
+                      <div key={relation.id} className="mt-3">
+                        <p className="text-muted-foreground text-xs">
+                          {relationSentence(relation)}
+                        </p>
+                        <EvidenceTrail sources={relation.evidence} compact />
+                      </div>
+                    ))}
+                </article>
+              ))
+            ) : (
+              <p className="text-muted-foreground rounded-lg border border-dashed p-4 text-sm leading-6">
+                当前地点尚无已登记的关联人物。人物线索以事件参与者与资料关系为依据。
+              </p>
+            )}
+          </TabsContent>
           <TabsContent value="sources">
             <h3 className="mb-3 flex items-center gap-2 text-sm font-medium">
               <BookOpen className="size-4" /> 可核验来源
@@ -724,7 +858,7 @@ function PointDetails({
           href={xingxiChatHref(
             `请围绕地图实体“${point.name}”开展考证。先核对地图所列来源，再说明历史沿革、定位可靠程度与可核验出处；资料出处不足的部分明确保留。`,
           )}
-          className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-md bg-[#183f42] px-3 text-sm text-white hover:bg-[#28575b]"
+          className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg px-3 text-sm"
         >
           <Send className="size-3.5" /> 让星羲考证
         </Link>
@@ -766,11 +900,46 @@ function downloadRoute(name: string, stops: MapPoint[], disclaimer: string) {
 }
 
 export default function MapPage() {
-  const [catalog, setCatalog] = useState<MapCatalog | null>(
-    readCachedMapCatalog,
+  const { user } = useAuth();
+  const [createModelOpen, setCreateModelOpen] = useState(false);
+  const [registeredModels, setRegisteredModels] = useState<
+    RegisteredMapModel[]
+  >([]);
+  const [modelsReload, setModelsReload] = useState(0);
+  const onModelsChanged = useCallback(
+    () => setModelsReload((value) => value + 1),
+    [],
   );
-  const [error, setError] = useState<string | null>(null);
-  const [reloadKey, setReloadKey] = useState(0);
+  const [modelError, setModelError] = useState("");
+  const [creatingPoint, setCreatingPoint] = useState(false);
+  const [pickedLocation, setPickedLocation] = useState<PickedLocation | null>(
+    null,
+  );
+  const [resumeModelAfterPoint, setResumeModelAfterPoint] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    void listMapModels(controller.signal)
+      .then((models) => {
+        if (!controller.signal.aborted) {
+          setRegisteredModels(models);
+          setModelError("");
+        }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setModelError("已接入模型暂时不可用");
+      });
+    return () => controller.abort();
+  }, [modelsReload]);
+  const {
+    baseCatalog,
+    catalog,
+    error,
+    customPointsError,
+    reloadKey,
+    reload,
+    retryCustomPoints,
+    addCustomPoint,
+  } = useMapCatalog();
   const [mapMode, setMapMode] = useState<MapMode>("explore");
   const [mapDisplayMode, setMapDisplayMode] =
     useState<MapDisplayMode>("modern");
@@ -780,6 +949,13 @@ export default function MapPage() {
   const [detailSheetOpen, setDetailSheetOpen] = useState(false);
   const [compactLayout, setCompactLayout] = useState(false);
   const [timelineExpanded, setTimelineExpanded] = useState(true);
+  const mapStageRef = useRef<HTMLElement | null>(null);
+  const [cameraPadding, setCameraPadding] = useState({
+    top: 144,
+    right: 72,
+    bottom: 160,
+    left: 48,
+  });
   const [query, setQuery] = useState("");
   const [dynasty, setDynasty] = useState<DynastyLayer | "all">("all");
   const [minConfidence, setMinConfidence] =
@@ -835,6 +1011,30 @@ export default function MapPage() {
   const [routePlanning, setRoutePlanning] = useState(false);
   const [routeError, setRouteError] = useState<string | null>(null);
 
+  const startCreatePoint = (resumeModel = false) => {
+    setResumeModelAfterPoint(resumeModel);
+    setCreateModelOpen(false);
+    setDetailSheetOpen(false);
+    setEventDetailSheetOpen(false);
+    setToolPanel(null);
+    setPlaying(false);
+    setPickedLocation(null);
+    setCreatingPoint(true);
+  };
+  const cancelCreatePoint = useCallback(() => {
+    setCreatingPoint(false);
+    setPickedLocation(null);
+    if (resumeModelAfterPoint) setCreateModelOpen(true);
+  }, [resumeModelAfterPoint]);
+  useEffect(() => {
+    if (!creatingPoint || pickedLocation) return;
+    const cancelOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") cancelCreatePoint();
+    };
+    window.addEventListener("keydown", cancelOnEscape);
+    return () => window.removeEventListener("keydown", cancelOnEscape);
+  }, [creatingPoint, pickedLocation, cancelCreatePoint]);
+
   const selectPoint = useCallback(
     (pointId: string) => {
       setSelectedId(pointId);
@@ -843,7 +1043,9 @@ export default function MapPage() {
       setToolPanel(null);
       if (compactLayout) setDetailSheetOpen(true);
       const point = catalog?.points.find((item) => item.id === pointId);
-      setPointDetailTab(getPointModelAsset(point) ? "model" : "overview");
+      // Selecting a point opens its overview only: the model tab advertises the
+      // asset size and stays unloaded until the reader asks for it.
+      setPointDetailTab("overview");
       recordOperationEvent({
         event_type: "map_point_click",
         entity_id: point?.entityId ?? pointId,
@@ -869,6 +1071,69 @@ export default function MapPage() {
     }
   }, [compactLayout]);
 
+  useEffect(() => {
+    const stage = mapStageRef.current;
+    if (!stage) return;
+    const timeline = stage.querySelector<HTMLElement>(".research-map-timeline");
+    const hud = stage.querySelector<HTMLElement>(".research-map-hud");
+    const details = stage.parentElement?.querySelector<HTMLElement>(
+      ".research-map-details",
+    );
+    let frame = 0;
+    const measure = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const bounds = stage.getBoundingClientRect();
+        if (!bounds.width || !bounds.height) return;
+        const timelineTop =
+          timeline?.getBoundingClientRect().top ?? bounds.bottom - 96;
+        const hudBottom =
+          hud?.getBoundingClientRect().bottom ?? bounds.top + 128;
+        stage.style.setProperty(
+          "--map-hud-bottom",
+          `${Math.ceil(hudBottom - bounds.top)}px`,
+        );
+        const detailWidth = details?.getBoundingClientRect().width ?? 0;
+        const next = {
+          top: Math.round(
+            Math.min(hudBottom - bounds.top + 24, bounds.height * 0.28),
+          ),
+          bottom: Math.round(
+            Math.min(bounds.bottom - timelineTop + 24, bounds.height * 0.5),
+          ),
+          right: detailWidth ? Math.round(detailWidth + 48) : 56,
+          left: 48,
+        };
+        setCameraPadding((previous) =>
+          Object.keys(next).every(
+            (key) =>
+              next[key as keyof typeof next] ===
+              previous[key as keyof typeof next],
+          )
+            ? previous
+            : next,
+        );
+      });
+    };
+    const observer = new ResizeObserver(measure);
+    [stage, timeline, hud, details].forEach((element) => {
+      if (element) observer.observe(element);
+    });
+    measure();
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+    };
+  }, [
+    catalog,
+    compactLayout,
+    timelineExpanded,
+    selectedId,
+    detailView,
+    activeEventId,
+    activeTimelineYear,
+  ]);
+
   useEffect(
     () => () => {
       if (locationWatchIdRef.current !== null && navigator.geolocation) {
@@ -879,43 +1144,34 @@ export default function MapPage() {
   );
 
   useEffect(() => {
-    const controller = new AbortController();
-    setError(null);
-    fetchMapCatalog(controller.signal, { force: reloadKey > 0 })
-      .then((nextCatalog) => {
-        setCatalog(nextCatalog);
-        const firstRoute = nextCatalog.routes[0];
-        setActiveRouteId((current) => current ?? firstRoute?.id ?? null);
-        setRouteStopIds((current) =>
-          current.length ? current : (firstRoute?.stopIds ?? []),
-        );
-        setSelectedTrajectoryId(
-          (current) => current ?? nextCatalog.trajectories[0]?.id ?? null,
-        );
-        const renderableLayers = getRenderableMapLayers(nextCatalog.layers);
-        setMapDisplayMode("modern");
-        setShowHistoricalRanges(false);
-        setShowSpeculativeRanges(false);
-        setVisibleLayerIds(
-          renderableLayers
-            .filter((layer) => layer.kind === "base")
-            .map((layer) => layer.id),
-        );
-        setLayerOpacity(
-          Object.fromEntries(
-            renderableLayers.map((layer) => [
-              layer.id,
-              defaultMapLayerOpacity(layer),
-            ]),
-          ),
-        );
-      })
-      .catch((reason: unknown) => {
-        if (controller.signal.aborted) return;
-        setError(reason instanceof Error ? reason.message : "无法读取地图资料");
-      });
-    return () => controller.abort();
-  }, [reloadKey]);
+    if (!baseCatalog) return;
+    const nextCatalog = baseCatalog;
+    const firstRoute = nextCatalog.routes[0];
+    setActiveRouteId((current) => current ?? firstRoute?.id ?? null);
+    setRouteStopIds((current) =>
+      current.length ? current : (firstRoute?.stopIds ?? []),
+    );
+    setSelectedTrajectoryId(
+      (current) => current ?? nextCatalog.trajectories[0]?.id ?? null,
+    );
+    const renderableLayers = getRenderableMapLayers(nextCatalog.layers);
+    setMapDisplayMode("modern");
+    setShowHistoricalRanges(false);
+    setShowSpeculativeRanges(false);
+    setVisibleLayerIds(
+      renderableLayers
+        .filter((layer) => layer.kind === "base")
+        .map((layer) => layer.id),
+    );
+    setLayerOpacity(
+      Object.fromEntries(
+        renderableLayers.map((layer) => [
+          layer.id,
+          defaultMapLayerOpacity(layer),
+        ]),
+      ),
+    );
+  }, [baseCatalog]);
 
   const points = useMemo(
     () =>
@@ -944,9 +1200,13 @@ export default function MapPage() {
   const modelPointIds = useMemo(
     () =>
       (catalog?.points ?? [])
-        .filter((point) => getPointModelAsset(point))
+        .filter(
+          (point) =>
+            getPointModelAsset(point) !== null ||
+            modelsForPoint(registeredModels, point).length > 0,
+        )
         .map((point) => point.id),
-    [catalog],
+    [catalog, registeredModels],
   );
   const selected =
     catalog?.points.find((point) => point.id === selectedId) ?? null;
@@ -1270,7 +1530,7 @@ export default function MapPage() {
       <BusinessErrorState
         title="地图资料暂时无法加载"
         description={error}
-        onRetry={() => setReloadKey((value) => value + 1)}
+        onRetry={reload}
       />
     );
   }
@@ -1310,7 +1570,7 @@ export default function MapPage() {
           </label>
           <fieldset>
             <legend className="mb-1 text-xs">资料层级</legend>
-            <div className="grid grid-cols-3 gap-1 rounded-md bg-[#edf3f2] p-1">
+            <div className="bg-muted grid grid-cols-3 gap-1 rounded-md p-1">
               {(
                 [
                   ["all", "全部"],
@@ -1326,8 +1586,8 @@ export default function MapPage() {
                   className={cn(
                     "min-h-9 rounded px-2 text-xs",
                     recordScope === value
-                      ? "bg-white font-medium text-[#174f53] shadow-sm"
-                      : "text-[#52686c]",
+                      ? "bg-card text-primary font-medium shadow-sm"
+                      : "text-muted-foreground",
                   )}
                 >
                   {label}
@@ -1397,7 +1657,7 @@ export default function MapPage() {
           </label>
           <button
             type="submit"
-            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-[#1d6267] px-3 text-sm font-medium text-white hover:bg-[#174f53]"
+            className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-10 w-full items-center justify-center gap-2 rounded-md px-3 text-sm font-medium"
           >
             <Filter className="size-4" />
             应用筛选
@@ -1419,9 +1679,9 @@ export default function MapPage() {
                   <button
                     type="button"
                     className={cn(
-                      "flex min-h-10 w-full items-center justify-between gap-3 rounded-md px-2 text-left text-sm hover:bg-[#eef5f4]",
+                      "hover:bg-accent flex min-h-10 w-full items-center justify-between gap-3 rounded-md px-2 text-left text-sm",
                       selectedId === point.id &&
-                        "bg-[#e4f0ef] font-medium text-[#276b75]",
+                        "text-primary bg-secondary font-medium",
                     )}
                     onClick={() => selectPoint(point.id)}
                   >
@@ -1446,11 +1706,11 @@ export default function MapPage() {
       </SheetHeader>
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
         <section aria-label="地图图层">
-          <h3 className="text-sm font-medium text-[#253f42]">底图模式</h3>
+          <h3 className="text-foreground text-sm font-medium">底图模式</h3>
           <div
             role="group"
             aria-label="底图显示模式"
-            className="mt-2 grid grid-cols-2 gap-1 rounded-md bg-[#edf3f2] p-1"
+            className="bg-muted mt-2 grid grid-cols-2 gap-1 rounded-md p-1"
           >
             <button
               type="button"
@@ -1459,8 +1719,8 @@ export default function MapPage() {
               className={cn(
                 "min-h-9 rounded px-2 text-xs font-medium",
                 mapDisplayMode === "modern"
-                  ? "bg-white text-[#174f53] shadow-sm"
-                  : "text-[#52686c] hover:text-[#174f53]",
+                  ? "bg-card text-primary shadow-sm"
+                  : "text-muted-foreground hover:text-primary",
               )}
             >
               现代地图
@@ -1478,8 +1738,8 @@ export default function MapPage() {
               className={cn(
                 "min-h-9 rounded px-2 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-45",
                 mapDisplayMode === "comparison"
-                  ? "bg-white text-[#174f53] shadow-sm"
-                  : "text-[#52686c] hover:text-[#174f53]",
+                  ? "bg-card text-primary shadow-sm"
+                  : "text-muted-foreground hover:text-primary",
               )}
             >
               古今对照
@@ -1489,8 +1749,8 @@ export default function MapPage() {
             现代地图始终以完整色彩显示。古今对照仅叠加已完成空间校准的历史地图。
           </p>
 
-          <h3 className="mt-5 text-sm font-medium text-[#253f42]">范围图层</h3>
-          <div className="mt-2 divide-y rounded-md border bg-white">
+          <h3 className="text-foreground mt-5 text-sm font-medium">范围图层</h3>
+          <div className="bg-card mt-2 divide-y rounded-md border">
             <label className="flex min-h-12 items-center justify-between gap-3 px-3 text-sm">
               <span>
                 <span className="block font-medium">历史范围</span>
@@ -1525,7 +1785,7 @@ export default function MapPage() {
             </label>
           </div>
 
-          <h3 className="mt-5 border-t pt-4 text-sm font-medium text-[#253f42]">
+          <h3 className="text-foreground mt-5 border-t pt-4 text-sm font-medium">
             地图资料源
           </h3>
           {catalog.layers.map((layer) => (
@@ -1580,7 +1840,7 @@ export default function MapPage() {
                           [layer.id]: Number(event.target.value),
                         }))
                       }
-                      className="min-w-0 flex-1 accent-[#2b6467]"
+                      className="accent-primary min-w-0 flex-1"
                     />
                     <output className="w-9 text-right tabular-nums">
                       {Math.round(
@@ -1598,7 +1858,7 @@ export default function MapPage() {
                 href={layer.sourceUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="mt-1 inline-flex min-h-8 items-center gap-1 text-[#276b75] hover:underline"
+                className="text-primary mt-1 inline-flex min-h-8 items-center gap-1 hover:underline"
               >
                 查看来源 <ExternalLink className="size-3" />
               </a>
@@ -1695,10 +1955,10 @@ export default function MapPage() {
         {activeRoute && (
           <>
             <div className="mt-4 flex items-start justify-between gap-3">
-              <h3 className="text-sm font-semibold text-[#183f42]">
+              <h3 className="text-foreground text-sm font-semibold">
                 {activeRoute.name}
               </h3>
-              <span className="shrink-0 rounded bg-[#edf3f2] px-2 py-1 text-[11px] text-[#315f63]">
+              <span className="bg-muted text-primary shrink-0 rounded px-2 py-1 text-[11px]">
                 {activeRoute.duration === "half_day" ? "半日" : "一日"}
               </span>
             </div>
@@ -1711,12 +1971,12 @@ export default function MapPage() {
                   key={stop.id}
                   className="flex min-w-0 items-center gap-1 text-xs"
                 >
-                  <span className="w-5 shrink-0 text-right text-[#718184]">
+                  <span className="text-muted-foreground w-5 shrink-0 text-right">
                     {index + 1}.
                   </span>
                   <button
                     type="button"
-                    className="min-h-10 min-w-0 flex-1 truncate rounded-md px-2 text-left hover:bg-[#eef5f4] hover:text-[#276b75]"
+                    className="hover:bg-accent hover:text-primary min-h-10 min-w-0 flex-1 truncate rounded-md px-2 text-left"
                     onClick={() => selectPoint(stop.id)}
                   >
                     {stop.name}
@@ -1732,7 +1992,7 @@ export default function MapPage() {
                         return moveItem(items, index, -1);
                       })
                     }
-                    className="grid size-9 shrink-0 place-items-center rounded-md hover:bg-[#eef5f4] disabled:opacity-30"
+                    className="hover:bg-accent grid size-9 shrink-0 place-items-center rounded-md disabled:opacity-30"
                   >
                     <ArrowUp className="size-4" />
                   </button>
@@ -1747,7 +2007,7 @@ export default function MapPage() {
                         return moveItem(items, index, 1);
                       })
                     }
-                    className="grid size-9 shrink-0 place-items-center rounded-md hover:bg-[#eef5f4] disabled:opacity-30"
+                    className="hover:bg-accent grid size-9 shrink-0 place-items-center rounded-md disabled:opacity-30"
                   >
                     <ArrowDown className="size-4" />
                   </button>
@@ -1761,7 +2021,7 @@ export default function MapPage() {
                       );
                       setPlannedRoute(null);
                     }}
-                    className="grid size-9 shrink-0 place-items-center rounded-md hover:bg-[#eef5f4]"
+                    className="hover:bg-accent grid size-9 shrink-0 place-items-center rounded-md"
                   >
                     <X className="size-4" />
                   </button>
@@ -1774,7 +2034,7 @@ export default function MapPage() {
                 type="button"
                 onClick={locateUser}
                 disabled={locating}
-                className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-md border px-2.5 text-xs hover:bg-[#eef5f4] disabled:opacity-40"
+                className="hover:bg-accent inline-flex min-h-10 items-center justify-center gap-1.5 rounded-md border px-2.5 text-xs disabled:opacity-40"
               >
                 <LocateFixed className="size-4" />
                 {locating ? "定位中…" : userLocation ? "更新位置" : "定位位置"}
@@ -1783,7 +2043,7 @@ export default function MapPage() {
                 type="button"
                 onClick={() => void calculateRoadRoute()}
                 disabled={routePlanning}
-                className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-md bg-[#245f64] px-2.5 text-xs text-white disabled:opacity-40"
+                className="bg-primary text-primary-foreground inline-flex min-h-10 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs disabled:opacity-40"
               >
                 <RouteIcon className="size-4" />
                 {routePlanning ? "规划中…" : "道路规划（驾车）"}
@@ -1797,7 +2057,7 @@ export default function MapPage() {
                     activeRoute.disclaimer,
                   )
                 }
-                className="col-span-2 inline-flex min-h-10 items-center justify-center gap-1.5 rounded-md border px-2.5 text-xs hover:bg-[#eef5f4]"
+                className="hover:bg-accent col-span-2 inline-flex min-h-10 items-center justify-center gap-1.5 rounded-md border px-2.5 text-xs"
               >
                 <Download className="size-4" /> 导出研学提纲
               </button>
@@ -1805,7 +2065,7 @@ export default function MapPage() {
             {plannedRoute?.routingStatus === "routed" &&
               plannedRoute.distanceMeters !== null &&
               plannedRoute.durationSeconds !== null && (
-                <p className="mt-3 text-xs text-[#315f68]">
+                <p className="text-primary mt-3 text-xs">
                   道路路线约 {(plannedRoute.distanceMeters / 1000).toFixed(1)}{" "}
                   公里， 预计驾驶{" "}
                   {Math.max(1, Math.round(plannedRoute.durationSeconds / 60))}{" "}
@@ -1827,30 +2087,58 @@ export default function MapPage() {
   );
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-[#f7faf9]">
-      <header className="flex min-h-16 items-center gap-3 border-b bg-white px-4 py-3">
-        <SidebarTrigger />
-        <MapIcon className="size-4 shrink-0 text-[#2b6467]" />
+    <div className="research-map bg-background text-foreground relative isolate flex h-full min-h-0 flex-col">
+      <header className="research-map-header bg-card/95 absolute top-3 right-3 left-3 z-20 flex min-h-12 items-center gap-1 rounded-xl border px-2 shadow-sm backdrop-blur md:gap-3 md:px-4 md:py-2">
+        <SidebarTrigger className="md:hidden" />
+        <MapIcon className="text-primary hidden size-4 shrink-0 sm:block" />
         <div className="min-w-0">
-          <h1 className="text-base font-semibold">古舆地图</h1>
+          <h1 className="text-sm font-semibold whitespace-nowrap sm:text-base">
+            古舆地图
+          </h1>
           <p className="text-muted-foreground truncate text-xs">
             木渎历史空间 · 现状定位 · 更新于 {catalog.updatedAt}
           </p>
         </div>
-        <span className="ml-auto shrink-0 rounded border border-[#b9d9ca] bg-[#e7f3ec] px-2 py-1 text-xs whitespace-nowrap text-[#276947]">
+        <span className="border-border ml-auto hidden shrink-0 rounded border bg-emerald-50 px-2 py-1 text-xs whitespace-nowrap text-emerald-800 sm:inline-flex dark:bg-emerald-950 dark:text-emerald-200">
           {catalog.points.length}
-          <span className="hidden sm:inline"> 个可追溯</span>点位
+          <span className="hidden sm:inline"> 个</span>点位
         </span>
+        {user?.system_role === "admin" && (
+          <button
+            type="button"
+            aria-label="创建点位"
+            className="text-primary ml-auto inline-flex min-h-11 shrink-0 items-center gap-1 rounded-lg border px-2 text-xs sm:ml-0"
+            onClick={() => startCreatePoint()}
+            disabled={creatingPoint}
+          >
+            <MapPin className="size-4" />
+            <span>创建点位</span>
+          </button>
+        )}
+        {user?.system_role === "admin" && (
+          <button
+            type="button"
+            disabled={creatingPoint}
+            className="bg-primary text-primary-foreground inline-flex min-h-11 shrink-0 items-center gap-1 rounded-lg px-2 text-xs sm:ml-0 sm:px-3"
+            onClick={() => setCreateModelOpen(true)}
+          >
+            <Plus className="size-4" />
+            创建模型
+          </button>
+        )}
+        <WorkspaceSearchLink className="md:hidden" />
       </header>
 
-      <div className="flex min-h-0 flex-1 overflow-hidden">
+      <div className="relative flex min-h-0 flex-1 overflow-hidden">
         <main
-          className="flex min-w-0 flex-1 flex-col bg-[#edf2ef]"
+          ref={mapStageRef}
+          className="research-map-stage bg-muted relative flex min-w-0 flex-1 flex-col"
           data-map-display-mode={mapDisplayMode}
         >
           <section className="relative min-h-0 flex-1">
             <MapLibreCanvas
               key={reloadKey}
+              cameraPadding={cameraPadding}
               points={points}
               modelPointIds={modelPointIds}
               layers={catalog.layers}
@@ -1867,15 +2155,33 @@ export default function MapPage() {
               historyYear={year}
               activeEventId={activeEventId}
               selectedId={selectedId}
+              pickLocation={creatingPoint && pickedLocation === null}
+              pickedLocation={pickedLocation}
+              onPickLocation={setPickedLocation}
               onSelect={(point) => selectPoint(point.id)}
-              onReload={() => setReloadKey((value) => value + 1)}
+              onReload={reload}
             />
 
-            <div className="absolute top-3 left-3 z-10 flex max-w-[calc(100%-5rem)] items-center gap-1 rounded-md border border-[#cfdddc] bg-white p-1 shadow-sm">
+            {creatingPoint && !pickedLocation && (
+              <div
+                role="status"
+                className="bg-card absolute top-36 left-3 z-30 flex max-w-[calc(100%-1.5rem)] items-center gap-3 rounded-lg border px-3 py-2 text-sm shadow-lg"
+              >
+                <span>请点击地图选择新点位，可拖动或缩放地图。</span>
+                <button
+                  type="button"
+                  className="text-primary min-h-11 shrink-0 px-2 underline"
+                  onClick={cancelCreatePoint}
+                >
+                  取消选点
+                </button>
+              </div>
+            )}
+            <div className="research-map-hud bg-card/95 absolute top-20 left-3 z-10 flex max-w-[calc(100%-5rem)] flex-wrap items-center gap-1 rounded-xl border p-1.5 shadow-lg backdrop-blur">
               <div
                 role="tablist"
                 aria-label="地图模式"
-                className="flex items-center rounded bg-[#edf3f2] p-0.5"
+                className="bg-muted flex items-center rounded p-0.5"
               >
                 <button
                   type="button"
@@ -1885,8 +2191,8 @@ export default function MapPage() {
                   className={cn(
                     "inline-flex h-8 items-center gap-1.5 rounded px-2.5 text-xs font-medium",
                     mapMode === "explore"
-                      ? "bg-white text-[#174f53] shadow-sm"
-                      : "text-[#52686c] hover:text-[#174f53]",
+                      ? "bg-card text-primary shadow-sm"
+                      : "text-muted-foreground hover:text-primary",
                   )}
                 >
                   <Compass className="size-3.5" /> 空间探索
@@ -1899,20 +2205,20 @@ export default function MapPage() {
                   className={cn(
                     "inline-flex h-8 items-center gap-1.5 rounded px-2.5 text-xs font-medium",
                     mapMode === "route"
-                      ? "bg-white text-[#174f53] shadow-sm"
-                      : "text-[#52686c] hover:text-[#174f53]",
+                      ? "bg-card text-primary shadow-sm"
+                      : "text-muted-foreground hover:text-primary",
                   )}
                 >
                   <RouteIcon className="size-3.5" /> 研学路线
                 </button>
               </div>
-              <span className="mx-0.5 h-5 w-px bg-[#d6e0df]" />
+              <span className="bg-border mx-0.5 h-5 w-px" />
               <button
                 type="button"
                 aria-label="筛选点位"
                 title="筛选点位"
                 onClick={() => openToolPanel("filters")}
-                className="inline-flex size-8 items-center justify-center rounded text-[#315f63] hover:bg-[#edf3f2]"
+                className="text-primary hover:bg-muted inline-flex size-8 items-center justify-center rounded"
               >
                 <Filter className="size-4" />
               </button>
@@ -1921,7 +2227,7 @@ export default function MapPage() {
                 aria-label="地图图层"
                 title="地图图层"
                 onClick={() => openToolPanel("layers")}
-                className="inline-flex size-8 items-center justify-center rounded text-[#315f63] hover:bg-[#edf3f2]"
+                className="text-primary hover:bg-muted inline-flex size-8 items-center justify-center rounded"
               >
                 <Layers3 className="size-4" />
               </button>
@@ -1938,10 +2244,10 @@ export default function MapPage() {
                 onClick={locateUser}
                 disabled={locating}
                 className={cn(
-                  "inline-flex size-8 items-center justify-center rounded hover:bg-[#edf3f2] disabled:opacity-40",
+                  "hover:bg-muted inline-flex size-8 items-center justify-center rounded disabled:opacity-40",
                   locationTracking
                     ? "bg-blue-50 text-blue-700"
-                    : "text-[#315f63]",
+                    : "text-primary",
                 )}
               >
                 <LocateFixed
@@ -1954,7 +2260,7 @@ export default function MapPage() {
                   aria-label="编辑研学路线"
                   title="编辑研学路线"
                   onClick={() => openToolPanel("route")}
-                  className="inline-flex size-8 items-center justify-center rounded text-[#315f63] hover:bg-[#edf3f2]"
+                  className="text-primary hover:bg-muted inline-flex size-8 items-center justify-center rounded"
                 >
                   <RouteIcon className="size-4" />
                 </button>
@@ -1962,7 +2268,7 @@ export default function MapPage() {
             </div>
 
             {(locationTracking || locationError) && (
-              <div className="absolute right-3 bottom-12 z-10 flex max-w-[min(80vw,360px)] items-center gap-2 rounded-md border border-[#cfdddc] bg-white px-2.5 py-2 text-xs shadow-sm">
+              <div className="research-map-location bg-card/95 absolute top-36 left-3 z-10 flex max-w-[min(80vw,360px)] items-center gap-2 rounded-lg border px-2.5 py-2 text-xs shadow-sm">
                 {locationTracking ? (
                   <>
                     <span className="relative flex size-2.5 shrink-0">
@@ -1986,7 +2292,7 @@ export default function MapPage() {
                       aria-label="停止实时定位"
                       title="停止实时定位"
                       onClick={stopLocationTracking}
-                      className="grid size-7 shrink-0 place-items-center rounded hover:bg-[#edf3f2]"
+                      className="hover:bg-muted grid size-7 shrink-0 place-items-center rounded"
                     >
                       <X className="size-3.5" />
                     </button>
@@ -2001,34 +2307,38 @@ export default function MapPage() {
 
             <div
               data-map-legend="true"
-              className="pointer-events-none absolute bottom-10 left-3 flex max-w-[calc(100%-5rem)] flex-wrap gap-x-2 gap-y-0.5 rounded bg-white px-2 py-1 text-[10px] shadow-sm sm:text-[11px]"
+              className="research-map-legend bg-card/95 pointer-events-none absolute bottom-6 left-3 flex max-w-[calc(100%-5rem)] flex-wrap gap-x-2 gap-y-0.5 rounded-lg border px-2 py-1 text-[10px] shadow-sm sm:text-[11px]"
             >
-              <span className="font-medium text-[#6f594c]">
+              <span className="text-muted-foreground font-medium">
                 {mapDisplayMode === "comparison"
                   ? "OpenStreetMap · 古今对照"
                   : "OpenStreetMap 现代地图"}
               </span>
               <span className="text-teal-800">● 精确点</span>
               {modelPointIds.length > 0 && (
-                <span className="flex items-center gap-1 text-[#276b75]">
-                  <span className="grid size-5 place-items-center rounded-full border-2 border-teal-800 bg-teal-600 text-[8px] font-bold text-white">
+                <span className="text-primary flex items-center gap-1">
+                  <span className="text-primary-foreground grid size-5 place-items-center rounded-full border-2 border-teal-800 bg-teal-600 text-[8px] font-bold">
                     3D
                   </span>
                   可预览模型 · 标点大小固定
                 </span>
               )}
               {showHistoricalRanges && (
-                <span className="text-[#275e57]">▧ 历史范围</span>
+                <span className="text-primary">▧ 历史范围</span>
               )}
               {showSpeculativeRanges && (
                 <span className="text-amber-700">▧ 推测范围</span>
               )}
               {(showHistoricalRanges || showSpeculativeRanges) && (
-                <span className="text-[#52686c]">范围颜色不表示统计概率</span>
+                <span className="text-muted-foreground">
+                  范围颜色不表示统计概率
+                </span>
               )}
               <span className="text-amber-900">◈ 虚边为待复核语料草稿</span>
               {mapMode === "route" && (
-                <span className="text-[#52686c]">实线为研学站点顺序</span>
+                <span className="text-muted-foreground">
+                  实线为研学站点顺序
+                </span>
               )}
               {userLocation && (
                 <span className="text-blue-700">● 我的实时位置</span>
@@ -2037,16 +2347,16 @@ export default function MapPage() {
           </section>
 
           <section
-            className="shrink-0 border-t bg-white"
+            className="research-map-timeline bg-card/95 absolute right-3 bottom-24 left-3 z-10 flex max-h-[min(176px,28dvh)] shrink-0 flex-col overflow-hidden rounded-xl border shadow-lg backdrop-blur sm:max-h-[min(200px,28dvh)] md:bottom-20"
             aria-label="历史时间轴"
           >
-            <div className="flex min-h-12 items-center gap-2 px-3 sm:px-4">
+            <div className="flex min-h-10 shrink-0 items-center gap-2 px-3 sm:px-4">
               <button
                 type="button"
                 title={playing ? "暂停时间播放" : "播放时间轴"}
                 aria-label={playing ? "暂停时间播放" : "播放时间轴"}
                 onClick={() => setPlaying((value) => !value)}
-                className="grid size-9 shrink-0 place-items-center rounded-md border hover:bg-[#eef5f4]"
+                className="hover:bg-accent grid size-8 shrink-0 place-items-center rounded-md border"
               >
                 {playing ? (
                   <Pause className="size-4" />
@@ -2054,11 +2364,11 @@ export default function MapPage() {
                   <Play className="size-4" />
                 )}
               </button>
-              <CalendarRange className="size-4 shrink-0 text-[#315f63]" />
-              <span className="min-w-0 flex-1 text-sm font-medium">
+              <CalendarRange className="text-primary size-4 shrink-0" />
+              <span className="min-w-0 flex-1 text-xs font-medium">
                 历史时间轴
               </span>
-              <strong className="max-w-[45vw] truncate text-sm sm:max-w-none">
+              <strong className="max-w-[45vw] truncate text-xs sm:max-w-none">
                 {activeEvent?.timeLabel ??
                   (activeTimelineYear !== null
                     ? `${activeTimelineYear}年 · ${activeYearEvents.length}件事件`
@@ -2073,7 +2383,7 @@ export default function MapPage() {
                 }
                 aria-expanded={timelineExpanded}
                 onClick={() => setTimelineExpanded((value) => !value)}
-                className="grid size-9 shrink-0 place-items-center rounded-md hover:bg-[#eef5f4]"
+                className="hover:bg-accent grid size-8 shrink-0 place-items-center rounded-md"
               >
                 {timelineExpanded ? (
                   <ChevronDown className="size-4" />
@@ -2083,180 +2393,218 @@ export default function MapPage() {
               </button>
             </div>
             {timelineExpanded && (
-              <div className="border-t px-3 py-2 sm:px-4">
-                <div
-                  ref={timelineScrollRef}
-                  data-timeline-scale-start={timelineLayout.scale?.startYear}
-                  data-timeline-scale-end={timelineLayout.scale?.endYear}
-                  className="overflow-x-auto pb-1"
-                >
-                  {timelineLayout.scale && timelineLayout.groups.length ? (
-                    <div
-                      className="relative"
-                      style={{
-                        width: timelineLayout.widthPx,
-                        minHeight: timelineLayout.heightPx,
-                      }}
-                    >
-                      <div className="absolute top-7 right-0 left-0 h-px bg-[#9bb7b6]" />
-                      {timelineLayout.ticks.map((tick) => (
-                        <span
-                          key={tick.year}
-                          className="absolute top-0 bottom-0 -translate-x-1/2 text-[10px] text-[#718286]"
-                          style={{ left: tick.leftPx }}
-                        >
-                          <span className="block -translate-x-0.5 text-center">
-                            {tick.year}
-                          </span>
-                          <span className="absolute top-7 bottom-0 left-1/2 w-px bg-[#e2eae8]" />
+              <div
+                ref={timelineScrollRef}
+                data-timeline-scale-start={timelineLayout.scale?.startYear}
+                data-timeline-scale-end={timelineLayout.scale?.endYear}
+                className="min-h-0 overflow-auto overscroll-contain border-t px-3 py-1 sm:px-4"
+              >
+                {timelineLayout.scale && timelineLayout.groups.length ? (
+                  <div
+                    className="relative"
+                    style={{
+                      width: timelineLayout.widthPx,
+                      minHeight: timelineLayout.heightPx,
+                    }}
+                  >
+                    <div className="absolute top-5 right-0 left-0 h-px bg-[#9bb7b6]" />
+                    {timelineLayout.ticks.map((tick) => (
+                      <span
+                        key={tick.year}
+                        className="absolute top-0 bottom-0 -translate-x-1/2 text-[10px] text-[#718286]"
+                        style={{ left: tick.leftPx }}
+                      >
+                        <span className="block -translate-x-0.5 text-center">
+                          {tick.year}
                         </span>
-                      ))}
-                      {timelineLayout.dynastyBands.map((band) => (
-                        <div
-                          key={band.id}
-                          data-dynasty-band={band.id}
-                          className="absolute h-5 border-x border-[#c8d8d4] bg-[#eef4f1] text-center text-[11px] leading-5 font-medium text-[#58716d]"
-                          style={{
-                            top: 40 + band.track * 22,
-                            left: band.leftPx,
-                            width: band.widthPx,
-                          }}
-                          title={`${band.label}（${band.startYear}—${band.endYear}）`}
-                        >
-                          <span className="block truncate px-1">
-                            {band.label}
-                          </span>
-                        </div>
-                      ))}
-                      {timelineLayout.groups.map((group) => {
-                        const event = group.events[0]!;
-                        const point =
-                          catalog.points.find(
-                            (item) => item.id === event.pointId,
-                          ) ?? null;
-                        const active =
-                          group.events.some(
-                            (item) => item.id === activeEventId,
-                          ) ||
-                          (detailView === "year" &&
-                            group.year === activeTimelineYear);
-                        const label =
-                          group.events.length > 1
-                            ? `${group.year} · ${group.events.length}件事件`
-                            : event.title;
-                        return (
-                          <button
-                            type="button"
-                            key={group.id}
-                            data-timeline-year={group.year}
-                            data-timeline-group-size={group.events.length}
-                            ref={(element) => {
-                              if (element)
-                                timelineEventRefs.current.set(
-                                  group.id,
-                                  element,
-                                );
-                              else timelineEventRefs.current.delete(group.id);
-                            }}
-                            onClick={() => activateTimelineGroup(group)}
-                            aria-current={active ? "step" : undefined}
-                            aria-label={`查看历史事件：${label}`}
-                            className={cn(
-                              "absolute z-[1] flex w-[136px] -translate-x-1/2 flex-col items-center gap-1 px-1 text-center text-xs",
-                              active
-                                ? "font-medium text-[#174f53]"
-                                : "text-[#5b6d70] hover:text-[#174f53]",
-                            )}
-                            style={{
-                              top:
-                                timelineLayout.eventTopPx +
-                                group.lane * TIMELINE_LANE_HEIGHT,
-                              left: group.leftPx,
-                            }}
-                          >
-                            <span
-                              className={cn(
-                                "grid size-4 place-items-center rounded-full border-2 bg-white shadow-sm",
-                                active
-                                  ? "border-[#1d6267] ring-4 ring-[#d6e9e5]"
-                                  : event.importance === "landmark"
-                                    ? "border-[#4d8588]"
-                                    : "border-[#9bb7b6]",
-                              )}
-                            />
-                            <span className="rounded-full bg-[#edf3f2] px-2 py-0.5 text-[10px] leading-4 text-[#276b75]">
-                              {eventDynastyLabel(event, point)}
-                            </span>
-                            {group.events.length > 1 ? (
-                              <span
-                                className="line-clamp-2 min-h-8 leading-4 font-medium"
-                                title={group.events
-                                  .map((item) => item.title)
-                                  .join("；")}
-                              >
-                                {label}
-                              </span>
-                            ) : (
-                              <>
-                                <span className="block text-[10px] leading-4 text-[#718286]">
-                                  {eventYearLabel(event)}
-                                </span>
-                                <span
-                                  className="line-clamp-2 min-h-8 leading-4 font-medium"
-                                  title={event.title}
-                                >
-                                  {event.title}
-                                </span>
-                              </>
-                            )}
-                            <span className="sr-only">
-                              {group.events.length > 1
-                                ? `包含：${group.events.map((item) => item.title).join("、")}`
-                                : event.timeLabel}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <span className="text-muted-foreground text-xs">
-                      当前资料范围暂无历史事件
-                    </span>
-                  )}
-                  {undatedTimelineEvents.length > 0 && (
-                    <div className="mt-2 flex items-center gap-2 border-t border-dashed pt-2 text-xs">
-                      <span className="shrink-0 text-[#8a6a5b]">年代待考</span>
-                      <div className="flex gap-1.5 overflow-x-auto">
-                        {undatedTimelineEvents.map((event) => (
-                          <button
-                            key={event.id}
-                            type="button"
-                            aria-label={`查看历史事件：${event.title}`}
-                            onClick={() => {
-                              setPlaying(false);
-                              activateTimelineEvent(event);
-                            }}
-                            className={cn(
-                              "max-w-48 rounded border px-2 py-1 text-left text-[11px] leading-4",
-                              event.id === activeEventId
-                                ? "border-[#b67a5e] bg-[#f8eee8] text-[#5e3526]"
-                                : "border-[#d8e2e0] text-[#5b6d70] hover:bg-[#eef5f4]",
-                            )}
-                          >
-                            {event.title}
-                          </button>
-                        ))}
+                        <span className="absolute top-5 bottom-0 left-1/2 w-px bg-[#e2eae8]" />
+                      </span>
+                    ))}
+                    {timelineLayout.dynastyBands.map((band) => (
+                      <div
+                        key={band.id}
+                        data-dynasty-band={band.id}
+                        className="absolute h-4 border-x border-[#c8d8d4] bg-[#eef4f1] text-center text-[10px] leading-4 font-medium text-[#58716d]"
+                        style={{
+                          top: 32 + band.track * 18,
+                          left: band.leftPx,
+                          width: band.widthPx,
+                        }}
+                        title={`${band.label}（${band.startYear}—${band.endYear}）`}
+                      >
+                        <span className="block truncate px-1">
+                          {band.label}
+                        </span>
                       </div>
+                    ))}
+                    {timelineLayout.groups.map((group) => {
+                      const event = group.events[0]!;
+                      const point =
+                        catalog.points.find(
+                          (item) => item.id === event.pointId,
+                        ) ?? null;
+                      const active =
+                        group.events.some(
+                          (item) => item.id === activeEventId,
+                        ) ||
+                        (detailView === "year" &&
+                          group.year === activeTimelineYear);
+                      const label =
+                        group.events.length > 1
+                          ? `${group.year} · ${group.events.length}件事件`
+                          : event.title;
+                      return (
+                        <button
+                          type="button"
+                          key={group.id}
+                          data-timeline-year={group.year}
+                          data-timeline-group-size={group.events.length}
+                          ref={(element) => {
+                            if (element)
+                              timelineEventRefs.current.set(group.id, element);
+                            else timelineEventRefs.current.delete(group.id);
+                          }}
+                          onClick={() => activateTimelineGroup(group)}
+                          aria-current={active ? "step" : undefined}
+                          aria-label={`查看历史事件：${label}`}
+                          className={cn(
+                            "absolute z-[1] flex w-[136px] -translate-x-1/2 flex-col items-center gap-0.5 px-1 text-center text-xs",
+                            active
+                              ? "font-medium text-[#174f53]"
+                              : "text-[#5b6d70] hover:text-[#174f53]",
+                          )}
+                          style={{
+                            top:
+                              timelineLayout.eventTopPx +
+                              group.lane * TIMELINE_LANE_HEIGHT,
+                            left: group.leftPx,
+                          }}
+                        >
+                          <span
+                            className={cn(
+                              "grid size-3 place-items-center rounded-full border-2 bg-white shadow-sm",
+                              active
+                                ? "border-[#1d6267] ring-4 ring-[#d6e9e5]"
+                                : event.importance === "landmark"
+                                  ? "border-[#4d8588]"
+                                  : "border-[#9bb7b6]",
+                            )}
+                          />
+                          <span className="max-w-full truncate text-[10px] leading-3.5 text-[#276b75]">
+                            {eventDynastyLabel(event, point)} ·{" "}
+                            {group.events.length > 1
+                              ? `${group.year}年`
+                              : eventYearLabel(event)}
+                          </span>
+                          <span
+                            className="line-clamp-1 w-full leading-4 font-medium"
+                            title={group.events
+                              .map((item) => item.title)
+                              .join("；")}
+                          >
+                            {group.events.length > 1
+                              ? `${group.events.length}件事件`
+                              : event.title}
+                          </span>
+                          <span className="sr-only">
+                            {group.events.length > 1
+                              ? `包含：${group.events.map((item) => item.title).join("、")}`
+                              : event.timeLabel}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <span className="text-muted-foreground text-xs">
+                    当前资料范围暂无历史事件
+                  </span>
+                )}
+                {undatedTimelineEvents.length > 0 && (
+                  <div className="mt-2 flex items-center gap-2 border-t border-dashed pt-2 text-xs">
+                    <span className="shrink-0 text-[#8a6a5b]">年代待考</span>
+                    <div className="flex gap-1.5 overflow-x-auto">
+                      {undatedTimelineEvents.map((event) => (
+                        <button
+                          key={event.id}
+                          type="button"
+                          aria-label={`查看历史事件：${event.title}`}
+                          onClick={() => {
+                            setPlaying(false);
+                            activateTimelineEvent(event);
+                          }}
+                          className={cn(
+                            "max-w-48 rounded border px-2 py-1 text-left text-[11px] leading-4",
+                            event.id === activeEventId
+                              ? "border-[#b67a5e] bg-[#f8eee8] text-[#5e3526]"
+                              : "border-[#d8e2e0] text-[#5b6d70] hover:bg-[#eef5f4]",
+                          )}
+                        >
+                          {event.title}
+                        </button>
+                      ))}
                     </div>
-                  )}
-                </div>
+                  </div>
+                )}
+                {timelineLayout.scale && (
+                  <HistoricalTimelineControl
+                    min={timelineLayout.scale.startYear}
+                    max={timelineLayout.scale.endYear}
+                    year={year}
+                    onChange={(value) => {
+                      setPlaying(false);
+                      setYear(value);
+                      setActiveEventId(null);
+                      setActiveTimelineYear(null);
+                      setDetailView("point");
+                      setEventDetailSheetOpen(false);
+                    }}
+                    onClear={() => {
+                      setPlaying(false);
+                      setYear(null);
+                      setActiveEventId(null);
+                      setActiveTimelineYear(null);
+                      setDetailView("point");
+                      setEventDetailSheetOpen(false);
+                    }}
+                    onPrevious={() => {
+                      const index = timelineLayout.groups.findIndex(
+                        (group) =>
+                          group.events.some(
+                            (event) => event.id === activeEventId,
+                          ) || group.year === activeTimelineYear,
+                      );
+                      const group =
+                        timelineLayout.groups[
+                          (Math.max(index, 0) -
+                            1 +
+                            timelineLayout.groups.length) %
+                            timelineLayout.groups.length
+                        ];
+                      if (group) activateTimelineGroup(group);
+                    }}
+                    onNext={() => {
+                      const index = timelineLayout.groups.findIndex(
+                        (group) =>
+                          group.events.some(
+                            (event) => event.id === activeEventId,
+                          ) || group.year === activeTimelineYear,
+                      );
+                      const group =
+                        timelineLayout.groups[
+                          (index + 1) % timelineLayout.groups.length
+                        ];
+                      if (group) activateTimelineGroup(group);
+                    }}
+                  />
+                )}
               </div>
             )}
           </section>
         </main>
 
         {detailView === "event" && activeEvent ? (
-          <aside className="hidden w-[390px] shrink-0 border-l bg-white xl:flex xl:min-h-0">
+          <aside className="research-map-details bg-card absolute top-3 right-3 bottom-3 z-20 hidden w-[380px] shrink-0 overflow-hidden rounded-xl border shadow-lg xl:flex xl:min-h-0">
             <HistoricalEventDetails
               event={activeEvent}
               point={activePoint}
@@ -2267,7 +2615,7 @@ export default function MapPage() {
             />
           </aside>
         ) : detailView === "year" && activeTimelineYear !== null ? (
-          <aside className="hidden w-[390px] shrink-0 border-l bg-white xl:flex xl:min-h-0">
+          <aside className="research-map-details bg-card absolute top-3 right-3 bottom-3 z-20 hidden w-[380px] shrink-0 overflow-hidden rounded-xl border shadow-lg xl:flex xl:min-h-0">
             <HistoricalYearDetails
               year={activeTimelineYear}
               events={activeYearEvents}
@@ -2276,10 +2624,13 @@ export default function MapPage() {
             />
           </aside>
         ) : selected && !compactLayout ? (
-          <aside className="hidden w-[390px] shrink-0 border-l bg-white xl:flex xl:min-h-0">
+          <aside className="research-map-details bg-card absolute top-3 right-3 bottom-3 z-20 hidden w-[380px] shrink-0 overflow-hidden rounded-xl border shadow-lg xl:flex xl:min-h-0">
             <PointDetails
-              key={selected.id}
+              key={`${selected.id}:${modelsReload}`}
               asset={getPointModelAsset(selected)}
+              models={modelsForPoint(registeredModels, selected)}
+              onCreateModel={() => setCreateModelOpen(true)}
+              onModelsChanged={onModelsChanged}
               tab={pointDetailTab}
               onTabChange={setPointDetailTab}
               point={selected}
@@ -2366,8 +2717,11 @@ export default function MapPage() {
               <SheetTitle>{selected.name}</SheetTitle>
             </SheetHeader>
             <PointDetails
-              key={selected.id}
+              key={`${selected.id}:${modelsReload}`}
               asset={getPointModelAsset(selected)}
+              models={modelsForPoint(registeredModels, selected)}
+              onCreateModel={() => setCreateModelOpen(true)}
+              onModelsChanged={onModelsChanged}
               tab={pointDetailTab}
               onTabChange={setPointDetailTab}
               point={selected}
@@ -2378,6 +2732,67 @@ export default function MapPage() {
           </SheetContent>
         )}
       </Sheet>
+      {(customPointsError !== null || modelError !== "") && (
+        <div className="bg-card absolute bottom-3 left-3 z-30 flex max-w-[calc(100%-1.5rem)] flex-col gap-1 rounded border px-3 py-2 text-xs">
+          {customPointsError && (
+            <div role="status">
+              {customPointsError}
+              <button
+                className="text-primary ml-2 min-h-11 underline"
+                type="button"
+                onClick={retryCustomPoints}
+              >
+                重试自建点位
+              </button>
+            </div>
+          )}
+          {modelError && (
+            <div role="status">
+              {modelError}
+              <button
+                className="text-primary ml-2 min-h-11 underline"
+                type="button"
+                onClick={() => setModelsReload((value) => value + 1)}
+              >
+                重试模型列表
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+      {user?.system_role === "admin" && creatingPoint && pickedLocation && (
+        <CreatePointForm
+          location={pickedLocation}
+          onCancel={cancelCreatePoint}
+          onPickAgain={() => setPickedLocation(null)}
+          onCreated={(point) => {
+            addCustomPoint(point);
+            clearFilters();
+            setSelectedId(point.id);
+            setDetailView("point");
+            setPointDetailTab("overview");
+            setCreatingPoint(false);
+            setPickedLocation(null);
+            setDetailSheetOpen(compactLayout && !resumeModelAfterPoint);
+            if (resumeModelAfterPoint) setCreateModelOpen(true);
+          }}
+        />
+      )}
+      {user?.system_role === "admin" && (
+        <CreateModelDialog
+          open={createModelOpen}
+          onOpenChange={setCreateModelOpen}
+          onCreatePoint={() => startCreatePoint(true)}
+          points={catalog.points}
+          defaultPointId={selectedId ?? undefined}
+          onCreated={(pointId, mode) => {
+            setCreateModelOpen(false);
+            selectPoint(pointId);
+            setPointDetailTab(mode === "import" ? "model" : "reconstruct");
+            setModelsReload((value) => value + 1);
+          }}
+        />
+      )}
     </div>
   );
 }

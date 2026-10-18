@@ -53,6 +53,23 @@ other `/api/*` go straight to the Gateway REST routers. See
 
 Production Docker loads `docker-compose.postgres.yaml` only when `config.yaml` selects `database.backend: postgres`. PostgreSQL has no host port; `scripts/deploy.sh` persists its password under `DEER_FLOW_HOME` and its data in a named volume.
 
+The host-specific native launcher is outside this checkout. The reviewed patch
+`docs/patches/native-launcher-reuseaddr.patch` adds `SO_REUSEADDR` to its port
+preflight so `TIME_WAIT` does not falsely block a restart; active listeners still
+fail the bind/listen probe. Apply it only through the host's normal terminal when
+that directory is outside the coding environment's writable roots. Offline
+regressions run with `python3 -m unittest discover -s tests -p test_native_launcher_patch.py`;
+they patch a temporary synthetic launcher and open no ports. See
+`docs/xingxi-answer-policy-activation.md` for activation and port diagnosis.
+
+The optional `docs/patches/native-launcher-production-frontend.patch` makes that
+host launcher build before serving with `next start` by default; explicit
+`DEERFLOW_FRONTEND_MODE=development` retains hot reload. It addresses confirmed
+on-demand compilation delays across workspace modules. Apply outside-root host
+patches through the normal terminal. Offline patch tests run with
+`python3 -m unittest discover -s tests -p 'test_native*patch.py'`;
+see `docs/native-frontend-performance.md` for evidence and activation.
+
 ## Repository Map
 
 ```
@@ -170,3 +187,13 @@ These apply repo-wide; module guides own the module-specific detail.
   frontend tests live in `frontend/tests/`.
 - **Format before pushing** — run `make format` (backend) / `pnpm check` (frontend). Backend
   CI enforces `ruff format --check`, so formatting must be clean before a push.
+
+
+Map integration note:
+- The map functionality from `feat/ui-redesign` is integrated independently of
+  its other workspace pages. Custom points, imported PLY/GLB assets and optional
+  SSH reconstruction have dedicated authenticated APIs. See module guides and
+  `docs/map-ui-redesign-integration.md`; preserve the compact timeline and the
+  seven real static GLBs when applying branch updates.
+- Migration `0047_merge_map_reconstruction` joins the existing evaluation and map
+  histories into one head. Preserve both parent revisions when upgrading.

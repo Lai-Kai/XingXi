@@ -4,7 +4,7 @@ import { getBackendBaseURL } from "@/core/config";
 export type SourceDocumentSummary = {
   id: string;
   title: string;
-  edition: string;
+  edition: string | null;
   source_institution: string;
   source_type: SourceType;
   source_type_label: string | null;
@@ -27,6 +27,8 @@ export type SourceDocumentPage = {
 export type SourceDocumentLibraryFile = {
   file: SourceFileRecord;
   ingestion_job: IngestionJob | null;
+  chunk_set_id: string | null;
+  review_status: ReviewStatus | null;
 };
 
 export type SourceDocumentLibraryItem = {
@@ -266,7 +268,22 @@ export type KnowledgeReleaseState = {
 export type SourceUploadOptions = {
   duplicatePolicy?: "report" | "reference_existing" | "new_version";
   versionOfFileId?: string;
+  generateGraph?: boolean;
 };
+
+export async function generateSourceGraph(
+  documentId: string,
+  fileId: string,
+): Promise<IngestionJob> {
+  const response = await fetch(
+    `${getBackendBaseURL()}/api/source-documents/${encodeURIComponent(documentId)}/files/${encodeURIComponent(fileId)}/generate-graph`,
+    { method: "POST" },
+  );
+  if (!response.ok) {
+    throw new Error(await responseError(response, "无法启动文献图谱生成"));
+  }
+  return response.json();
+}
 
 export class SourceUploadError extends Error {
   constructor(
@@ -349,7 +366,10 @@ export async function pageSourceDocumentLibrary(
 
 export async function updateSourceDocument(
   documentId: string,
-  input: Partial<SourceDocumentCreateInput> & { status?: SourceDocumentStatus },
+  input: Partial<Omit<SourceDocumentCreateInput, "edition">> & {
+    edition?: string | null;
+    status?: SourceDocumentStatus;
+  },
 ): Promise<SourceDocumentSummary> {
   const response = await fetch(
     `${getBackendBaseURL()}/api/source-documents/${encodeURIComponent(documentId)}`,
@@ -482,6 +502,7 @@ export function uploadSourceFile(
     const form = new FormData();
     form.append("files", file, file.name);
     form.append("duplicate_policy", options.duplicatePolicy ?? "report");
+    form.append("generate_graph", String(options.generateGraph ?? false));
     if (options.versionOfFileId) {
       form.append("version_of_file_id", options.versionOfFileId);
     }

@@ -49,7 +49,7 @@ from deerflow.persistence.migrations._helpers import _normalize_default
 asyncio_test = pytest.mark.asyncio
 
 
-HEAD = "0040_poetry_mention_relation"
+HEAD = "0047_merge_map_reconstruction"
 BASELINE = "0001_baseline"
 
 

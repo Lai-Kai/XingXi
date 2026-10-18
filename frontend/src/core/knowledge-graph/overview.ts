@@ -8,6 +8,8 @@ export type OverviewNode = GraphEntity & {
   component_id?: string | null;
 };
 export type OverviewPage = {
+  view?: "published" | "working";
+  authorization_pending_sources?: number;
   release_id: string | null;
   nodes: OverviewNode[];
   edges: GraphRelation[];
@@ -31,6 +33,7 @@ export type OverviewPage = {
   }>;
 };
 export type OverviewOptions = {
+  view?: "published" | "working";
   scope?: "all" | "people";
   relation_type?: string;
   review_status?: ReviewStatus;
@@ -75,6 +78,8 @@ export function mergeOverview(
 ): OverviewPage {
   if (previous.release_id !== next.release_id)
     throw new Error("知识版本已切换，请重新加载总览。");
+  if ((previous.view ?? "published") !== (next.view ?? "published"))
+    throw new Error("图谱范围已切换，请重新加载总览。");
   const nodes = [
     ...new Map(
       [...previous.nodes, ...next.nodes].map((node) => [node.id, node]),

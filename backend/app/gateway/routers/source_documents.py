@@ -23,6 +23,7 @@ from wu_culture import (
     DuplicateSourceFileError,
     ParsedDocument,
     ParsedDocumentRepository,
+    ReviewStatus,
     SourceAccessDecision,
     SourceAuthorizationEvent,
     SourceDocument,
@@ -45,6 +46,7 @@ from wu_culture.ingestion import (
     IngestionIdempotencyConflict,
     IngestionJob,
     IngestionJobRepository,
+    IngestionJobStatus,
     IngestionStateError,
     IngestionStepName,
     begin_step,
@@ -130,6 +132,8 @@ class SourceDocumentPageResponse(BaseModel):
 class SourceDocumentLibraryFileResponse(BaseModel):
     file: SourceFile
     ingestion_job: IngestionJob | None
+    chunk_set_id: str | None = None
+    review_status: ReviewStatus | None = None
 
 
 class SourceDocumentLibraryItemResponse(BaseModel):
@@ -460,6 +464,47 @@ async def _create_upload_ingestion_job(
         return None, str(exc)
 
 
+async def _enable_internal_graph_processing(document_id: str, *, admin_id: str, repository: SourceDocumentRepository) -> None:
+    """Record the uploader's explicit internal-processing choice, never public rights."""
+    document = await repository.get(document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="Source document not found")
+    access = evaluate_source_access(document, use=AuthorizedUse.INTERNAL_PROCESSING)
+    if access.allowed:
+        return
+    # A generation action must not overwrite a revocation, expiry or an existing
+    # rights decision. Those continue to use the explicit authorization API.
+    if document.authorization_status is not AuthorizationStatus.UNCONFIRMED or document.authorized_uses or document.visibility_scope is not VisibilityScope.INTERNAL:
+        raise HTTPException(status_code=409, detail="资料当前不允许内部处理，请先更新来源授权。")
+    now = datetime.now(UTC)
+    basis = "资料管理员选择自动解析文献并生成内部待复核图谱"
+    updated = document.model_copy(
+        update={
+            "authorization_status": AuthorizationStatus.ACTIVE,
+            "authorization_basis": basis,
+            "authorized_uses": (AuthorizedUse.INTERNAL_PROCESSING,),
+            "updated_by": admin_id,
+            "updated_at": now,
+        }
+    )
+    await repository.update_authorization(
+        updated,
+        SourceAuthorizationEvent(
+            id=f"authorization-event-{uuid4().hex}",
+            document_id=document_id,
+            previous_status=document.authorization_status,
+            new_status=AuthorizationStatus.ACTIVE,
+            previous_copyright_status=document.copyright_status,
+            new_copyright_status=document.copyright_status,
+            new_visibility_scope=VisibilityScope.INTERNAL,
+            new_authorized_uses=(AuthorizedUse.INTERNAL_PROCESSING,),
+            changed_by=admin_id,
+            changed_at=now,
+            reason=basis,
+        ),
+    )
+
+
 @router.get("/ocr/review-queue", response_model=list[OcrPageAttempt])
 async def list_ocr_review_queue(
     request: Request,
@@ -658,6 +703,8 @@ async def page_source_document_library(
                     SourceDocumentLibraryFileResponse(
                         file=library_file.file,
                         ingestion_job=library_file.ingestion_job,
+                        chunk_set_id=library_file.chunk_set_id,
+                        review_status=library_file.review_status,
                     )
                     for library_file in item.files
                 ],
@@ -763,6 +810,7 @@ async def upload_source_files(
     files: list[UploadFile] = File(...),
     duplicate_policy: Annotated[Literal["report", "reference_existing", "new_version"], Form()] = "report",
     version_of_file_id: Annotated[str | None, Form()] = None,
+    generate_graph: Annotated[bool, Form()] = False,
     document_repository: SourceDocumentRepository = Depends(get_source_document_repository),
     file_repository: SourceFileRepository = Depends(get_source_file_repository),
     object_storage: ObjectStorage = Depends(get_source_object_storage),
@@ -773,6 +821,8 @@ async def upload_source_files(
     admin_id = await _admin_id(request)
     if await document_repository.get(document_id) is None:
         raise HTTPException(status_code=404, detail="Source document not found")
+    if generate_graph:
+        await _enable_internal_graph_processing(document_id, admin_id=admin_id, repository=document_repository)
     version_target = await file_repository.get(version_of_file_id) if version_of_file_id else None
 
     items: list[SourceFileUploadItem] = []
@@ -953,6 +1003,41 @@ async def upload_source_files(
 
     success_count = sum(item.status == "uploaded" for item in items)
     return SourceFileUploadResponse(success_count=success_count, failure_count=len(items) - success_count, items=items)
+
+
+@router.post("/{document_id}/files/{file_id}/generate-graph", response_model=IngestionJob)
+async def generate_source_file_graph(
+    document_id: str,
+    file_id: str,
+    request: Request,
+    document_repository: SourceDocumentRepository = Depends(get_source_document_repository),
+    file_repository: SourceFileRepository = Depends(get_source_file_repository),
+    ingestion_repository: IngestionJobRepository = Depends(get_ingestion_job_repository),
+) -> IngestionJob:
+    admin_id = await _admin_id(request)
+    source_file = await file_repository.get(file_id)
+    if source_file is None or source_file.document_id != document_id:
+        raise HTTPException(status_code=404, detail="Source file not found")
+    await _enable_internal_graph_processing(document_id, admin_id=admin_id, repository=document_repository)
+    # Reuse the normal durable pipeline. Existing parse/clean/chunk outputs and
+    # Evidence/graph IDs are reused, and human review decisions are preserved.
+    job, event = create_ingestion_job(
+        job_id=f"ingestion-job-{uuid4().hex}",
+        document_id=document_id,
+        source_file_id=file_id,
+        idempotency_key=f"source-file-graph:{file_id}",
+        created_by=admin_id,
+        now=datetime.now(UTC),
+    )
+    stored, _ = await ingestion_repository.create(job, event)
+    if stored.status is IngestionJobStatus.FAILED and stored.current_step is not None:
+        try:
+            updated, retry_event = retry_failed_step(stored, step_name=stored.current_step, requested_by=admin_id, now=datetime.now(UTC))
+            await ingestion_repository.save(updated, retry_event, expected_version=stored.version)
+            return updated
+        except (IngestionStateError, IngestionConcurrencyError) as exc:
+            raise _ingestion_transition_conflict(exc) from exc
+    return stored
 
 
 @router.get("/{document_id}/files", response_model=list[SourceFile])

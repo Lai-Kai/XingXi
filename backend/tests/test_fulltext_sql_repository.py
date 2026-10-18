@@ -4,7 +4,7 @@ import asyncio
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
-from sqlalchemy import select
+from sqlalchemy import event, func, insert, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from test_text_review_sql_repository import _seed_review_targets
 from wu_culture import EntityType, ReviewStatus
@@ -17,6 +17,7 @@ from deerflow.agents.xingxi.tools import build_search_sources_tool
 from deerflow.persistence.base import Base
 from deerflow.persistence.object_storage import ObjectMetadataRow
 from deerflow.persistence.wu_culture import (
+    WU_CULTURE_TABLES,
     ChunkSetRow,
     CleanedOcrPageRow,
     EvidenceRow,
@@ -45,6 +46,45 @@ NOW = datetime(2026, 7, 21, 18, 0, tzinfo=UTC)
 
 def test_release_index_search_phrase_keywords_filters_pagination_and_injection(tmp_path) -> None:
     asyncio.run(_exercise_repository(tmp_path))
+
+
+def test_large_release_indexing_and_rebuild_use_bounded_sql_parameters(tmp_path) -> None:
+    asyncio.run(_exercise_large_release(tmp_path))
+
+
+async def _exercise_large_release(tmp_path) -> None:
+    import sqlite3
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'large-release.db'}")
+    async with engine.begin() as connection:
+        await connection.run_sync(lambda sync: Base.metadata.create_all(sync, tables=[*WU_CULTURE_TABLES, ObjectMetadataRow.__table__]))
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    await _seed_review_targets(factory)
+    async with factory.begin() as session:
+        source = await session.get(SourceDocumentRow, "document-1")
+        source.authorization_status = "active"
+        source.authorization_basis = "内部测试授权"
+        source.authorized_uses_json = '["internal_processing"]'
+        chunk = await session.get(TextChunkRow, "chunk-1")
+        template = {column.name: getattr(chunk, column.name) for column in TextChunkRow.__table__.columns}
+        await session.execute(insert(TextChunkRow), [{**template, "id": f"large-chunk-{index}", "chunk_index": index + 1} for index in range(600)])
+
+    @event.listens_for(engine.sync_engine, "before_cursor_execute")
+    def _parameter_budget(_connection, _cursor, statement, parameters, _context, executemany):
+        if statement.lstrip().upper().startswith("SELECT") and not executemany and len(parameters) > 500:
+            raise sqlite3.OperationalError("too many SQL variables")
+
+    indexer = SqlFullTextRepository(factory)
+    repository = SqlKnowledgeReleaseRepository(factory, publication_indexer=indexer)
+    try:
+        release = await repository.publish(PublishReleaseRequest(chunk_set_ids=("chunk-set-1",), expected_state_version=0, release_notes="大型内部文献", scope="internal"), actor_id="admin-1", created_at=NOW)
+        assert release.status.value == "active"
+        assert (await indexer.rebuild_release(release.id, indexed_at=NOW)).indexed_chunks == 601
+        async with factory() as session:
+            assert (await session.execute(select(func.count()).select_from(FullTextDocumentRow))).scalar_one() == 601
+            assert (await session.execute(select(func.count()).select_from(EvidenceRow))).scalar_one() == 601
+    finally:
+        await engine.dispose()
 
 
 async def _exercise_repository(tmp_path) -> None:

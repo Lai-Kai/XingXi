@@ -292,7 +292,11 @@ export function MapLibreCanvas({
   activeEventId = null,
   selectedId,
   onSelect,
+  pickLocation = false,
+  pickedLocation = null,
+  onPickLocation,
   onReload,
+  cameraPadding,
   className,
 }: {
   points: MapPoint[];
@@ -312,7 +316,11 @@ export function MapLibreCanvas({
   activeEventId?: string | null;
   selectedId?: string | null;
   onSelect?: (point: MapPoint) => void;
+  pickLocation?: boolean;
+  pickedLocation?: { lon: number; lat: number } | null;
+  onPickLocation?: (location: { lon: number; lat: number }) => void;
   onReload?: () => void;
+  cameraPadding?: { top: number; right: number; bottom: number; left: number };
   className?: string;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -326,13 +334,19 @@ export function MapLibreCanvas({
   const initialLayersRef = useRef(layers);
   const onSelectRef = useRef(onSelect);
   const pointsRef = useRef(points);
+  const pickLocationRef = useRef(pickLocation);
+  const onPickLocationRef = useRef(onPickLocation);
+  pickLocationRef.current = pickLocation;
+  onPickLocationRef.current = onPickLocation;
   const selectedIdRef = useRef(selectedId);
+  const cameraPaddingRef = useRef(cameraPadding);
   const [status, setStatus] = useState<"loading" | "ready" | "error">(
     "loading",
   );
   onSelectRef.current = onSelect;
   pointsRef.current = points;
   selectedIdRef.current = selectedId;
+  cameraPaddingRef.current = cameraPadding;
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -378,6 +392,14 @@ export function MapLibreCanvas({
       });
     });
     resizeObserver.observe(container);
+    const pick = (event: maplibregl.MapMouseEvent) => {
+      if (!pickLocationRef.current) return;
+      const lon = ((((event.lngLat.lng + 180) % 360) + 360) % 360) - 180;
+      const lat = event.lngLat.lat;
+      if (Number.isFinite(lon) && Number.isFinite(lat) && Math.abs(lat) <= 90)
+        onPickLocationRef.current?.({ lon, lat });
+    };
+    map.on("click", pick);
     map.on("zoom", syncMarkerLabels);
     map.on("move", syncCameraState);
     syncCameraState();
@@ -403,6 +425,7 @@ export function MapLibreCanvas({
       markerViewsRef.current = [];
       userMarkerRef.current?.remove();
       resizeObserver.disconnect();
+      map.off("click", pick);
       map.off("zoom", syncMarkerLabels);
       map.off("move", syncCameraState);
       window.clearTimeout(loadTimeout);
@@ -412,6 +435,12 @@ export function MapLibreCanvas({
       focusedEventIdRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    // Keep camera targets in the exposed map area while the raster canvas
+    // continues underneath floating controls and the study panel.
+    if (cameraPadding) mapRef.current?.setPadding(cameraPadding);
+  }, [cameraPadding]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -557,7 +586,9 @@ export function MapLibreCanvas({
         });
         element.addEventListener("click", (event) => {
           event.stopPropagation();
-          onSelectRef.current?.(point);
+          if (pickLocationRef.current)
+            onPickLocationRef.current?.({ lon: point.lon, lat: point.lat });
+          else onSelectRef.current?.(point);
         });
         wrapper.appendChild(element);
         markerViewsRef.current.push(view);
@@ -584,7 +615,12 @@ export function MapLibreCanvas({
               bounds.extend([point.lon, point.lat]),
             );
             map.fitBounds(bounds, {
-              padding: { top: 128, right: 72, bottom: 72, left: 72 },
+              padding: cameraPaddingRef.current ?? {
+                top: 128,
+                right: 72,
+                bottom: 72,
+                left: 72,
+              },
               maxZoom: 15,
               duration: 0,
             });
@@ -769,6 +805,32 @@ export function MapLibreCanvas({
     };
   }, [activeEventId, events, points]);
 
+  useEffect(() => {
+    const canvas = mapRef.current?.getCanvas();
+    if (!canvas) return;
+    canvas.style.cursor = pickLocation ? "crosshair" : "";
+    return () => {
+      canvas.style.cursor = "";
+    };
+  }, [pickLocation]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !pickedLocation) return;
+    const element = document.createElement("div");
+    element.className =
+      "grid size-9 place-items-center rounded-full border-4 border-white bg-amber-500 text-lg text-white shadow-lg";
+    element.textContent = "+";
+    element.setAttribute("aria-label", "待保存点位");
+    element.dataset.draftPoint = "true";
+    const marker = new maplibregl.Marker({ element })
+      .setLngLat([pickedLocation.lon, pickedLocation.lat])
+      .addTo(map);
+    return () => {
+      marker.remove();
+    };
+  }, [pickedLocation]);
+
   const visibleExtentCount = buildUncertaintyFeatureCollection(
     points,
     selectedId,
@@ -781,6 +843,7 @@ export function MapLibreCanvas({
         ref={containerRef}
         className="h-full w-full"
         data-map-engine="maplibre-gl"
+        data-map-picking={String(pickLocation)}
         data-map-status={status}
         data-map-base-opacity="1"
         data-historical-ranges-visible={String(showHistoricalRanges)}

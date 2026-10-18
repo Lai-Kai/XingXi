@@ -39,6 +39,7 @@ type SourceReviewDialogProps = {
   title: string;
   ingestionJobId?: string;
   onFinalized?: () => void;
+  onReviewed?: () => void;
 };
 
 const statusText: Record<ReviewStatus, string> = {
@@ -63,6 +64,7 @@ export function SourceReviewDialog({
   title,
   ingestionJobId,
   onFinalized,
+  onReviewed,
 }: SourceReviewDialogProps) {
   const [versions, setVersions] = useState<SourceChunkSet[]>([]);
   const [chunkSetId, setChunkSetId] = useState("");
@@ -178,6 +180,7 @@ export function SourceReviewDialog({
           ...(comment.trim() ? { comment: comment.trim() } : {}),
         })),
       );
+      onReviewed?.();
       setQueue(await getReviewQueue(documentId, fileId, chunkSetId));
       setSelected([]);
       setComment("");

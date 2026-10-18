@@ -25,6 +25,10 @@ const config = {
     defaultLocale: "en",
   },
   devIndicators: false,
+  allowedDevOrigins:
+    process.env.DEER_FLOW_DEV_ORIGINS?.split(",")
+      .map((hostname) => hostname.trim())
+      .filter(Boolean) ?? [],
   async headers() {
     return [
       {
@@ -41,6 +45,7 @@ const config = {
   },
   async rewrites() {
     const rewrites = [];
+    const fallback = [];
     const gatewayURL = getInternalServiceURL(
       "DEER_FLOW_INTERNAL_GATEWAY_BASE_URL",
       "http://127.0.0.1:8001",
@@ -82,13 +87,14 @@ const config = {
       // NOTE: this must come AFTER the /api/langgraph rewrite above so that
       // LangGraph-compatible routes keep their public prefix while Gateway
       // receives its native /api/* paths.
-      rewrites.push({
+      fallback.push({
         source: "/api/:path*",
         destination: `${gatewayURL}/api/:path*`,
       });
     }
 
-    return rewrites;
+    // Let streaming model/reconstruction routes run before the Gateway catch-all.
+    return { beforeFiles: [], afterFiles: rewrites, fallback };
   },
 };
 

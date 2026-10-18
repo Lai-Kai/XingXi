@@ -5,11 +5,13 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import time
 from collections import defaultdict
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
+from sqlalchemy import select
 from wu_culture import (
     AuthorizedUse,
     DocumentParseError,
@@ -36,6 +38,7 @@ from wu_culture.releases import (
     KnowledgeReleaseGateError,
     PublishReleaseRequest,
     ReleaseStatus,
+    RetryReleaseRequest,
 )
 from wu_culture.storage import ObjectKind, ObjectMetadataRepository, ObjectStorage, PutObjectRequest
 
@@ -79,6 +82,7 @@ class IngestionWorker:
         self._config = app_config
         self._ocr_service_factory = ocr_service_factory
         self._worker_id = worker_id
+        self._last_working_sync = 0.0
 
     async def run_forever(self, stop_event: asyncio.Event) -> None:
         poll_seconds = 1.0
@@ -104,6 +108,10 @@ class IngestionWorker:
         await self._backfill_missing_jobs()
         if await self._claim_and_execute_pending_step():
             return True
+        # Authorization may be completed after extraction. Reconcile on idle
+        # ticks as well as chunk completion, without repeatedly loading text.
+        if time.monotonic() - self._last_working_sync >= 30:
+            await self._publish_internal_working_release(from_idle=True)
         return False
 
     async def _claim_and_execute_pending_step(self) -> bool:
@@ -358,12 +366,7 @@ class IngestionWorker:
             raise ValueError("OCR produced no text pages")
         policy = TextCleaningPolicy(rule_version="xingxi-clean-v1")
         previous = {page.page_number: page for page in await self._cleaning.list_latest(source_file.id)}
-        if all(
-            attempt.page_number in previous
-            and previous[attempt.page_number].ocr_attempt_id == attempt.id
-            and previous[attempt.page_number].policy == policy
-            for attempt in attempts
-        ):
+        if all(attempt.page_number in previous and previous[attempt.page_number].ocr_attempt_id == attempt.id and previous[attempt.page_number].policy == policy for attempt in attempts):
             return f"clean-pages:{len(previous)}"
         contents = await asyncio.to_thread(
             clean_ocr_pages,
@@ -481,45 +484,86 @@ class IngestionWorker:
             )
         return count
 
-    async def _publish_internal_working_release(self) -> None:
+    async def _publish_internal_working_release(self, *, from_idle: bool = False) -> None:
+        self._last_working_sync = time.monotonic()
         if not getattr(self._config.ingestion, "auto_publish_internal_release", True):
             return
+        from wu_culture.authorization import evaluate_source_access
+
+        from app.gateway.routers.map_points import build_release_map_manifest
         from deerflow.persistence import engine as persistence_engine
-        from deerflow.persistence.wu_culture import SqlFullTextRepository, SqlKnowledgeReleaseRepository
+        from deerflow.persistence.operations import OperationsRepository
+        from deerflow.persistence.wu_culture import SqlFullTextRepository, SqlKnowledgeReleaseRepository, SqlSourceDocumentRepository
+        from deerflow.persistence.wu_culture.model import ChunkSetRow, KnowledgeReleaseEventRow, KnowledgeReleaseItemRow, KnowledgeReleaseRow, SourceDocumentRow
 
         session_factory = persistence_engine.get_session_factory()
         if session_factory is None:
             return
-        chunk_sets = await self._chunks.list_all() if hasattr(self._chunks, "list_all") else []
-        if not chunk_sets:
-            return
-        from wu_culture.authorization import evaluate_source_access
-
-        from deerflow.persistence.wu_culture import SqlSourceDocumentRepository
-
-        sources = SqlSourceDocumentRepository(session_factory)
         allowed_sets = []
-        for chunk_set in chunk_sets:
-            document = await sources.get(chunk_set.document_id)
-            if document is not None and evaluate_source_access(document, use=AuthorizedUse.INTERNAL_PROCESSING).allowed:
-                allowed_sets.append(chunk_set)
+        async with session_factory() as session:
+            rows = (await session.execute(select(ChunkSetRow.id, SourceDocumentRow).join(SourceDocumentRow, SourceDocumentRow.id == ChunkSetRow.document_id).order_by(ChunkSetRow.id))).all()
+            access_by_document = {}
+            for chunk_set_id, document in rows:
+                if document.id not in access_by_document:
+                    access_by_document[document.id] = evaluate_source_access(SqlSourceDocumentRepository._row_to_document(document), use=AuthorizedUse.INTERNAL_PROCESSING).allowed
+                if access_by_document[document.id]:
+                    allowed_sets.append(chunk_set_id)
         if not allowed_sets:
             return
         release_repo = SqlKnowledgeReleaseRepository(
             session_factory,
             publication_indexer=SqlFullTextRepository(session_factory),
-        )
-        requested = {chunk_set.id for chunk_set in allowed_sets}
-        existing = next(
-            (release for release in await release_repo.list_releases() if release.scope == "internal" and release.status in {ReleaseStatus.ACTIVE, ReleaseStatus.READY} and {item.chunk_set_id for item in release.items} == requested),
-            None,
+            publication_assets=OperationsRepository(session_factory, publication_map_manifest_factory=build_release_map_manifest),
         )
         state = await release_repo.get_state()
-        if existing is not None:
-            if state.active_release_id != existing.id:
+        active = await release_repo.get_active_summary()
+        activate_working = active is None or active.scope == "internal"
+        if from_idle:
+            if not activate_working:
+                return
+            async with session_factory() as session:
+                last_action = (await session.execute(select(KnowledgeReleaseEventRow.action).where(KnowledgeReleaseEventRow.state_version == state.state_version))).scalar_one_or_none()
+            if last_action == "rollback":
+                return
+        requested = set(allowed_sets)
+        if not activate_working:
+            async with session_factory() as session:
+                active_members = set((await session.execute(select(KnowledgeReleaseItemRow.chunk_set_id).where(KnowledgeReleaseItemRow.release_id == active.id).distinct())).scalars().all())
+            if active_members == requested:
+                return
+        # Compare identities only; list_releases hydrates every historic
+        # manifest and list_all on ChunkSets also loads the entire text corpus.
+        async with session_factory() as session:
+            candidates = (
+                await session.execute(
+                    select(KnowledgeReleaseRow.id, KnowledgeReleaseRow.status)
+                    .where(
+                        KnowledgeReleaseRow.scope == "internal",
+                        KnowledgeReleaseRow.status.in_([ReleaseStatus.ACTIVE.value, ReleaseStatus.READY.value, ReleaseStatus.FAILED.value, ReleaseStatus.PREPARING.value]),
+                    )
+                    .order_by(KnowledgeReleaseRow.version_number.desc())
+                )
+            ).all()
+            existing_id = None
+            existing_status = None
+            for candidate_id, candidate_status in candidates:
+                members = set((await session.execute(select(KnowledgeReleaseItemRow.chunk_set_id).where(KnowledgeReleaseItemRow.release_id == candidate_id).distinct())).scalars().all())
+                if members == requested:
+                    existing_id = candidate_id
+                    existing_status = candidate_status
+                    break
+        if existing_id is not None:
+            if existing_status in {ReleaseStatus.FAILED.value, ReleaseStatus.PREPARING.value}:
+                await release_repo.retry(
+                    existing_id,
+                    RetryReleaseRequest(expected_state_version=state.state_version, activate=activate_working),
+                    actor_id="gateway-ingestion-worker",
+                    changed_at=datetime.now(UTC),
+                )
+            elif activate_working and state.active_release_id != existing_id:
                 await release_repo.activate(
                     ActivateReleaseRequest(
-                        release_id=existing.id,
+                        release_id=existing_id,
                         expected_state_version=state.state_version,
                         reason="Activate the complete internal uploaded-source working corpus",
                     ),
@@ -530,10 +574,10 @@ class IngestionWorker:
         try:
             await release_repo.publish(
                 PublishReleaseRequest(
-                    chunk_set_ids=tuple(chunk_set.id for chunk_set in allowed_sets),
+                    chunk_set_ids=tuple(allowed_sets),
                     release_notes="上传文献全量内部工作版本；内容与来源等级待人工复核，不可公开引用",
                     expected_state_version=state.state_version,
-                    activate=True,
+                    activate=activate_working,
                     scope="internal",
                 ),
                 actor_id="gateway-ingestion-worker",

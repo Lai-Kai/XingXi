@@ -76,11 +76,7 @@ def evaluate_refusal(
     allow_inferred_answer: bool = False,
 ) -> RefusalResponse:
     """Decide whether the agent must refuse a factual historical answer."""
-    status = (
-        search_status.value
-        if isinstance(search_status, SearchStatus)
-        else (search_status or (pack.status.value if pack is not None else SearchStatus.INSUFFICIENT.value))
-    )
+    status = search_status.value if isinstance(search_status, SearchStatus) else (search_status or (pack.status.value if pack is not None else SearchStatus.INSUFFICIENT.value))
     items = tuple(pack.items) if pack is not None else ()
     usable = _usable_items(items)
     document_scope = tuple(document_ids or sorted({item.document_id for item in items}))
@@ -105,18 +101,18 @@ def evaluate_refusal(
         should_refuse = True
         reason = RefusalReason.INSUFFICIENT_PACK
         notes.append("缺少可验证的证据包")
-    elif items and not usable:
-        reason = RefusalReason.LOW_GRADE_ONLY
-        if allow_inferred_answer:
-            notes.append("仅有 D/E 级材料，允许推断性回答")
-        else:
-            should_refuse = True
-            reason = RefusalReason.LOW_GRADE_ONLY
-            notes.append("仅有 D/E 级材料，不得写成确定史实")
     elif items and not _items_match_query(items, query):
         should_refuse = True
         reason = RefusalReason.EVIDENCE_MISMATCH
         notes.append("证据文本与问题关键词不匹配")
+    elif items and not usable:
+        reason = RefusalReason.LOW_GRADE_ONLY
+        if allow_inferred_answer:
+            notes.append("仅有 D/E 级或未评级材料，允许带来源说明的研究回答")
+        else:
+            should_refuse = True
+            reason = RefusalReason.LOW_GRADE_ONLY
+            notes.append("仅有 D/E 级或未评级材料，不得写成确定史实")
     elif len(usable) < min_usable_evidence and status != SearchStatus.SUPPORTED.value:
         should_refuse = True
         reason = RefusalReason.INSUFFICIENT_PACK
@@ -165,7 +161,7 @@ def build_refusal_response(decision: RefusalDecision) -> RefusalResponse:
         message = REFUSAL_CANONICAL_MESSAGE
         text = render_refusal_text(decision, search_scope_summary, tuple(next_steps))
     elif decision.reason is RefusalReason.LOW_GRADE_ONLY:
-        message = "已检索到低等级材料，仅供补充分析"
+        message = "已检索到相关材料，需保留来源评级与复核说明"
         text = ""
     else:
         message = "已检索到可引用证据"

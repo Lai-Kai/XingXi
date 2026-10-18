@@ -9,10 +9,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.gateway.deps import require_admin_user, require_business_capability
+from app.gateway.evaluations.case_catalog import CaseCatalog, CaseCreate, methods
 from app.gateway.evaluations.reports import export_report
 from app.gateway.evaluations.service import environment_snapshot
-from app.gateway.evaluations.suites import SUITE_VERSION, EvaluationCase, load_suite, select_cases
+from app.gateway.evaluations.suites import SUITE_VERSION, EvaluationCase, load_suite
 from deerflow.persistence.engine import get_session_factory
+from deerflow.persistence.operations.evaluation_cases import EvaluationCaseRepository
 from deerflow.persistence.operations.evaluations import EvaluationRepository
 
 router = APIRouter(prefix="/api/operations/evaluations", tags=["operations"])
@@ -25,13 +27,20 @@ def repository() -> EvaluationRepository:
     return EvaluationRepository(sf)
 
 
+def case_repository() -> EvaluationCaseRepository:
+    sf = get_session_factory()
+    if sf is None:
+        raise HTTPException(503, "Automatic evaluations require a SQL database")
+    return EvaluationCaseRepository(sf)
+
+
 async def reader(request: Request):
     return await require_business_capability(request, "governance:read", detail="Governance privileges are required")
 
 
 async def writer(request: Request):
     user = await reader(request)
-    await require_admin_user(request, detail="Only administrators may execute or review agent evaluations")
+    await require_admin_user(request, detail="Only administrators may manage or execute agent evaluations")
     return user
 
 
@@ -68,9 +77,41 @@ def _require_worker(request):
 
 
 @router.get("/catalog")
-async def catalog(request: Request):
+async def catalog(request: Request, cases: EvaluationCaseRepository = Depends(case_repository)):
     await reader(request)
-    return {"version": SUITE_VERSION, "execution_mode": "replay", "available": getattr(request.app.state, "evaluation_service", None) is not None, "cases": [case.model_dump(mode="json") for case in load_suite()]}
+    active = [case for case in await CaseCatalog(cases).list() if case["active"]]
+    core_ids = {case.id for case in load_suite(smoke=True)}
+    return {"version": SUITE_VERSION, "execution_mode": "replay", "available": getattr(request.app.state, "evaluation_service", None) is not None, "cases": active, "core_count": sum(case["id"] in core_ids for case in active)}
+
+
+@router.get("/cases")
+async def list_cases(request: Request, repo: EvaluationCaseRepository = Depends(case_repository)):
+    await reader(request)
+    return {"execution_mode": "replay", "methods": methods(), "cases": await CaseCatalog(repo).list()}
+
+
+@router.post("/cases", status_code=201)
+async def create_case(body: CaseCreate, request: Request, repo: EvaluationCaseRepository = Depends(case_repository)):
+    user = await writer(request)
+    return await CaseCatalog(repo).create(body, actor_id=str(user.id))
+
+
+@router.delete("/cases/{case_id}")
+async def delete_case(case_id: str, request: Request, repo: EvaluationCaseRepository = Depends(case_repository)):
+    user = await writer(request)
+    try:
+        return await CaseCatalog(repo).set_active(case_id, active=False, actor_id=str(user.id))
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@router.post("/cases/{case_id}/restore")
+async def restore_case(case_id: str, request: Request, repo: EvaluationCaseRepository = Depends(case_repository)):
+    user = await writer(request)
+    try:
+        return await CaseCatalog(repo).set_active(case_id, active=True, actor_id=str(user.id))
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
 
 
 @router.get("/executions")
@@ -80,11 +121,11 @@ async def list_executions(request: Request, limit: int = Query(default=20, ge=1,
 
 
 @router.post("/executions", status_code=202)
-async def create_execution(body: ExecutionCreate, request: Request, repo: EvaluationRepository = Depends(repository)):
+async def create_execution(body: ExecutionCreate, request: Request, repo: EvaluationRepository = Depends(repository), case_repo: EvaluationCaseRepository = Depends(case_repository)):
     user = await writer(request)
     _require_worker(request)
     try:
-        cases = select_cases(body.case_ids, smoke=body.smoke)
+        cases = await CaseCatalog(case_repo).select(body.case_ids, smoke=body.smoke)
         environment = await asyncio.to_thread(environment_snapshot)
         return await repo.create(actor_id=str(user.id), request_key=body.request_key, cases=[case.model_dump(mode="json") for case in cases], environment=environment)
     except ValueError as exc:

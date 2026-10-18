@@ -309,6 +309,67 @@ test.describe("Xingxi home", () => {
     expect(url.searchParams.getAll("evidence_id")).toEqual(["evidence-bridge"]);
   });
 
+  for (const entry of ["木渎古桥名称沿革", "开始了解"]) {
+    test(`daily topic ${entry} starts a scoped Xingxi answer automatically`, async ({
+      page,
+    }) => {
+      const errors: string[] = [];
+      const submissions: Array<{
+        assistant_id: string;
+        context: Record<string, unknown>;
+        input: { messages: Array<{ content: Array<{ text: string }> }> };
+      }> = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      page.on("request", (request) => {
+        if (
+          request.method() === "POST" &&
+          request.url().includes("/runs/stream")
+        ) {
+          submissions.push(
+            request.postDataJSON() as (typeof submissions)[number],
+          );
+        }
+      });
+      await page.route("**/api/models", (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            models: [
+              {
+                id: "test-model",
+                name: "test-model",
+                model: "test-model",
+                display_name: "测试模型",
+                supports_thinking: false,
+              },
+            ],
+            token_usage: { enabled: false },
+          }),
+        }),
+      );
+
+      await page.goto("/workspace");
+      await page.getByRole("link", { name: entry, exact: true }).click();
+
+      await expect(
+        page.getByTestId("main-message-list").getByText("Hello from DeerFlow!"),
+      ).toBeVisible();
+      await expect(page).toHaveURL(/\/workspace\/chats\/[0-9a-f-]{36}$/);
+      expect(submissions).toHaveLength(1);
+      expect(submissions[0]?.assistant_id).toBe("xingxi");
+      expect(submissions[0]?.context).toMatchObject({
+        daily_topic_query: "木渎 古桥",
+        daily_topic_document_ids: ["document-bridge"],
+        daily_topic_evidence_ids: ["evidence-bridge"],
+      });
+      expect(submissions[0]?.input.messages.at(-1)?.content).toEqual([
+        { type: "text", text: "考证木渎古桥名称沿革" },
+      ]);
+      expect(errors).toEqual([]);
+    });
+  }
+
   test("daily topics use source-bound local seeds when the API fails", async ({
     page,
   }) => {

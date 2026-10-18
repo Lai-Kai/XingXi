@@ -1,4 +1,4 @@
-"""Current-release graph discovery with one authorization boundary for every view."""
+"""Published discovery and admin-only, evidence-bound graph review metadata."""
 
 import asyncio
 import base64
@@ -6,11 +6,12 @@ import hashlib
 import json
 from collections import defaultdict
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import load_only
 from wu_culture.authorization import evaluate_source_access
-from wu_culture.models import AuthorizedUse
+from wu_culture.models import AuthorizationStatus, AuthorizedUse, VisibilityScope
 
+from .graph_repository import _graph_release_expression
 from .model import EvidenceRow, KnowledgeReleaseItemRow, KnowledgeReleaseRow, KnowledgeReleaseStateRow, SourceDocumentRow, TextChunkRow, WuEntityEvidenceRow, WuEntityRow, WuRelationEvidenceRow, WuRelationRow
 from .repository import SqlSourceDocumentRepository
 
@@ -32,33 +33,66 @@ class SqlGraphOverviewRepository:
     def __init__(self, factory):
         self.factory = factory
 
-    async def read(self, *, admin=False, directory=False, **options):
+    async def read(self, *, admin=False, directory=False, view="published", **options):
+        working = view == "working"
+        if working and not admin:
+            raise PermissionError("Working graph requires administrator privileges")
+        if working and options.get("release_id"):
+            raise ValueError("工作图谱不绑定发布版本，请清除版本筛选。")
         async with self.factory() as session:
             state = await session.get(KnowledgeReleaseStateRow, "active")
             release = await session.get(KnowledgeReleaseRow, state.active_release_id) if state and state.active_release_id else None
-            if release is None or release.status != "active" or (not admin and release.scope != "public"):
+            if not working and (release is None or release.status != "active" or (not admin and release.scope != "public")):
                 return _page(release.id if release else None, [], [], [], directory=directory, admin=admin, **options)
-            if options.get("release_id") and options["release_id"] != release.id:
+            if not working and options.get("release_id") and options["release_id"] != release.id:
                 raise OverviewConflict("知识版本已切换，请重新加载总览。")
             # Evidence must belong to the exact manifest, not merely to a source
             # that happens to occur in this Release. Authorization is rechecked
             # on every page, including component and directory reads.
+            # Graph discovery needs only the linked Evidence locators. Loading
+            # the entire Release (including quotations) makes small graphs scan
+            # the full text corpus before either overview or directory can open.
+            linked_evidence = select(WuEntityEvidenceRow.evidence_id).union(select(WuRelationEvidenceRow.evidence_id))
             statement = (
                 select(EvidenceRow, SourceDocumentRow, TextChunkRow)
                 .join(SourceDocumentRow, SourceDocumentRow.id == EvidenceRow.document_id)
-                .join(TextChunkRow, TextChunkRow.id == EvidenceRow.chunk_id)
-                .join(KnowledgeReleaseItemRow, (KnowledgeReleaseItemRow.chunk_id == EvidenceRow.chunk_id) & (KnowledgeReleaseItemRow.document_id == EvidenceRow.document_id))
-                .where(KnowledgeReleaseItemRow.release_id == release.id)
-                .options(load_only(TextChunkRow.id, TextChunkRow.page_start, TextChunkRow.page_end, TextChunkRow.volume, TextChunkRow.review_status))
+                .join(TextChunkRow, (TextChunkRow.id == EvidenceRow.chunk_id) & (TextChunkRow.document_id == EvidenceRow.document_id))
+                .where(EvidenceRow.id.in_(linked_evidence))
+                .options(
+                    load_only(EvidenceRow.id, EvidenceRow.document_id, EvidenceRow.chunk_id, EvidenceRow.source_level, EvidenceRow.review_status, raiseload=True),
+                    load_only(TextChunkRow.id, TextChunkRow.page_start, TextChunkRow.page_end, TextChunkRow.volume, TextChunkRow.review_status, raiseload=True),
+                )
                 .order_by(EvidenceRow.id)
             )
+            if not working:
+                statement = statement.join(KnowledgeReleaseItemRow, (KnowledgeReleaseItemRow.chunk_id == EvidenceRow.chunk_id) & (KnowledgeReleaseItemRow.document_id == EvidenceRow.document_id)).where(
+                    KnowledgeReleaseItemRow.release_id == release.id
+                )
             records = (await session.execute(statement)).all()
             allowed = {}
-            use = AuthorizedUse.INTERNAL_PROCESSING if admin and release.scope == "internal" else AuthorizedUse.PUBLIC_QUOTE
+            use = AuthorizedUse.INTERNAL_PROCESSING if working or (admin and release.scope == "internal") else AuthorizedUse.PUBLIC_QUOTE
+            source_access = {}
+            authorization_pending = set()
             for evidence, document, chunk in records:
                 if not admin and (evidence.review_status != "reviewed" or chunk.review_status != "reviewed"):
                     continue
-                if not evaluate_source_access(SqlSourceDocumentRepository._row_to_document(document), use=use).allowed:
+                if document.id not in source_access:
+                    source = SqlSourceDocumentRepository._row_to_document(document)
+                    source_access[document.id] = evaluate_source_access(source, use=use).allowed
+                    # Source managers may inspect already-persisted review
+                    # metadata for new unconfirmed internal sources. This is
+                    # not permission to process text, index, quote or publish.
+                    if (
+                        working
+                        and source.authorization_status == AuthorizationStatus.UNCONFIRMED
+                        and source.visibility_scope == VisibilityScope.INTERNAL
+                        and not source.authorized_uses
+                        and source.authorization_valid_from is None
+                        and source.authorization_valid_until is None
+                    ):
+                        source_access[document.id] = True
+                        authorization_pending.add(document.id)
+                if not source_access[document.id]:
                     continue
                 allowed[evidence.id] = {
                     "evidence_id": evidence.id,
@@ -75,16 +109,23 @@ class SqlGraphOverviewRepository:
             relation_evidence = defaultdict(set)
             # Join the manifest before loading linkage rows; never scan links
             # belonging only to other knowledge editions or build giant INs.
-            entity_links = select(WuEntityEvidenceRow.entity_id, WuEntityEvidenceRow.evidence_id).join(EvidenceRow, EvidenceRow.id == WuEntityEvidenceRow.evidence_id).join(KnowledgeReleaseItemRow, KnowledgeReleaseItemRow.chunk_id == EvidenceRow.chunk_id).where(KnowledgeReleaseItemRow.release_id == release.id)
-            relation_links = select(WuRelationEvidenceRow.relation_id, WuRelationEvidenceRow.evidence_id).join(EvidenceRow, EvidenceRow.id == WuRelationEvidenceRow.evidence_id).join(KnowledgeReleaseItemRow, KnowledgeReleaseItemRow.chunk_id == EvidenceRow.chunk_id).where(KnowledgeReleaseItemRow.release_id == release.id)
+            entity_links = select(WuEntityEvidenceRow.entity_id, WuEntityEvidenceRow.evidence_id).join(EvidenceRow, EvidenceRow.id == WuEntityEvidenceRow.evidence_id)
+            relation_links = select(WuRelationEvidenceRow.relation_id, WuRelationEvidenceRow.evidence_id).join(EvidenceRow, EvidenceRow.id == WuRelationEvidenceRow.evidence_id)
+            if not working:
+                manifest_join = (KnowledgeReleaseItemRow.chunk_id == EvidenceRow.chunk_id) & (KnowledgeReleaseItemRow.document_id == EvidenceRow.document_id)
+                entity_links = entity_links.join(KnowledgeReleaseItemRow, manifest_join).where(KnowledgeReleaseItemRow.release_id == release.id)
+                relation_links = relation_links.join(KnowledgeReleaseItemRow, manifest_join).where(KnowledgeReleaseItemRow.release_id == release.id)
             for entity_id, evidence_id in (await session.execute(entity_links)).all():
                 if evidence_id in allowed:
                     entity_evidence[entity_id].add(evidence_id)
             for relation_id, evidence_id in (await session.execute(relation_links)).all():
                 if evidence_id in allowed:
                     relation_evidence[relation_id].add(evidence_id)
-            entities_query = select(WuEntityRow).where(or_(WuEntityRow.release_id == release.id, WuEntityRow.release_id.is_(None))).order_by(WuEntityRow.id)
-            relations_query = select(WuRelationRow).where(or_(WuRelationRow.release_id == release.id, WuRelationRow.release_id.is_(None))).order_by(WuRelationRow.id)
+            entities_query = select(WuEntityRow).order_by(WuEntityRow.id)
+            relations_query = select(WuRelationRow).order_by(WuRelationRow.id)
+            if not working:
+                entities_query = entities_query.where(_graph_release_expression(WuEntityRow.release_id, release.id))
+                relations_query = relations_query.where(_graph_release_expression(WuRelationRow.release_id, release.id))
             if not admin:
                 # Working rows created/revised after publication are not part of
                 # the published edition. Historical assets are never rewritten.
@@ -93,7 +134,18 @@ class SqlGraphOverviewRepository:
             entities = [_record(row, entity_evidence[row.id]) for row in (await session.scalars(entities_query)).all() if entity_evidence[row.id]]
             ids = {row["id"] for row in entities}
             edges = [_record(row, relation_evidence[row.id]) for row in (await session.scalars(relations_query)).all() if relation_evidence[row.id] and row.subject_id in ids and row.object_id in ids]
-            return await asyncio.to_thread(_page, release.id, entities, edges, list(allowed.values()), directory=directory, admin=admin, **options)
+            return await asyncio.to_thread(
+                _page,
+                None if working else release.id,
+                entities,
+                edges,
+                list(allowed.values()),
+                directory=directory,
+                admin=admin,
+                view=view,
+                authorization_pending_sources=len(authorization_pending),
+                **options,
+            )
 
 
 def _page(
@@ -104,6 +156,8 @@ def _page(
     *,
     directory=False,
     admin=False,
+    view="published",
+    authorization_pending_sources=0,
     scope="all",
     relation_type=None,
     review_status=None,
@@ -162,7 +216,7 @@ def _page(
             if (not name or name.casefold() in n["canonical_name"].casefold())
             and (not entity_type or n["entity_type"] == entity_type)
             and (not dynasty or n["dynasty"] == dynasty)
-            and (not review_status or n["review_status"] == review_status)
+            and (not review_status or n["review_status"] == review_status or n["id"] in adjacency)
         ]
         nodes.sort(key=lambda n: n["id"])
     else:
@@ -173,7 +227,7 @@ def _page(
         connected = {key for e in edges for key in (e["subject_id"], e["object_id"])}
         nodes = [n for n in nodes if n["id"] in connected]
     fingerprint = hashlib.sha256(
-        json.dumps([release, admin, directory, scope, relation_type, review_status, component_id, center, name, entity_type, dynasty, nodes, edges, evidence], sort_keys=True, ensure_ascii=False).encode()
+        json.dumps([release, view, authorization_pending_sources, admin, directory, scope, relation_type, review_status, component_id, center, name, entity_type, dynasty, nodes, edges, evidence], sort_keys=True, ensure_ascii=False).encode()
     ).hexdigest()
     offset = 0
     if cursor:
@@ -202,6 +256,8 @@ def _page(
     ids = {key for row in returned_nodes + returned_edges for key in row["evidence_ids"]}
     next_cursor = base64.urlsafe_b64encode(json.dumps({"offset": end, "fingerprint": fingerprint}).encode()).decode() if end < total else None
     return {
+        "view": view,
+        "authorization_pending_sources": authorization_pending_sources,
         "release_id": release,
         "nodes": returned_nodes,
         "edges": returned_edges,

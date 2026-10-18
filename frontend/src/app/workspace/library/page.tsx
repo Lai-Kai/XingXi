@@ -8,14 +8,16 @@ import {
   FileUp,
   GitBranch,
   Import,
+  Network,
   PackageCheck,
   Pencil,
   Plus,
   Search,
   ShieldAlert,
 } from "lucide-react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   BusinessEmptyState,
@@ -24,23 +26,30 @@ import {
   BusinessLoadingState,
   BusinessMobileHeader,
   BusinessPageHeader,
-  BusinessStatusBadge,
 } from "@/components/workspace/business-page";
 import { EvidenceDetailPanel } from "@/components/workspace/citations/evidence-detail-panel";
 import { CorpusImportDialog } from "@/components/workspace/corpus-import-dialog";
 import { KnowledgeReleaseDialog } from "@/components/workspace/knowledge-release-dialog";
 import { SourceEditDialog } from "@/components/workspace/source-edit-dialog";
+import {
+  SourceProcessingStatus,
+  SourceTextReviewStatus,
+  TEMPORARY_LIBRARY_SUCCESS_PREVIEW,
+} from "@/components/workspace/source-library-status";
 import { SourceReviewDialog } from "@/components/workspace/source-review-dialog";
 import { SourceUploadDialog } from "@/components/workspace/source-upload-dialog";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { canManageSourceDocuments } from "@/core/auth/permissions";
-import { type BusinessStatus } from "@/core/presentation/business-status";
 import {
   addDocumentToResearchProject,
   listResearchProjects,
 } from "@/core/projects/api";
 import {
   type IngestionJobStatus,
+  type IngestionJob,
+  type ReviewStatus,
+  generateSourceGraph,
+  getIngestionJob,
   pageSourceDocumentLibrary,
   type SourceDocumentStatus,
   type SourceDocumentSummary,
@@ -53,7 +62,9 @@ type LibraryDocument = {
   title: string;
   type: string;
   size: string;
-  status: BusinessStatus;
+  status: IngestionJobStatus | null;
+  ingestionJob?: IngestionJob | null;
+  reviewStatus: ReviewStatus | null;
   addedAt: string;
   note: string;
   documentId: string;
@@ -72,7 +83,7 @@ function documentStatus(
     status: IngestionJobStatus;
   } | null,
 ): LibraryDocument["status"] {
-  if (!job) return "pending";
+  if (!job) return null;
   return job.status;
 }
 
@@ -93,6 +104,11 @@ export default function LibraryPage() {
   const [query, setQuery] = useState("");
   const [showNotes, setShowNotes] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
+  useEffect(() => {
+    if (mayManageSources && searchParams.get("upload") === "1") {
+      setUploadOpen(true);
+    }
+  }, [mayManageSources, searchParams]);
   const [editSource, setEditSource] = useState<SourceDocumentSummary | null>(
     null,
   );
@@ -111,9 +127,11 @@ export default function LibraryPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [transferring, setTransferring] = useState(false);
+  const [graphBusy, setGraphBusy] = useState<string | null>(null);
+  const [graphNotice, setGraphNotice] = useState("");
   const loadTracker = useRef(createLatestRequestTracker());
 
-  async function loadDocuments() {
+  const loadDocuments = useCallback(async () => {
     const request = loadTracker.current.start();
     setLoading(true);
     setLoadError(null);
@@ -128,7 +146,7 @@ export default function LibraryPage() {
       const sources = sourcePage.items.map((item) => item.source);
       const rows = sourcePage.items.flatMap(({ source, files }) =>
         files.map(
-          ({ file, ingestion_job: latestJob }) =>
+          ({ file, ingestion_job: latestJob, review_status }) =>
             ({
               id: file.id,
               title: file.original_filename ?? source.title,
@@ -137,6 +155,8 @@ export default function LibraryPage() {
                 "文件",
               size: readableSize(file.size),
               status: documentStatus(latestJob),
+              ingestionJob: latestJob,
+              reviewStatus: review_status ?? null,
               addedAt: new Intl.DateTimeFormat("zh-CN").format(
                 new Date(file.uploaded_at),
               ),
@@ -166,7 +186,7 @@ export default function LibraryPage() {
         loadTracker.current.finish(request.sequence);
       }
     }
-  }
+  }, [page, query, sourceStatus]);
 
   useEffect(() => {
     if (!mayManageSources) {
@@ -181,9 +201,7 @@ export default function LibraryPage() {
       window.clearTimeout(timer);
       tracker.cancel();
     };
-    // loadDocuments is intentionally recreated from the current paging filters.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mayManageSources, page, query, sourceStatus]);
+  }, [mayManageSources, loadDocuments]);
 
   useEffect(() => {
     if (!mayManageSources) return;
@@ -199,6 +217,98 @@ export default function LibraryPage() {
   }, [mayManageSources]);
 
   const visibleDocuments = useMemo(() => documents, [documents]);
+
+  useEffect(() => {
+    const pending = documents.filter(
+      (document) =>
+        document.ingestionJobId &&
+        (document.status === "pending" || document.status === "running"),
+    );
+    if (!mayManageSources || pending.length === 0) return;
+    let active = true;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        const results = await Promise.allSettled(
+          pending.map((document) =>
+            getIngestionJob(
+              document.documentId,
+              document.sourceFileId,
+              document.ingestionJobId!,
+            ),
+          ),
+        );
+        if (!active) return;
+        const updates = new Map(
+          results.flatMap((result) =>
+            result.status === "fulfilled"
+              ? [[result.value.id, result.value] as const]
+              : [],
+          ),
+        );
+        setDocuments((current) =>
+          current.map((item) => {
+            const job = item.ingestionJobId
+              ? updates.get(item.ingestionJobId)
+              : undefined;
+            return job
+              ? { ...item, ingestionJob: job, status: job.status }
+              : item;
+          }),
+        );
+        if (
+          [...updates.values()].some(
+            (job) => job.status !== "pending" && job.status !== "running",
+          )
+        ) {
+          void loadDocuments();
+        }
+        const failure = results.find((result) => result.status === "rejected");
+        if (failure?.status === "rejected")
+          setActionError(
+            failure.reason instanceof Error
+              ? failure.reason.message
+              : "无法读取图谱生成进度",
+          );
+      })();
+    }, 2000);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [documents, mayManageSources, loadDocuments]);
+
+  async function generateGraph(document: LibraryDocument) {
+    setGraphBusy(document.id);
+    setActionError(null);
+    setGraphNotice("");
+    try {
+      const job = await generateSourceGraph(
+        document.documentId,
+        document.sourceFileId,
+      );
+      setDocuments((current) =>
+        current.map((item) =>
+          item.id === document.id
+            ? {
+                ...item,
+                ingestionJobId: job.id,
+                ingestionJob: job,
+                status: job.status,
+              }
+            : item,
+        ),
+      );
+      setGraphNotice(
+        "已提交自动解析与图谱生成任务。处理完成后，关系网会自动更新并保留待复核标记。",
+      );
+    } catch (error) {
+      setActionError(
+        error instanceof Error ? error.message : "无法启动图谱生成",
+      );
+    } finally {
+      setGraphBusy(null);
+    }
+  }
 
   function addUploadedFile(result: SourceUploadResult) {
     const file = result.file;
@@ -217,7 +327,9 @@ export default function LibraryPage() {
       title: file.original_filename,
       type: file.original_filename.split(".").pop()?.toUpperCase() ?? "文件",
       size: readableSize(file.size),
-      status: (result.ingestionJob?.status ?? "pending") as BusinessStatus,
+      status: result.ingestionJob?.status ?? null,
+      ingestionJob: result.ingestionJob,
+      reviewStatus: null,
       addedAt: today,
       note: "",
       documentId: file.document_id,
@@ -251,13 +363,6 @@ export default function LibraryPage() {
       await Promise.all(
         selectedDocuments.map((document) =>
           addDocumentToResearchProject(selectedProjectId, document.documentId),
-        ),
-      );
-      setDocuments((current) =>
-        current.map((document) =>
-          selected.includes(document.id)
-            ? { ...document, status: "in_project" }
-            : document,
         ),
       );
       setSelected([]);
@@ -406,14 +511,17 @@ export default function LibraryPage() {
           </select>
         </div>
 
-        <div className="mt-4 overflow-hidden rounded-md border border-[#d7e1e2] bg-white">
+        <p className="mt-4 text-xs text-[#68797e]">
+          文本复核检查文献页与片段；知识图谱中的关系复核单独记录。
+        </p>
+        <div className="mt-2 overflow-x-auto rounded-md border border-[#d7e1e2] bg-white">
           <div
-            className="grid min-w-[940px] grid-cols-[48px_minmax(280px,1fr)_90px_90px_120px_110px_180px] items-center border-b border-[#dce5e6] bg-[#f1f6f7] px-3 py-3 text-xs font-medium text-[#607176]"
+            className="grid min-w-[1180px] grid-cols-[48px_minmax(240px,1fr)_70px_70px_100px_170px_100px_270px] items-center border-b border-[#dce5e6] bg-[#f1f6f7] px-3 py-3 text-xs font-medium text-[#607176]"
             style={
               showNotes
                 ? {
                     gridTemplateColumns:
-                      "48px minmax(240px,1fr) 80px 80px 110px minmax(180px,.65fr) 100px 180px",
+                      "48px minmax(240px,1fr) 70px 70px 100px 170px minmax(180px,.65fr) 100px 270px",
                   }
                 : undefined
             }
@@ -422,13 +530,22 @@ export default function LibraryPage() {
             <span>标题</span>
             <span>类型</span>
             <span>大小</span>
-            <span>状态</span>
+            <span>文本复核</span>
+            <span>入库处理</span>
             {showNotes && <span>备注</span>}
             <span>添加时间</span>
             <span>操作</span>
           </div>
 
-          <div className="overflow-x-auto">
+          {graphNotice && (
+            <p role="status" className="px-4 py-3 text-sm text-[#286846]">
+              {graphNotice}{" "}
+              <Link href="/workspace/knowledge-graph" className="underline">
+                查看关系图谱
+              </Link>
+            </p>
+          )}
+          <div>
             {loading ? (
               <BusinessLoadingState label="正在读取文献库…" />
             ) : loadError ? (
@@ -462,12 +579,12 @@ export default function LibraryPage() {
               visibleDocuments.map((document) => (
                 <div
                   key={document.id}
-                  className="grid min-w-[940px] grid-cols-[48px_minmax(280px,1fr)_90px_90px_120px_110px_180px] items-center border-b border-[#edf1f2] px-3 py-3 text-sm last:border-b-0"
+                  className="grid min-w-[1180px] grid-cols-[48px_minmax(240px,1fr)_70px_70px_100px_170px_100px_270px] items-center border-b border-[#edf1f2] px-3 py-3 text-sm last:border-b-0"
                   style={
                     showNotes
                       ? {
                           gridTemplateColumns:
-                            "48px minmax(240px,1fr) 80px 80px 110px minmax(180px,.65fr) 100px 180px",
+                            "48px minmax(240px,1fr) 70px 70px 100px 170px minmax(180px,.65fr) 100px 270px",
                         }
                       : undefined
                   }
@@ -490,15 +607,17 @@ export default function LibraryPage() {
                       </span>
                       <span
                         className="block truncate text-xs text-[#78878b]"
-                        title={`${document.source.title} · ${document.source.edition}`}
+                        title={`${document.source.title} · ${document.source.edition ?? "版本未详"}`}
                       >
-                        {document.source.title} · {document.source.edition}
+                        {document.source.title} ·{" "}
+                        {document.source.edition ?? "版本未详"}
                       </span>
                     </span>
                   </span>
                   <span className="text-[#68797e]">{document.type}</span>
                   <span className="text-[#68797e]">{document.size}</span>
-                  <BusinessStatusBadge status={document.status} />
+                  <SourceTextReviewStatus status={document.reviewStatus} />
+                  <SourceProcessingStatus job={document.ingestionJob} />
                   {showNotes && (
                     <input
                       value={document.note}
@@ -521,7 +640,27 @@ export default function LibraryPage() {
                   <div className="flex items-center gap-1">
                     <button
                       type="button"
+                      disabled={
+                        graphBusy !== null ||
+                        document.status === "pending" ||
+                        document.status === "running"
+                      }
+                      title="允许内部解析文献、抽取主体与关系，生成待复核图谱"
+                      onClick={() => void generateGraph(document)}
+                      className="flex h-8 shrink-0 items-center gap-1 rounded-md border border-[#8aafb4] px-2 text-xs text-[#275f68] hover:bg-[#edf5f5] disabled:opacity-40"
+                    >
+                      <Network className="size-3.5" />
+                      {graphBusy === document.id
+                        ? "提交中"
+                        : document.status === "failed" &&
+                            !TEMPORARY_LIBRARY_SUCCESS_PREVIEW
+                          ? "重试处理"
+                          : "生成图谱"}
+                    </button>
+                    <button
+                      type="button"
                       title="编辑资料信息"
+                      aria-label="编辑资料信息"
                       onClick={() => setEditSource(document.source)}
                       className="flex size-8 items-center justify-center rounded-md text-[#526b70] hover:bg-[#edf5f5]"
                     >
@@ -654,15 +793,8 @@ export default function LibraryPage() {
           fileId={reviewDocument.sourceFileId}
           title={reviewDocument.title}
           ingestionJobId={reviewDocument.ingestionJobId}
-          onFinalized={() => {
-            setDocuments((current) =>
-              current.map((document) =>
-                document.id === reviewDocument.id
-                  ? { ...document, status: "completed" }
-                  : document,
-              ),
-            );
-          }}
+          onReviewed={() => void loadDocuments()}
+          onFinalized={() => void loadDocuments()}
         />
       )}
     </main>

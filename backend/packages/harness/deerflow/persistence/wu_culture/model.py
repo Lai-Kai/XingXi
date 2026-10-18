@@ -706,6 +706,7 @@ class IngestionEventRow(Base):
 class EvidenceRow(Base):
     __tablename__ = "wu_evidence"
     __table_args__ = (
+        Index("ix_wu_evidence_chunk_document", "chunk_id", "document_id"),
         ForeignKeyConstraint(
             ["chunk_id", "document_id"],
             ["wu_text_chunks.id", "wu_text_chunks.document_id"],

@@ -10,6 +10,32 @@ export type AgentCase = {
   mode: "flash" | "pro" | "ultra";
   scenario: string;
   review_rubric: string;
+  required_tool?: string | null;
+  expected_terms?: string[];
+  forbidden_terms?: string[];
+  min_citations?: number;
+  expect_empty_evidence?: boolean;
+  timeout_seconds?: number;
+  expected_run_status?: string;
+};
+
+export type ManagedAgentCase = AgentCase & {
+  active: boolean;
+  builtin: boolean;
+};
+export type AgentCaseMethod = AgentCase & { description: string };
+export type AgentCaseInput = {
+  title: string;
+  question: string;
+  scenario: string;
+  mode: AgentCase["mode"];
+  expected_terms?: string[];
+  forbidden_terms?: string[];
+};
+export type AgentCaseCollection = {
+  execution_mode: "replay";
+  cases: ManagedAgentCase[];
+  methods: AgentCaseMethod[];
 };
 
 export type AgentCheck = {
@@ -90,6 +116,7 @@ export type AgentCatalog = {
   available: boolean;
   execution_mode: "replay";
   cases: AgentCase[];
+  core_count?: number;
 };
 
 export type AgentEvaluationSummary = Omit<
@@ -112,16 +139,40 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const loadAgentCatalog = (signal?: AbortSignal) =>
   request<AgentCatalog>("/catalog", { signal });
+export const loadAgentCases = (signal?: AbortSignal) =>
+  request<AgentCaseCollection>("/cases", { signal });
+export const createAgentCase = (input: AgentCaseInput) =>
+  request<ManagedAgentCase>("/cases", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+export const deleteAgentCase = (id: string) =>
+  request<ManagedAgentCase>(`/cases/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+export const restoreAgentCase = (id: string) =>
+  request<ManagedAgentCase>(`/cases/${encodeURIComponent(id)}/restore`, {
+    method: "POST",
+    body: "{}",
+  });
 export const listAgentEvaluations = (offset = 0, signal?: AbortSignal) =>
   request<AgentEvaluationSummary[]>(`/executions?limit=20&offset=${offset}`, {
     signal,
   });
 export const getAgentEvaluation = (id: string, signal?: AbortSignal) =>
   request<AgentEvaluation>(`/executions/${encodeURIComponent(id)}`, { signal });
-export const startAgentEvaluation = (smoke: boolean, requestKey: string) =>
+export const startAgentEvaluation = (
+  smoke: boolean,
+  requestKey: string,
+  caseIds?: string[],
+) =>
   request<AgentEvaluation>("/executions", {
     method: "POST",
-    body: JSON.stringify({ smoke, request_key: requestKey }),
+    body: JSON.stringify({
+      smoke,
+      request_key: requestKey,
+      ...(caseIds ? { case_ids: caseIds } : {}),
+    }),
   });
 export const cancelAgentEvaluation = (id: string) =>
   request<AgentEvaluation>(`/executions/${encodeURIComponent(id)}/cancel`, {

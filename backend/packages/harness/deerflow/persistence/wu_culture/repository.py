@@ -400,7 +400,7 @@ class SqlSourceDocumentRepository:
         limit: int = 20,
         offset: int = 0,
     ) -> tuple[list[SourceDocumentLibraryItem], int]:
-        """Read a source page with files and latest ingestion jobs in batches."""
+        """Read processing and exact-generation text review independently."""
         filters = []
         if query:
             needle = f"%{query.strip().lower()}%"
@@ -439,6 +439,8 @@ class SqlSourceDocumentRepository:
                 step_statement = select(IngestionStepRow).where(IngestionStepRow.job_id.in_(job_ids)).order_by(IngestionStepRow.job_id.asc(), IngestionStepRow.sequence.asc())
                 for step_row in (await session.execute(step_statement)).scalars().all():
                     steps_by_job.setdefault(step_row.job_id, []).append(step_row)
+            canonical_file_ids = tuple({file_row.duplicate_of_file_id or file_row.id for _, file_row, _ in rows if file_row is not None})
+            reviews = await self._library_reviews(session, canonical_file_ids)
 
         jobs = {job_row.id: SqlIngestionJobRepository._row_to_job_from_steps(job_row, steps_by_job.get(job_row.id, ())) for _, _, job_row in rows if job_row is not None}
         documents: dict[str, SourceDocument] = {}
@@ -451,9 +453,50 @@ class SqlSourceDocumentRepository:
                     SourceDocumentLibraryFile(
                         file=SqlSourceFileRepository._row_to_domain(file_row),
                         ingestion_job=jobs.get(job_row.id) if job_row is not None else None,
+                        chunk_set_id=reviews.get(file_row.duplicate_of_file_id or file_row.id, (None, None))[0],
+                        review_status=reviews.get(file_row.duplicate_of_file_id or file_row.id, (None, None))[1],
                     )
                 )
         return [SourceDocumentLibraryItem(document=document, files=tuple(files[document.id])) for document in documents.values()], total
+
+    @staticmethod
+    async def _library_reviews(session: AsyncSession, file_ids: tuple[str, ...]) -> dict[str, tuple[str, ReviewStatus | None]]:
+        """Read metadata only, including the exact clean pages referenced by chunks."""
+        reviews = {}
+        for start in range(0, len(file_ids), 500):
+            batch = file_ids[start : start + 500]
+            ranked_sets = (
+                select(
+                    ChunkSetRow.id,
+                    ChunkSetRow.source_file_id,
+                    func.row_number().over(partition_by=ChunkSetRow.source_file_id, order_by=(ChunkSetRow.generated_at.desc(), ChunkSetRow.id.desc())).label("position"),
+                )
+                .where(ChunkSetRow.source_file_id.in_(batch))
+                .subquery()
+            )
+            latest_sets = dict((await session.execute(select(ranked_sets.c.source_file_id, ranked_sets.c.id).where(ranked_sets.c.position == 1))).all())
+            if not latest_sets:
+                continue
+            page_statuses = {
+                (file_id, page_id): status
+                for file_id, page_id, status in (await session.execute(select(CleanedOcrPageRow.source_file_id, CleanedOcrPageRow.id, CleanedOcrPageRow.review_status).where(CleanedOcrPageRow.source_file_id.in_(batch)))).all()
+            }
+            statuses: dict[str, set[str]] = {}
+            statement = select(TextChunkRow.source_file_id, TextChunkRow.review_status, TextChunkRow.cleaned_page_ids_json).where(TextChunkRow.chunk_set_id.in_(tuple(latest_sets.values())))
+            for file_id, status, page_ids_json in (await session.execute(statement)).all():
+                current = statuses.setdefault(file_id, set())
+                current.add(status)
+                page_ids = json.loads(page_ids_json)
+                current.update(page_statuses.get((file_id, page_id), ReviewStatus.PENDING.value) for page_id in page_ids)
+                if not page_ids:
+                    current.add(ReviewStatus.PENDING.value)
+            for file_id, chunk_set_id in latest_sets.items():
+                values = statuses.get(file_id, set())
+                status = None
+                if values:
+                    status = next(candidate for candidate in (ReviewStatus.REJECTED, ReviewStatus.DISPUTED, ReviewStatus.PENDING, ReviewStatus.REVIEWED) if candidate.value in values)
+                reviews[file_id] = (chunk_set_id, status)
+        return reviews
 
     async def update(self, document: SourceDocument) -> SourceDocument | None:
         async with self._session_factory() as session:
@@ -1788,9 +1831,10 @@ class SqlFullTextRepository:
 
     async def index_release(self, session: AsyncSession, release: KnowledgeRelease, *, indexed_at) -> FullTextIndexResult:
         chunk_ids = tuple(item.chunk_id for item in release.items)
-        statement = select(TextChunkRow, SourceDocumentRow).join(SourceDocumentRow, TextChunkRow.document_id == SourceDocumentRow.id).where(TextChunkRow.id.in_(chunk_ids))
-        pairs = list((await session.execute(statement)).all())
-        by_chunk = {chunk.id: (chunk, document) for chunk, document in pairs}
+        by_chunk = {}
+        for start in range(0, len(chunk_ids), 500):
+            statement = select(TextChunkRow, SourceDocumentRow).join(SourceDocumentRow, TextChunkRow.document_id == SourceDocumentRow.id).where(TextChunkRow.id.in_(chunk_ids[start : start + 500]))
+            by_chunk.update((chunk.id, (chunk, document)) for chunk, document in (await session.execute(statement)).all())
         documents: list[FullTextIndexDocument] = []
         filter_metadata: list[SearchFilterMetadataRow] = []
         for item in release.items:
@@ -1846,7 +1890,9 @@ class SqlFullTextRepository:
         session.add_all(filter_metadata)
         await session.flush()
         evidence_ids = tuple(document.id for document in documents)
-        existing_evidence_ids = set((await session.execute(select(EvidenceRow.id).where(EvidenceRow.id.in_(evidence_ids)))).scalars().all())
+        existing_evidence_ids = set()
+        for start in range(0, len(evidence_ids), 500):
+            existing_evidence_ids.update((await session.execute(select(EvidenceRow.id).where(EvidenceRow.id.in_(evidence_ids[start : start + 500])))).scalars().all())
         session.add_all(
             EvidenceRow(
                 id=document.id,

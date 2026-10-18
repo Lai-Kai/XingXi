@@ -22,11 +22,24 @@ Stage 16 upload responses include `ingestion_job` and optional `ingestion_error`
 
 Stage 17 review UI lives in `components/workspace/source-review-dialog.tsx` and opens from the document row. It always loads a real ChunkSet and its exact page/Chunk queue, never prototype records. Preserve page/chunk segmented modes, stable comparison dimensions, batch checkboxes, required comments for rejected/disputed decisions, immutable history, and explicit finalize. Raw text and clean text remain side-by-side on desktop and stack on narrow screens.
 
+Library rows render independent text-review and ingestion statuses through `source-library-status.tsx`. Use the aggregate API's exact latest ChunkSet review summary; a failed job must not erase a reviewed conclusion. Refetch after review decisions/finalization and when active processing stops; finalize advances to server-owned index pending and must never set local `completed`. Failed rows offer `generateSourceGraph` as “重试处理”. Source metadata `edition` is nullable for imported records: the editor renders an empty controlled input and submits `null` when left blank, while new-source registration still requires a version. `library-status-and-edit.spec.ts` covers persisted review/error coexistence, nullable editing, retry and review refresh on desktop/narrow layouts.
+
+Temporary user-requested exception (2026-10-18):
+`TEMPORARY_LIBRARY_SUCCESS_PREVIEW` in `source-library-status.tsx` is enabled.
+Failed library rows display green “处理成功”, suppress the inline failure note,
+and label their existing action “生成图谱”. Job/error data, text review, polling
+and retry behavior retain their real state. Set this flag to `false` when the
+user requests restoration; both display modes have component coverage.
+
 The knowledge Release UI lives in `components/workspace/knowledge-release-dialog.tsx`. It publishes the latest real ChunkSet for each selected library document and renders server-owned `preparing`, `ready`, `failed`, and `active` states. Only an `active` row matching the active pointer is current; failed rows show the preparation reason and retry action, and rollback is limited to older ready rows. Keep optimistic `state_version` on publish/retry/rollback and never infer preparation success or mutate version history in browser state.
 
 The quality workspace separates visibility from mutation. `quality:read` exposes the queue and detail pane; only `quality:review` renders status, review-note, and save controls. `quality:admin` is reserved for destructive or policy controls. Client gating is UX only, and the Gateway must enforce the same capability on every write.
 
 **Stack**: Next.js 16, React 19, TypeScript 5.8, Tailwind CSS 4, pnpm 10.26.2. Requires Node.js 22+ and pnpm 10.26.2+.
+
+`frontend/.npmrc` keeps the pnpm store in the repository's gitignored
+`../.pnpm-store`, so installation does not depend on write access to a shared
+parent-directory cache. Run frontend installation commands from `frontend/`.
 
 ### Core dependencies
 
@@ -92,6 +105,18 @@ The frontend is a stateful chat application. Users create **threads** (conversat
 5. TanStack Query manages server state; localStorage stores user settings
 6. Components subscribe to thread state and render updates
 
+`components/workspace/chats/use-thread-chat.ts` derives the conversation ID from
+the reactive pathname. The static `/workspace/chats/new` route has no dynamic
+`thread_id` param, and native `history.replaceState` preserves that route tree
+after the first send. Never synchronize a created ID from `useParams`; it can
+erase the active conversation and break subsequent sends. Keep new-chat and
+delete resets covered alongside the first-send transition.
+
+`tests/e2e/xingxi-home.spec.ts` covers both daily-topic title and “开始了解”
+links with a configured model: navigation must automatically send the starter
+prompt exactly once to `xingxi`, retain the bound query/document/Evidence scope,
+and keep the resulting conversation visible after its canonical URL changes.
+
 `/goal` and `/compact` are built-in composer commands, not skill activations. `src/components/workspace/input-box.tsx` intercepts `/goal`, `/goal clear`, and `/goal <condition>` before normal chat submission, calling Gateway `GET/PUT/DELETE /api/threads/{thread_id}/goal`. Setting `/goal <condition>` also submits the condition text as the next user task so the agent starts running immediately; status and clear do not start a run. Goal and compact requests are tied to the current `threadId` with an `AbortController`, so switching threads or unmounting the composer aborts in-flight requests and stale responses cannot update the new thread's composer state. The chat pages render `GoalStatus` above the composer from `AgentThreadState.goal`, with local optimistic state until the next stream `values` update arrives. `/compact` calls `POST /api/threads/{thread_id}/compact` to summarize older active context while leaving the full visible chat history intact; it is skipped on new/empty threads and blocked server-side while a run is in flight.
 
 Human input requests are a structured message protocol layered on normal chat history. The backend writes request payloads to `ToolMessage.artifact.human_input`, `src/core/messages/human-input.ts` owns the runtime validators/types, and `src/components/workspace/messages/human-input-card.tsx` renders the reusable card. `MessageList` owns answered/latest/pending state for visible cards, but derives answered responses from raw `thread.messages` because replies are hidden; pending cards clear when the hidden reply appears, when dispatch is dropped, or when a new `thread.error` reports an async stream failure. Page-level submit callbacks must send a normal human message and put `hide_from_ui: true` plus the response payload in the fourth `sendMessage(..., options)` argument as `options.additionalKwargs`; the third argument remains run context such as `{ agent_name }`. Composer entry points should disable normal bottom input while `hasOpenHumanInputRequest(...)` is true so users answer through the card and preserve response metadata.
@@ -141,6 +166,22 @@ NEXT_PUBLIC_LANGGRAPH_BASE_URL=http://localhost:8001/api
 
 Leave these unset for the standard `make dev` / Docker flow, where nginx serves the public `/api/langgraph/*` prefix and rewrites it to Gateway's native `/api/*` routes.
 
+When exposing the development frontend through a Tunnel, set
+`DEER_FLOW_DEV_ORIGINS` in the frontend process environment to a comma-separated
+list of public hostnames (without scheme, port, or path), then restart the
+frontend. `next.config.js` maps this explicit list to Next.js `allowedDevOrigins`;
+the development WebSocket must connect before the client can hydrate and submit
+the login form. Local access remains available by default. The real Next.js
+origin checks are covered by `tests/unit/config/dev-origins.test.ts`.
+
+The external host-native launcher historically hardcodes `next dev --webpack`,
+which compiles routes when they are first visited. The reviewed patch in
+`../docs/patches/native-launcher-production-frontend.patch` builds and runs
+production pages by default; `DEERFLOW_FRONTEND_MODE=development` restores hot
+reload. See `../docs/native-frontend-performance.md`; production source changes
+require a new build/restart. Patch regressions live in root `tests/` and mock
+service launches without opening ports.
+
 ## Resources
 
 - [LangGraph Documentation](https://langchain-ai.github.io/langgraph/)
@@ -160,15 +201,20 @@ When adding features:
 
 ## Xingxi Knowledge Graph Surface
 
-`src/app/workspace/knowledge-graph/page.tsx` has two graph modes: bounded
-subject exploration and a full catalog overview. The overview must use the
-release-scoped catalog already loaded by `core/knowledge-graph/api.ts`, retain
-every visible connected component, and lay disconnected components out in
-separate regions. Clicking a node or an overview entry returns to bounded
-multi-hop exploration; preserve the returned Release ID, Evidence locators,
-review labels, and server truncation state while doing so. The `all`/`people`
-control filters relationship scope inside either mode and must not be treated
-as a control for selecting connected components.
+`src/app/workspace/knowledge-graph/page.tsx` defaults to the independent
+`components/workspace/graph-overview.tsx` discovery surface using the paginated
+`core/knowledge-graph/overview.ts` overview/directory client. Admins default to
+`view=working`; ordinary users always send `view=published`. Working reads are
+admin review metadata and need no active Release. Keep pending-authorization
+source counts visible without treating inspection as permission to process text.
+Review success invalidates legacy caches, refreshes groups and directory counts,
+and clears filters that would conceal the saved decision. View changes reset
+selection, group, review and local exploration; page merging rejects mixed views.
+The source-upload link opens `/workspace/library?upload=1` only after source
+management permission resolves. The existing admin workbench retains bounded
+multi-hop traversal and its Release identity. All graph modes retain Evidence,
+review labels, truncation and disconnected groups; `all`/`people` filters relationship
+types and never selects connected components.
 
 Relation/event cards always render the four review labels through `core/knowledge-graph/review.ts`; admins retain `components/workspace/graph-review-controls.tsx` after every decision. The controls hide the current status, disable approval without Evidence, require notes for rejection/dispute or changes from non-pending status, and retain state/note/error on failed requests. PATCH sends `expected_status` and adopts the returned record and invalidates caches; older in-flight responses cannot repopulate an invalidated graph cache. Privileged catalog requests explicitly use `include_rejected` and bypass the ordinary shared cache. The admin-only rejected filter shows a dedicated relation review list without a graph canvas; all/draft filters exclude rejected rows. Review tab/filter choices and the corrected relation's subject persist in URL parameters across reloads. Event lists follow every offset page. `tests/e2e/knowledge-graph-review.spec.ts` uses mutable server mocks to cover repeated decisions and reloads for both object types.
 
@@ -182,13 +228,36 @@ must not reload the same payload. Filtering, timeline playback, route selection,
 and detail panes operate on the cached catalog and must not trigger a catalog
 request.
 
+`core/map/use-map-catalog.ts` loads the Release catalog and authenticated custom
+points independently. A slow or failed custom-point request must not block the
+base map or become a fatal catalog error. Show a separate retry for custom points,
+retain previously loaded points on failure, and preserve newly created points
+when an older list request completes. Retrying custom points must not refetch the
+catalog or reset map controls. Unit regressions cover failure, delay, retry,
+creation and cancellation; browser regressions live in `map-business.spec.ts`.
+
 Timeline autoplay is event-driven. The Gateway marks curated records with `featured` and `importance`; `featuredTimelineEvents` sorts only dated featured records by year and stable ID, while the page owns `activeEventId` and the playback timer. The canvas focuses that exact event so multiple events in one year remain distinct, renders one pulsing Marker bubble, and preserves corpus review status in the bubble. Marker DOM must update even when raster tiles fail; only MapLibre style-backed line layers may wait for the style `load` event.
+
+The catalog client supplements the timeline through `/api/map/reference-events`
+for exact visible reference point IDs. These are the Gateway's existing sourced
+reference events, with no Release or reviewed-corpus claim. Released event IDs
+take precedence; unbound, unsourced and misclassified supplements are discarded.
+Reference events and point lookups run concurrently with bounded deadlines and
+share the catalog cache. Never synthesize chronology from model names or dates.
+
+The timeline stays expanded in a compact, independently scrollable panel capped at 200 CSS pixels on desktop, 176 on mobile, and 28dvh on short windows. Its 40-pixel header remains visible while dense event tracks and undated events scroll inside the panel. Keep the 56-pixel event lanes aligned with `core/map/timeline.ts`, show period/year on one line, and retain full titles in accessible labels, tooltips, and event details. Expanding the timeline must not grow the panel beyond its cap or collapse the map canvas.
+
+Render the event tracks before the year slider inside that scroll area, so the
+first event row remains visible immediately at the compact height. Keep the year
+controls reachable by scrolling without moving or enlarging the panel.
 
 Live visitor location uses `navigator.geolocation.watchPosition`, not one-shot lookup. Start/stop and permission state belong to the page; the canvas owns one reusable user Marker and updates it independently from corpus markers so GPS updates do not rebuild every historical point. The Marker remains visible in both explore and route modes, and route mode may draw an explicitly dashed user-to-first-stop connector until a real road geometry is returned. Geolocation failures must identify the HTTPS/localhost secure-context requirement without weakening browser permissions.
 
-Keep public provenance visible in the details pane. Historical event selection opens the event details pane with its period, place, people, description, and Evidence links; the place-details action returns to the associated map point. On narrow viewports the map and timeline appear before filters and details, with event and point details opening in bottom Sheets; on desktop the three columns scroll independently. A map source marked unavailable must remain a reference link rather than being rendered as an overlay. The GLB viewer remains independent from this two-dimensional data surface. `core/map/model-assets.ts` binds seven supplied GLBs only to exact reference point/entity pairs; do not attach them to corpus/historical records by name or entity fallback. Model markers use a fixed 28 CSS-pixel circle centered at the coordinate and a 44 CSS-pixel hit target; zoom and selection must not scale the circle. `core/map/api.ts` supplements the unchanged release catalog with only exact registered model references from `/api/map/reference-points`, sharing the catalog cache/in-flight load and preserving existing records on ID conflicts. No model reference may fabricate a corpus event or publish a knowledge asset. Model markers open the model tab immediately, but the page mounts only one viewer in the active desktop pane or mobile Sheet. The viewer loads client-side and moves the same element into the expanded Dialog; stale events are ignored on asset changes. Generated appearances, object scope, and pending license remain explicit; a 3D badge never upgrades coordinate confidence. Static GLBs use content-hashed URLs under `public/models/`, separate from knowledge Release assets.
+Keep public provenance visible in the details pane. Historical event selection opens the event details pane with its period, place, people, description, and Evidence links; the place-details action returns to the associated map point. On narrow viewports the map and timeline appear before filters and details, with event and point details opening in bottom Sheets; on desktop the full-size map sits behind floating controls and an independently scrolling detail pane. Map-only styles live in `styles/xingxi-map.css`; the integration does not require the global workspace redesign. A map source marked unavailable must remain a reference link rather than being rendered as an overlay. The GLB viewer remains independent from this two-dimensional data surface. `core/map/model-assets.ts` binds seven supplied GLBs only to exact reference point/entity pairs; do not attach them to corpus/historical records by name or entity fallback. Model markers use a fixed 28 CSS-pixel circle centered at the coordinate and a 44 CSS-pixel hit target; zoom and selection must not scale the circle. `core/map/api.ts` supplements the unchanged release catalog with only exact registered model references from `/api/map/reference-points`, sharing the catalog cache/in-flight load and preserving existing records on ID conflicts. No model reference may fabricate a corpus event or publish a knowledge asset. Model markers open the overview; the size-labelled model tab mounts its viewer only after explicit selection. The page mounts only one viewer in the active desktop pane or mobile Sheet. The viewer loads client-side and moves the same element into the expanded Dialog; stale events are ignored on asset changes. Generated appearances, object scope, and pending license remain explicit; a 3D badge never upgrades coordinate confidence. Static GLBs use content-hashed URLs under `public/models/`, separate from knowledge Release assets.
 
 ## Operations Surface
+
+`components/workspace/agent-evaluation-cases.tsx` owns the “测试问题与方法” Sheet on the evaluation dashboard: searchable full questions, method/rule inspection, admin creation, soft deletion/restoration and single-question execution. Its SQL API contract lives in `core/operations/evaluations.ts`. Mutations invalidate both case and active-catalog queries; run counts follow the active catalog, and custom questions join the full suite. Creation must explain that the selected method retains its fixed synthetic retrieval/answer script. Readers can inspect but have no mutation controls. History and reruns preserve original snapshots. Browser regressions live in `tests/e2e/agent-evaluation-cases.spec.ts`.
 
 `app/workspace/evaluations/page.tsx` owns the standalone **Agent 评测** workspace, exposed alongside map/graph through `workspace-nav-chat-list.tsx` only to governance readers and admins. The operations regression tab keeps manual evaluation and links to this route. `components/workspace/agent-evaluations.tsx` owns automatic replay batches, controls, current-batch KPI cards and table filters; `agent-evaluation-detail.tsx` owns the accessible trajectory Sheet, append-only review and exact Evidence locators. `core/operations/evaluations.ts` owns the wire contract, authenticated API calls and portable exports. Pure metrics/filter/distribution/sequence projection lives in `core/operations/evaluation-dashboard.ts`; the SVG charts in `agent-evaluation-charts.tsx` plot real planned/passed counts and only terminal pass rates, with hover/focus tooltips. History time filters and charts cover only the current server page (20 batches), not the complete database. KPI scope stays at the selected batch when the table is filtered; missing durations remain unavailable and measured sample counts are visible. Do not invent failure causes or same-condition version comparisons from these aggregates.
 
@@ -202,6 +271,29 @@ Polling queries are scoped by batch ID; drawer identity includes both batch and 
 
 Source-level contracts include `U` for unrated internal material. Knowledge Release contracts include `scope: "public" | "internal"`; internal Releases must be visibly labelled as working versions and must never be presented as reviewed public editions. Agent citations may use `evidence://<id>`; `core/citations/sources.ts` parses that protocol and routes it to the library Evidence detail surface rather than opening it as an external URL.
 
+`SourceUploadDialog` defaults its visible internal-analysis choice to enabled and passes `generate_graph` through the multipart upload client. `library/page.tsx` exposes “生成图谱” for existing files using `generateSourceGraph`, then polls the returned durable ingestion job without marking it reviewed or complete. A generation request permits only internal processing; public publication remains separate. The backend handles extraction, cumulative internal Release preparation, and late-authorization reconciliation. Clients must never construct graph records or mark a source reviewed to make the graph visible.
+
 Map contracts include `corpus_evidence`, `record_kind`, `review_status`, and `release_id`, but the client only renders catalog records returned by the Gateway. It must not geocode corpus names or synthesize coordinates in the browser. The map provides separate formal/draft filters, renders draft markers distinctly, and lets users select among server-derived person trajectories. Searchable fuxianzhi text, corpus drafts, and reviewed map points are deliberately different completion states.
 
 The graph workspace provides an evidence-bound, mixed-entity relationship view centered on one subject, with direct/two-hop/three-hop controls (default two), review filters, an ordered event timeline, Evidence links, and a map handoff. It must not render a full subject index as the main graph surface. The catalog provides only an initial one-hop preview; the graph query response replaces that preview and must retain nodes and peripheral edges absent from the catalog. Refocusing can preview already-loaded graph records and Evidence, then queries the selected depth. Depth changes and refocusing reuse the Gateway's returned `release_id`; query cache keys include Release, depth, and node limit. Loading disables depth/refocus controls, and a failed depth change preserves the previous result and selection. Network views fit the returned graph and page at 80 edges (direct view: 18), while the sidebar keeps all loaded relations and their Evidence. Server truncation is distinct from display pagination. Edge labels follow the stored subject-to-object direction; clicking an edge opens its corresponding sidebar Evidence.
+
+
+## Map point and model creation
+
+`core/map/api.ts` reads persistent custom points separately from the Release catalog.
+`create-point-form.tsx` and the canvas coordinate picker retain the selected WGS84
+position and retry key. Only administrators see creation controls; server checks
+remain authoritative. A custom point is not a published knowledge record.
+
+`create-model-dialog.tsx` supports persistent PLY/GLB upload and SSH reconstruction.
+`point-model-preview.tsx` selects exact point/entity assets, a local-only PLY, or
+the original GLB. Colored points use Three.js; Gaussian data uses Spark. Keep
+large renderers dynamically imported, one active viewer, file limits and abort
+handling. `reconstruction-panel.tsx` polls durable task state and exposes optional
+FLUX3 preprocessing only when the server enables it.
+
+`app/api/map/model-assets/[[...segments]]/route.ts` and the reconstruction handler
+stream bodies ahead of the generic Gateway fallback in `next.config.js`; retain
+authentication, CSRF and Range headers. Unit regressions cover uploads over 10 MiB
+and partial downloads. Browser coverage lives in `map-create-point`,
+`map-create-model`, `map-reconstruction` and `reconstruction-proxy` specs.

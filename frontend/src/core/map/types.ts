@@ -78,7 +78,7 @@ export type MapPoint = {
   evidence: MapEvidence[];
   reviewStatus: MapReviewStatus | null;
   releaseId: string | null;
-  recordKind: "reference" | "corpus";
+  recordKind: "reference" | "corpus" | "custom";
   startYear: number | null;
   endYear: number | null;
 };

@@ -1,7 +1,12 @@
+import { existsSync } from "node:fs";
+
 import { type ModelViewerElement } from "@google/model-viewer";
 import { expect, test, type Page } from "@playwright/test";
 
-import { MAP_MODEL_ASSETS } from "../../src/core/map/model-assets";
+import {
+  formatModelAssetSize,
+  MAP_MODEL_ASSETS,
+} from "../../src/core/map/model-assets";
 
 import { mockLangGraphAPI } from "./utils/mock-api";
 
@@ -132,7 +137,60 @@ async function setup(page: Page) {
   );
 }
 
-async function selectModel(page: Page, index: number) {
+async function settleMap(page: Page) {
+  const canvas = page.getByLabel("古舆地图画布");
+  let previous: string | null = null;
+  await expect
+    .poll(
+      async () => {
+        const current = await canvas.getAttribute("data-map-camera-zoom");
+        const settled = current !== null && current === previous;
+        previous = current;
+        return settled;
+      },
+      { timeout: 20_000, intervals: [500] },
+    )
+    .toBe(true);
+}
+
+async function clickPoint(page: Page, name: string) {
+  const marker = page.getByRole("button", {
+    name: new RegExp(`地图(?:点位|范围) ${name}(?:，可预览三维模型)?$`),
+  });
+  // MapLibre markers move with the initial fit animation, so wait for the camera
+  // to settle before pointing at a pixel.
+  await settleMap(page);
+  await marker.scrollIntoViewIfNeeded();
+  const heading = page.getByRole("heading", { name, exact: true });
+  // Adjacent markers overlap at the default framing, so a synthetic pointer
+  // click can be swallowed by a neighbouring hit area. Try the pointer path and
+  // fall back to the keyboard path the other map specs use.
+  const clicked = await marker
+    .click({ force: true })
+    .then(() => true)
+    .catch(() => false);
+  const opened =
+    clicked &&
+    (await expect(heading)
+      .toBeVisible({ timeout: 2_000 })
+      .then(() => true)
+      .catch(() => false));
+  if (!opened) {
+    await marker.focus();
+    await marker.press("Enter");
+  }
+  await expect(heading).toBeVisible();
+}
+
+function modelTab(page: Page, index: number) {
+  const asset = MAP_MODEL_ASSETS[index]!;
+  return page.getByRole("tab", {
+    name: `3D 建筑研习 (${formatModelAssetSize(asset.sizeBytes)})`,
+    exact: true,
+  });
+}
+
+async function selectPoint(page: Page, index: number) {
   const name = places[index]![2];
   const marker = page.getByRole("button", {
     name: new RegExp(`地图(?:点位|范围) ${name}，可预览三维模型`),
@@ -140,9 +198,23 @@ async function selectModel(page: Page, index: number) {
   // Keyboard selection avoids overlap between nearby real map coordinates.
   await marker.focus();
   await marker.press("Enter");
+  // Selecting a point opens its overview only; no GLB is requested yet.
   await expect(
-    page.getByRole("tab", { name: "模型", exact: true }),
+    page.getByRole("tab", { name: "史料考据", exact: true }),
   ).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator("model-viewer")).toHaveCount(0);
+}
+
+async function openModelTab(page: Page, index: number) {
+  const tab = modelTab(page, index);
+  await expect(tab).toBeVisible();
+  await tab.click();
+  await expect(tab).toHaveAttribute("aria-selected", "true");
+}
+
+async function selectModel(page: Page, index: number) {
+  await selectPoint(page, index);
+  await openModelTab(page, index);
 }
 
 async function ready(page: Page, index: number) {
@@ -186,9 +258,17 @@ test("all seven real GLBs render on demand and reuse one viewer for enlargement"
   await expect(page.locator('[data-has-model="false"]')).toHaveCount(2);
   expect(requests).toHaveLength(0);
   const timings: Array<{ id: string; milliseconds: number }> = [];
+  const glbRequestsFor = (src: string) =>
+    requests.filter((url) => new URL(url).pathname === src).length;
   for (let i = 0; i < 7; i++) {
+    const asset = MAP_MODEL_ASSETS[i]!;
+    await selectPoint(page, i);
+    // Clicking the marker only opens the overview: the advertised GLB stays unfetched.
+    expect(glbRequestsFor(asset.src!)).toBe(0);
     const started = Date.now();
-    await selectModel(page, i);
+    await openModelTab(page, i);
+    // The download starts only once the reader opens the model tab.
+    await expect.poll(() => glbRequestsFor(asset.src!)).toBeGreaterThan(0);
     await ready(page, i);
     timings.push({
       id: MAP_MODEL_ASSETS[i]!.id,
@@ -268,11 +348,40 @@ test("all seven real GLBs render on demand and reuse one viewer for enlargement"
   await expect(dialog).toBeHidden();
   await expect(viewer).toBeVisible();
   expect(requests).toHaveLength(count);
-  await page.getByRole("tab", { name: "概览", exact: true }).click();
+  await page.getByRole("tab", { name: "史料考据", exact: true }).click();
   await expect(page.locator("model-viewer")).toHaveCount(0);
   await expect(page.getByText("近似定位", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "关闭点位详情" }).click();
   await expect(page.getByRole("region", { name: "点位详情" })).toHaveCount(0);
+});
+
+test("a local colored PLY temporarily replaces the GLB and returning releases the point cloud", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(120000);
+  const ply =
+    process.env.COLORED_TEST_PLY_SECONDARY ?? process.env.COLORED_TEST_PLY;
+  test.skip(
+    !ply || !existsSync(ply),
+    "Set COLORED_TEST_PLY to an existing RGB result",
+  );
+  await setup(page);
+  await page.goto("/workspace/map");
+  await selectModel(page, 0);
+  await ready(page, 0);
+  await page.getByLabel("打开本地 PLY").setInputFiles(ply!);
+  await expect(page.getByText(/个彩色点 · 拖动旋转/)).toBeVisible({
+    timeout: 60000,
+  });
+  await expect(page.locator("model-viewer")).toHaveCount(0);
+  await expect(page.getByLabel("彩色点云三维场景")).toHaveCount(1);
+  await page
+    .getByLabel("彩色点云三维场景")
+    .screenshot({ path: testInfo.outputPath("local-rgb-over-glb.png") });
+  await page.getByRole("button", { name: "返回点位模型", exact: true }).click();
+  await ready(page, 0);
+  await expect(page.getByLabel("彩色点云三维场景")).toHaveCount(0);
+  await expect(page.getByLabel("打开本地 PLY")).toHaveValue("");
 });
 
 test("a failed GLB can be retried and a point without a model keeps its overview", async ({
@@ -286,14 +395,15 @@ test("a failed GLB can be retried and a point without a model keeps its overview
     route.fulfill({ status: 404, body: "missing" }),
   );
   await page.goto("/workspace/map");
-  // Focus lifts this real coordinate above nearby hit targets; a normal click
-  // also waits for the initial map fit to settle instead of clicking mid-move.
-  const marker = page.getByRole("button", {
-    name: "地图点位 木渎古镇，可预览三维模型",
-    exact: true,
-  });
-  await marker.focus();
-  await marker.click();
+  // Pointer click on the marker first, with the keyboard fallback that the
+  // overlapping markers in this view require.
+  await clickPoint(page, "木渎古镇");
+  // A point with a model still opens its overview first, so the failing GLB is
+  // not requested until the model tab is opened.
+  await expect(page.getByRole("button", { name: "重试加载模型" })).toHaveCount(
+    0,
+  );
+  await openModelTab(page, 0);
   await expect(page.getByRole("button", { name: "重试加载模型" })).toBeVisible({
     timeout: 30_000,
   });
@@ -306,11 +416,9 @@ test("a failed GLB can be retried and a point without a model keeps its overview
   await page
     .getByRole("button", { name: "地图点位 严家花园", exact: true })
     .press("Enter");
+  await expect(page.getByRole("tab", { name: /^3D 建筑研习/ })).toHaveCount(0);
   await expect(
-    page.getByRole("tab", { name: "模型", exact: true }),
-  ).toHaveCount(0);
-  await expect(
-    page.getByRole("tab", { name: "概览", exact: true }),
+    page.getByRole("tab", { name: "史料考据", exact: true }),
   ).toHaveAttribute("aria-selected", "true");
   await expect(page.locator("model-viewer")).toHaveCount(0);
 });
@@ -330,6 +438,9 @@ test("mobile and desktop layouts only mount the active model viewer", async ({
   await page.getByRole("button", { name: "返回点位详情" }).click();
   await expect(page.locator("model-viewer")).toHaveCount(1);
   await expect(page.getByRole("dialog")).toHaveCount(1);
+  // The nested dialog remains mounted during its exit animation. Wait until
+  // its dismissable layer is gone before testing Escape on the parent sheet.
+  await expect(page.locator('[data-slot="dialog-content"]')).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(page.locator("model-viewer")).toHaveCount(0);
   await selectModel(page, 0);
@@ -443,10 +554,8 @@ test("model reference markers stay the same size while zooming an unpublished ma
   );
   await selectModel(page, 0);
   await expect.poll(dimensions).toEqual(expected);
-  await expect(
-    page.getByRole("tab", { name: "模型", exact: true }),
-  ).toHaveAttribute("aria-selected", "true");
-  await page.getByRole("tab", { name: "概览", exact: true }).click();
+  await expect(modelTab(page, 0)).toHaveAttribute("aria-selected", "true");
+  await page.getByRole("tab", { name: "史料考据", exact: true }).click();
   await page.getByRole("button", { name: "关闭点位详情" }).click();
   await page.screenshot({
     path: testInfo.outputPath("fixed-size-model-markers.png"),

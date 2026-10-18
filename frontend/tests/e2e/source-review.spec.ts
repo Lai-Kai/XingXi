@@ -215,6 +215,65 @@ async function openReviewDialog(page: Page) {
   ).toBeVisible();
 }
 
+test("uploaded documents enable automatic draft graphs and existing files can generate again", async ({
+  page,
+}) => {
+  await mockReviewAPI(page);
+  await page.goto("/workspace/library?upload=1");
+  await expect(page.getByRole("dialog", { name: "上传文献文件" })).toBeVisible();
+  await expect(
+    page.getByRole("checkbox", {
+      name: "允许内部解析文献并自动生成待复核关系图谱",
+    }),
+  ).toBeChecked();
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "mudu.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("synthetic image"),
+  });
+  const uploadRequest = page.waitForRequest(
+    (request) =>
+      request.url().endsWith(`/api/source-documents/${documentId}/files`) &&
+      request.method() === "POST",
+  );
+  await page.getByRole("button", { name: "开始上传" }).click();
+  expect((await uploadRequest).postData()).toMatch(
+    /name="generate_graph"\r\n\r\ntrue/,
+  );
+  await expect(
+    page.getByRole("link", { name: "查看待复核关系图谱" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "关闭" }).click();
+  const job = {
+    id: "graph-job",
+    document_id: documentId,
+    source_file_id: fileId,
+    status: "pending",
+    steps: [],
+  };
+  const generateUrl = `/api/source-documents/${documentId}/files/${fileId}/generate-graph`;
+  await page.route(`**${generateUrl}`, (route) => route.fulfill({ json: job }));
+  await page.route(
+    `**/api/source-documents/${documentId}/files/${fileId}/ingestion-jobs/graph-job`,
+    (route) => route.fulfill({ json: { ...job, status: "awaiting_review" } }),
+  );
+  const generationRequest = page.waitForRequest(
+    (request) =>
+      request.url().endsWith(generateUrl) && request.method() === "POST",
+  );
+  await page.getByRole("button", { name: "生成图谱", exact: true }).click();
+  await generationRequest;
+  await expect(
+    page.getByText("已提交自动解析与图谱生成任务。", { exact: false }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "查看关系图谱", exact: true }),
+  ).toHaveAttribute("href", "/workspace/knowledge-graph");
+  await expect(
+    page.getByRole("button", { name: "生成图谱", exact: true }),
+  ).toBeEnabled();
+});
+
 test("review workspace shows traceable raw and clean text", async ({
   page,
 }, testInfo) => {

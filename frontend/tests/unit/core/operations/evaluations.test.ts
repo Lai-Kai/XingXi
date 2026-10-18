@@ -5,10 +5,14 @@ rs.mock("@/core/config", () => ({ getBackendBaseURL: () => "/backend" }));
 
 import { fetch as fetcher } from "@/core/api/fetcher";
 import {
+  createAgentCase,
+  deleteAgentCase,
   evaluationVerdict,
   getAgentEvaluation,
+  loadAgentCases,
   rerunAgentEvaluation,
   reviewAgentEvaluation,
+  restoreAgentCase,
   startAgentEvaluation,
 } from "@/core/operations/evaluations";
 
@@ -16,6 +20,49 @@ const mockedFetch = rs.mocked(fetcher);
 
 beforeEach(() => {
   mockedFetch.mockReset();
+});
+
+test("question management uses persisted APIs and preserves selected question IDs", async () => {
+  mockedFetch.mockImplementation(async () => new Response("{}"));
+  const input = {
+    title: "自定义问题",
+    question: "测试桥位于哪里？",
+    scenario: "grounded",
+    mode: "pro" as const,
+    expected_terms: ["测试溪"],
+  };
+  await loadAgentCases();
+  await createAgentCase(input);
+  await deleteAgentCase("custom/a");
+  await restoreAgentCase("custom/a");
+  await startAgentEvaluation(false, "single-question-key", ["custom/a"]);
+  const calls = mockedFetch.mock.calls;
+  expect(calls[0]?.[0]).toBe("/backend/api/operations/evaluations/cases");
+  expect(calls[1]?.[1]?.method).toBe("POST");
+  expect(calls[1]?.[1]?.body).toBe(JSON.stringify(input));
+  expect(calls[2]?.[0]).toBe(
+    "/backend/api/operations/evaluations/cases/custom%2Fa",
+  );
+  expect(calls[2]?.[1]?.method).toBe("DELETE");
+  expect(calls[3]?.[0]).toBe(
+    "/backend/api/operations/evaluations/cases/custom%2Fa/restore",
+  );
+  expect(calls[3]?.[1]?.method).toBe("POST");
+  expect(calls[4]?.[1]?.body).toBe(
+    JSON.stringify({
+      smoke: false,
+      request_key: "single-question-key",
+      case_ids: ["custom/a"],
+    }),
+  );
+});
+
+test("question mutation failures expose the server error", async () => {
+  mockedFetch.mockImplementation(
+    async () => new Response('{"detail":"题目不可删除"}', { status: 403 }),
+  );
+  await expect(deleteAgentCase("one")).rejects.toThrow("题目不可删除");
+  await expect(restoreAgentCase("one")).rejects.toThrow("题目不可删除");
 });
 
 test("incomplete and empty batches cannot display all passed", () => {

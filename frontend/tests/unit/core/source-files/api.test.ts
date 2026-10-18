@@ -5,16 +5,17 @@ afterEach(() => {
 });
 
 test("createSourceDocument registers traceable source metadata", async () => {
-  const fetchMock = rs.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
-    new Response(
-      JSON.stringify({
-        id: "source-1",
-        title: "木渎镇志",
-        edition: "1996 年版",
-        source_institution: "苏州市吴中区地方志办公室",
-      }),
-      { status: 201, headers: { "Content-Type": "application/json" } },
-    ),
+  const fetchMock = rs.fn(
+    async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      new Response(
+        JSON.stringify({
+          id: "source-1",
+          title: "木渎镇志",
+          edition: "1996 年版",
+          source_institution: "苏州市吴中区地方志办公室",
+        }),
+        { status: 201, headers: { "Content-Type": "application/json" } },
+      ),
   );
   rs.stubGlobal("fetch", fetchMock);
 
@@ -46,6 +47,7 @@ test("createSourceDocument registers traceable source metadata", async () => {
 test("uploadSourceFile reports real XMLHttpRequest upload progress", async () => {
   const progress = rs.fn();
   let opened: { method: string; url: string } | null = null;
+  let submitted: FormData | undefined;
 
   class FakeXMLHttpRequest {
     status = 200;
@@ -112,7 +114,8 @@ test("uploadSourceFile reports real XMLHttpRequest upload progress", async () =>
       this.listeners.set(name, listener);
     }
 
-    send() {
+    send(form: FormData) {
+      submitted = form;
       this.listeners.get("load")?.();
     }
 
@@ -128,7 +131,9 @@ test("uploadSourceFile reports real XMLHttpRequest upload progress", async () =>
     new Blob(["1234567890"], { type: "application/pdf" }),
     { name: "source.pdf", lastModified: 0 },
   ) as File;
-  const task = uploadSourceFile("source-1", file, progress);
+  const task = uploadSourceFile("source-1", file, progress, {
+    generateGraph: true,
+  });
   const result = await task.promise;
 
   expect(opened).toEqual({
@@ -138,6 +143,29 @@ test("uploadSourceFile reports real XMLHttpRequest upload progress", async () =>
   expect(progress).toHaveBeenCalledWith(50);
   expect(result.file.id).toBe("source-file-1");
   expect(result.ingestionJob?.id).toBe("job-1");
+  expect(submitted?.get("generate_graph")).toBe("true");
+});
+
+test("existing source graph generation uses the durable document pipeline", async () => {
+  const fetchMock = rs.fn(
+    async () =>
+      new Response(JSON.stringify({ id: "graph-job", status: "pending" }), {
+        status: 200,
+      }),
+  );
+  rs.stubGlobal("fetch", fetchMock);
+  const { generateSourceGraph } = await import("@/core/source-files/api");
+  expect((await generateSourceGraph("source-1", "file-1")).id).toBe(
+    "graph-job",
+  );
+  const [url, init] = fetchMock.mock.calls[0] as unknown as [
+    string,
+    RequestInit,
+  ];
+  expect(url).toBe(
+    "/api/source-documents/source-1/files/file-1/generate-graph",
+  );
+  expect(init.method).toBe("POST");
 });
 
 test("uploadSourceFile cancel aborts only its active request", async () => {

@@ -1,0 +1,73 @@
+/* Map presentation from feat/ui-redesign, scoped to the existing workspace. */
+.research-map button:focus-visible,
+.research-year-range:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+.research-map .maplibregl-ctrl-top-right {
+  top: 5rem;
+  right: 0.75rem;
+}
+.research-map .research-map-hud {
+  align-content: start;
+}
+.research-map [data-map-error="true"] {
+  top: calc(var(--map-hud-bottom, 8rem) + 12px);
+  max-width: min(calc(100% - 5rem), 30rem);
+  background: var(--card);
+  color: var(--foreground);
+}
+.research-map [data-map-error="true"] button {
+  background: var(--secondary);
+  color: var(--primary);
+}
+.research-map-timeline {
+  scrollbar-width: thin;
+}
+.research-map-point [role="tab"] {
+  min-height: 44px;
+  flex-shrink: 0;
+}
+.research-map-point [role="tablist"] {
+  height: auto;
+}
+.research-map-details > section {
+  width: 100%;
+}
+@media (min-width: 1280px) {
+  .research-map:has(.research-map-details) .research-map-header,
+  .research-map:has(.research-map-details) .research-map-timeline {
+    right: 410px;
+  }
+  .research-map:has(.research-map-details) .maplibregl-ctrl-top-right,
+  .research-map:has(.research-map-details) .maplibregl-ctrl-bottom-right {
+    right: 410px;
+  }
+  .research-map:has(.research-map-details) .research-map-legend {
+    max-width: calc(100% - 440px);
+  }
+}
+@media (max-width: 767px) {
+  .research-map-hud {
+    max-width: calc(100% - 4.5rem);
+  }
+  .research-map-location {
+    top: 12rem;
+  }
+  .research-map-legend {
+    font-size: 9px;
+    max-width: calc(100% - 4.5rem);
+  }
+}
+@media (pointer: coarse) {
+  .research-map-hud button,
+  .research-map-point button,
+  .research-map .maplibregl-ctrl-group button,
+  [data-model-id] button,
+  .research-model-dialog button,
+  [data-slot="sheet-content"]:has(.research-map-point) > button,
+  .research-model-controls button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}

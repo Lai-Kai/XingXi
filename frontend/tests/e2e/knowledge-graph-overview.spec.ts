@@ -17,11 +17,12 @@ async function mockOverview(page: Page, admin = false, truncated = false) {
     { id: "kd", subject_id: "kangxi", object_id: "dengwei", relation_type: "visited", review_status: "reviewed" },
     { id: "gm", subject_id: "gukuang", object_id: "mudu", relation_type: "lived_in", review_status: admin ? "pending" : "reviewed" },
   ].map(edge => ({ ...edge, start_time: "史料纪年", end_time: null, confidence: .9, evidence_ids: ["ev"], is_inferred: false, release_id: "release" })) as GraphRelation[];
-  const state = { localDelay: 0, requests: [] as string[] };
+  const state = { localDelay: 0, requests: [] as string[], directoryRequests: [] as string[], edges };
   await page.route("**/api/knowledge-graph/overview?*", async route => {
     const url = new URL(route.request().url());
     state.requests.push(url.toString());
-    let visible = edges.filter(edge => (!url.searchParams.get("relation_type") || edge.relation_type === url.searchParams.get("relation_type")) && (!url.searchParams.get("review_status") || edge.review_status === url.searchParams.get("review_status")));
+    const working = url.searchParams.get("view") === "working";
+    let visible = edges.filter(edge => (working || !admin || edge.id === "kd") && (!url.searchParams.get("relation_type") || edge.relation_type === url.searchParams.get("relation_type")) && (!url.searchParams.get("review_status") || edge.review_status === url.searchParams.get("review_status")));
     if (url.searchParams.get("scope") === "people") visible = [];
     const components = visible.map(edge => ({ id: edge.subject_id, label: `${nodes.find(n => n.id === edge.subject_id)!.canonical_name}、${nodes.find(n => n.id === edge.object_id)!.canonical_name}`, total_nodes: 2, total_edges: 1 }));
     const center = url.searchParams.get("center");
@@ -32,16 +33,47 @@ async function mockOverview(page: Page, admin = false, truncated = false) {
     const limited = truncated && !center && !component && total > 1;
     if (limited) visible = url.searchParams.has("cursor") ? visible.slice(1) : visible.slice(0, 1);
     const ids = new Set(visible.flatMap(edge => [edge.subject_id, edge.object_id]));
-    const response: OverviewPage = { release_id: "release", nodes: nodes.filter(node => ids.has(node.id)), edges: visible, total_nodes: total * 2, total_edges: total, returned_nodes: ids.size, returned_edges: visible.length, truncated: limited && !url.searchParams.has("cursor"), next_cursor: limited && !url.searchParams.has("cursor") ? "second" : null, components, evidence: [{ evidence_id: "ev", document_title: "测试方志", page_start: 1, page_end: 1 }] };
+    const response: OverviewPage = { view: working ? "working" : "published", release_id: working ? null : "release", nodes: nodes.filter(node => ids.has(node.id)), edges: visible, total_nodes: total * 2, total_edges: total, returned_nodes: ids.size, returned_edges: visible.length, truncated: limited && !url.searchParams.has("cursor"), next_cursor: limited && !url.searchParams.has("cursor") ? "second" : null, components, evidence: [{ evidence_id: "ev", document_title: "测试方志", page_start: 1, page_end: 1 }] };
     await route.fulfill({ json: response });
   });
   await page.route("**/api/knowledge-graph/directory?*", route => {
     const params = new URL(route.request().url()).searchParams;
+    state.directoryRequests.push(route.request().url());
     const rows = nodes.filter(node => (!params.get("name") || node.canonical_name.includes(params.get("name")!)) && (!params.get("entity_type") || node.entity_type === params.get("entity_type")) && (!params.get("dynasty") || node.dynasty === params.get("dynasty")));
-    return route.fulfill({ json: { release_id: "release", nodes: rows, edges: [], total_nodes: rows.length, total_edges: 2, returned_nodes: rows.length, returned_edges: 0, truncated: false, next_cursor: null, components: [], evidence: [] } });
+    return route.fulfill({ json: { view: params.get("view"), release_id: params.get("view") === "working" ? null : "release", nodes: rows, edges: [], total_nodes: rows.length, total_edges: 2, returned_nodes: rows.length, returned_edges: 0, truncated: false, next_cursor: null, components: [], evidence: [] } });
+  });
+  await page.route("**/api/knowledge-graph/relations/gm/review", async route => {
+    const body = route.request().postDataJSON() as { review_status: GraphRelation["review_status"]; expected_status: GraphRelation["review_status"] };
+    const edge = edges.find(item => item.id === "gm")!;
+    if (body.expected_status !== edge.review_status) return route.fulfill({ status: 409, json: { detail: "审核状态已改变，请刷新" } });
+    edge.review_status = body.review_status;
+    return route.fulfill({ json: edge });
   });
   return state;
 }
+
+test("admin reviews an unpublished chain and immediately sees its group in the working graph", async ({ page }) => {
+  const state = await mockOverview(page, true);
+  await page.goto("/workspace/knowledge-graph");
+  await expect(page.getByLabel("图谱数据范围")).toHaveValue("working");
+  await page.getByLabel("审核状态", { exact: true }).selectOption("pending");
+  await page.getByTestId("global-graph").locator('[data-id="gukuang"]').click();
+  const card = page.getByRole("complementary", { name: "选中详情" }).getByTestId("overview-relation-gm");
+  await card.getByRole("button", { name: "修改审核结果" }).click();
+  await card.getByRole("button", { name: "通过", exact: true }).click();
+  await card.getByRole("button", { name: "保存审核结果" }).click();
+  await expect(page.getByText("关系已通过，已更新工作图谱群组。")).toBeVisible();
+  await page.getByLabel("审核状态", { exact: true }).selectOption("reviewed");
+  await expect(page.getByRole("button", { name: /顾况、木渎/ })).toBeVisible();
+  await expect(page.getByText("已加载 4/4 个主体、2/2 条关系", { exact: true })).toBeVisible();
+  await expect.poll(() => state.directoryRequests.filter(url => new URL(url).searchParams.get("review_status") === "reviewed").length).toBeGreaterThan(0);
+  await page.reload();
+  await expect(page.getByRole("button", { name: /顾况、木渎/ })).toBeVisible();
+  await page.getByLabel("图谱数据范围").selectOption("published");
+  await expect(page.getByText("已加载 2/2 个主体、1/1 条关系", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /顾况、木渎/ })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "导入文献生成图谱" })).toHaveAttribute("href", "/workspace/library?upload=1");
+});
 
 test("discovers two groups, selects without replacing the graph, and restores overview", async ({ page }) => {
   await mockOverview(page);

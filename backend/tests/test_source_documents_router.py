@@ -199,6 +199,28 @@ def test_admin_update_preserves_stable_id_and_creation_audit():
     assert updated["source_level"] == "B"
 
 
+def test_admin_can_edit_imported_source_with_unknown_edition():
+    repository = InMemorySourceDocumentRepository()
+    app = make_authed_test_app(user_factory=_admin_user)
+    app.dependency_overrides[source_documents.get_source_document_repository] = lambda: repository
+    app.include_router(source_documents.router)
+
+    with TestClient(app) as client:
+        created = client.post(
+            "/api/source-documents",
+            json={"title": "导入方志", "edition": "待考", "source_institution": "测试馆", "source_type": "gazetteer", "source_level": "U", "holder": "测试馆"},
+        ).json()
+        url = f"/api/source-documents/{created['id']}"
+        assert client.patch(url, json={"edition": None}).status_code == 200
+        updated = client.patch(url, json={"title": "导入方志校订资料", "edition": None})
+        persisted = client.get(url)
+
+    assert updated.status_code == 200
+    assert persisted.json()["title"] == "导入方志校订资料"
+    assert persisted.json()["edition"] is None
+    assert persisted.json()["created_at"] == created["created_at"]
+
+
 def test_registration_rejects_missing_fields_invalid_level_and_unknown_fields():
     repository = InMemorySourceDocumentRepository()
     app = make_authed_test_app(user_factory=_admin_user)

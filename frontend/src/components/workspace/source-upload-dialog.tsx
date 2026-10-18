@@ -9,6 +9,7 @@ import {
   RotateCcw,
   X,
 } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import {
@@ -115,6 +116,7 @@ export function SourceUploadDialog({
     emptySourceRegistration,
   );
   const [registering, setRegistering] = useState(false);
+  const [generateGraph, setGenerateGraph] = useState(true);
   const [registrationError, setRegistrationError] = useState("");
 
   queueRef.current = queue;
@@ -219,7 +221,7 @@ export function SourceUploadDialog({
       (progress) => {
         updateItem(item.id, { progress });
       },
-      resolvedOptions,
+      { ...resolvedOptions, generateGraph },
     );
     tasksRef.current.set(item.id, task);
     try {
@@ -327,7 +329,7 @@ export function SourceUploadDialog({
         <DialogHeader>
           <DialogTitle>上传文献文件</DialogTitle>
           <DialogDescription>
-            文件将绑定到已登记的资料来源，上传成功不代表已入库发布。
+            上传后自动解析文献、抽取主体与关系，并生成附带文献出处的待复核图谱。
           </DialogDescription>
         </DialogHeader>
 
@@ -360,6 +362,16 @@ export function SourceUploadDialog({
                   </button>
                 )}
               </div>
+              <label className="my-3 flex items-start gap-2 text-sm text-[#435358]">
+                <input
+                  type="checkbox"
+                  checked={generateGraph}
+                  disabled={isUploading}
+                  onChange={(event) => setGenerateGraph(event.target.checked)}
+                  className="mt-0.5 size-4 accent-[#247f8c]"
+                />
+                允许内部解析文献并自动生成待复核关系图谱
+              </label>
               <select
                 id="source-document"
                 value={sourceId}
@@ -616,6 +628,14 @@ export function SourceUploadDialog({
                           value={item.ingestionJob.progress_percent}
                           className="mt-2 h-1.5"
                         />
+                      )}
+                      {item.ingestionJob?.status === "awaiting_review" && (
+                        <Link
+                          href="/workspace/knowledge-graph"
+                          className="mt-1 inline-block text-xs text-[#275f68] underline"
+                        >
+                          查看待复核关系图谱
+                        </Link>
                       )}
                       {item.error && (
                         <p className="mt-1 text-xs text-[#a13d3d]">

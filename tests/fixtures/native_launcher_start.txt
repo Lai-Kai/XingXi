@@ -1,0 +1,43 @@
+"""Native startup source fixture; services are mocked by offline tests."""
+
+def start(config, env):
+    if any(alive(item) for item in records()):
+        raise RuntimeError("本启动器已有服务在运行；先执行 status 查看，或 stop 后重新启动。")
+    check_dependencies()
+    preflight()
+    prepare(config)
+    subprocess.run(nginx_command() + ["-t"], check=True)
+    frontend_env = env.copy()
+    frontend_env.update({"PORT": "3000", "NODE_ENV": "development", "NEXT_PUBLIC_BACKEND_BASE_URL": "", "NEXT_PUBLIC_LANGGRAPH_BASE_URL": ""})
+    processes = []
+    items = []
+    services = (
+        ("gateway", [str(PYTHON), "-B", "-m", "uvicorn", "app.gateway.app:app", "--host", "127.0.0.1", "--port", "8001", "--workers", "1"], ROOT / "backend", env, "http://127.0.0.1:8001/health", 180, True),
+        ("frontend", [str(NODE), str(NEXT), "dev", "--webpack", "--hostname", "127.0.0.1", "--port", "3000"], ROOT / "frontend", frontend_env, "http://127.0.0.1:3000/", 180, False),
+        ("nginx", nginx_command() + ["-g", "daemon off;"], STATE, env, "http://127.0.0.1:12026/health", 30, True),
+    )
+    try:
+        for name, command, cwd, child_env, url, timeout, health in services:
+            with (STATE / f"logs/{name}.log").open("ab") as logfile:
+                process = subprocess.Popen(command, cwd=cwd, env=child_env, stdin=subprocess.DEVNULL, stdout=logfile, stderr=subprocess.STDOUT, start_new_session=True)
+            processes.append(process)
+            stamp = fingerprint(process.pid)
+            if stamp is None:
+                raise RuntimeError(f"无法记录 {name} 进程身份。")
+            items.append({"name": name, "pid": process.pid, "started": stamp})
+            (STATE / "pids.json").write_text(json.dumps(items))
+            print(f"等待 {name} 就绪……", flush=True)
+            wait_http(process, url, timeout, health)
+            print(f"{name} HTTP 检查通过。", flush=True)
+        wait_http(processes[-1], "http://127.0.0.1:12026/", 60)
+        if any(process.poll() is not None for process in processes):
+            raise RuntimeError("有服务在启动期间退出。")
+    except BaseException:
+        stop(items)
+        for process in processes:
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
+        raise
+    print("已启动：http://localhost:12026（原 SSH 端口映射可以继续使用）", flush=True)

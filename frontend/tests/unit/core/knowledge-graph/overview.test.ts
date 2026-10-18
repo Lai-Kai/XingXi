@@ -20,6 +20,7 @@ describe("global graph contract", () => {
     expect(merged.truncated).toBe(false);
     expect(mergeOverview(merged, page(1)).edges).toHaveLength(2);
     expect(() => mergeOverview(page(0), { ...page(1), release_id: "other" })).toThrow("知识版本");
+    expect(() => mergeOverview({ ...page(0), release_id: null, view: "working" }, { ...page(1), release_id: null, view: "published" })).toThrow("图谱范围");
   });
   it("packs every disconnected group without isolated nodes or overlapping positions", () => {
     const positions = overviewPositions(nodes, edges);
@@ -30,9 +31,10 @@ describe("global graph contract", () => {
   it("forwards release, cursor and filters and disables shared authorization caching", async () => {
     fetchMock.mockResolvedValue({ ok: true, json: async () => page(0) });
     const signal = new AbortController().signal;
-    await fetchOverview({ release_id: "r", cursor: "next", scope: "people", review_status: "pending" }, signal);
+    await fetchOverview({ view: "working", cursor: "next", scope: "people", review_status: "pending" }, signal);
     const [url, init] = fetchMock.mock.calls.at(-1)!;
     expect(String(url)).toContain("review_status=pending");
+    expect(String(url)).toContain("view=working");
     expect(String(url)).toContain("cursor=next");
     expect(init).toMatchObject({ signal, cache: "no-store", credentials: "include" });
     await fetchOverview({ name: "木渎", entity_type: "place", dynasty: "清" }, signal, true);

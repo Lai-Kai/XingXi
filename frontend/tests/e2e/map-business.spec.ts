@@ -215,6 +215,55 @@ test("successful modern tiles clear the loading state", async ({ page }) => {
   ).toBeVisible();
 });
 
+test("a missing custom-point endpoint keeps the map visible and retries independently", async ({
+  page,
+}) => {
+  await mockMapPage(page, catalog, true);
+  let available = false;
+  let catalogRequests = 0;
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/map/catalog")
+      catalogRequests++;
+  });
+  await page.route("**/api/map/custom-points", (route) =>
+    route.fulfill(
+      available ? { json: [] } : { status: 404, json: { detail: "Not Found" } },
+    ),
+  );
+  await page.goto("/workspace/map");
+  await expect(page.getByLabel("古舆地图画布")).toBeVisible();
+  const retry = page.getByRole("button", { name: "重试自建点位" });
+  await expect(retry).toBeVisible();
+  await expect(page.getByText("地图资料暂时无法加载")).toHaveCount(0);
+  const beforeRetry = catalogRequests;
+  available = true;
+  await retry.click();
+  await expect(retry).toHaveCount(0);
+  await expect(page.getByLabel("古舆地图画布")).toBeVisible();
+  expect(catalogRequests).toBe(beforeRetry);
+});
+
+test("a pending custom-point request does not block the main map", async ({
+  page,
+}) => {
+  await mockMapPage(page, catalog, true);
+  let complete!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    complete = resolve;
+  });
+  await page.route("**/api/map/custom-points", async (route) => {
+    await pending;
+    await route.fulfill({ json: [] });
+  });
+  await page.goto("/workspace/map");
+  try {
+    await expect(page.getByLabel("古舆地图画布")).toBeVisible();
+    await expect(page.getByText("地图资料暂时无法加载")).toHaveCount(0);
+  } finally {
+    complete();
+  }
+});
+
 test("desktop exploration keeps the map primary and shows one traceable detail surface", async ({
   page,
 }) => {
@@ -243,6 +292,13 @@ test("desktop exploration keeps the map primary and shows one traceable detail s
   expect(mapBox).not.toBeNull();
   expect(viewport).not.toBeNull();
   expect(mapBox!.width).toBeGreaterThan(viewport!.width * 0.45);
+  expect(mapBox!.height).toBeGreaterThan(viewport!.height * 0.55);
+
+  const timeline = page.getByRole("region", { name: "历史时间轴" });
+  expect((await timeline.boundingBox())!.height).toBeLessThanOrEqual(200);
+  await page.getByRole("button", { name: "收起历史时间轴" }).click();
+  expect((await timeline.boundingBox())!.height).toBeLessThanOrEqual(44);
+  await page.getByRole("button", { name: "展开历史时间轴" }).click();
 
   const pointDetails = page.getByRole("region", { name: "点位详情" });
   await expect(pointDetails).toHaveCount(0);
@@ -290,7 +346,9 @@ test("desktop exploration keeps the map primary and shows one traceable detail s
   await expect(
     pointDetails.getByRole("heading", { name: "永安桥", exact: true }),
   ).toBeVisible();
-  await pointDetails.getByRole("tab", { name: "概览", exact: true }).click();
+  await pointDetails
+    .getByRole("tab", { name: "史料考据", exact: true })
+    .click();
   await expect(
     pointDetails.getByText("估计中心", { exact: true }),
   ).toBeVisible();
@@ -312,10 +370,15 @@ test("desktop exploration keeps the map primary and shows one traceable detail s
       const markerBox = await yonganBridgeMarker.boundingBox();
       const currentMapBox = await mapCanvas.boundingBox();
       if (!markerBox || !currentMapBox) return Number.POSITIVE_INFINITY;
+      const detailBox = await page
+        .locator(".research-map-details")
+        .boundingBox();
+      const exposedRight =
+        detailBox?.x ?? currentMapBox.x + currentMapBox.width;
       return Math.abs(
         markerBox.x +
           markerBox.width / 2 -
-          (currentMapBox.x + currentMapBox.width / 2),
+          (currentMapBox.x + exposedRight) / 2,
       );
     })
     .toBeLessThan(48);
@@ -352,7 +415,9 @@ test("desktop exploration keeps the map primary and shows one traceable detail s
   await expect(
     page.getByText("暂无授权 GLB 三维模型", { exact: true }),
   ).toHaveCount(0);
-  await pointDetails.getByRole("tab", { name: "概览", exact: true }).click();
+  await pointDetails
+    .getByRole("tab", { name: "史料考据", exact: true })
+    .click();
   await expect(page.locator("[data-glb-id]")).toHaveCount(0);
 
   const mapLegend = page.locator('[data-map-legend="true"]');
@@ -434,6 +499,56 @@ test("featured timeline playback focuses each event and updates event details", 
   ).toBeVisible();
 });
 
+test("the sourced reference timeline appears without released events and keeps nodes above the year slider", async ({
+  page,
+}) => {
+  const referenceEvent = {
+    ...catalog.events[0]!,
+    record_kind: "reference",
+    release_id: null,
+    review_status: null,
+  };
+  await mockMapPage(page, { ...catalog, events: [] }, true);
+  await page.route("**/api/map/reference-events?**", (route) =>
+    route.fulfill({ json: [referenceEvent] }),
+  );
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto("/workspace/map");
+    const timeline = page.getByRole("region", {
+      name: "历史时间轴",
+      exact: true,
+    });
+    const event = timeline.getByRole("button", {
+      name: `查看历史事件：${referenceEvent.title}`,
+    });
+    await expect(event).toBeVisible();
+    const bounds = await timeline.boundingBox();
+    const eventBounds = await event.boundingBox();
+    const sliderBounds = await timeline
+      .getByLabel("历史纪年", { exact: true })
+      .boundingBox();
+    expect(bounds!.height).toBeLessThanOrEqual(
+      viewport.width < 640 ? 176 : 200,
+    );
+    expect(eventBounds!.y).toBeGreaterThan(bounds!.y);
+    expect(eventBounds!.y + eventBounds!.height).toBeLessThanOrEqual(
+      bounds!.y + bounds!.height,
+    );
+    expect(eventBounds!.y).toBeLessThan(sliderBounds!.y);
+    await event.click();
+    const details = page.getByRole("region", { name: "历史事件详情" });
+    await expect(details).toBeVisible();
+    await expect(details.getByText("景点参考", { exact: true })).toBeVisible();
+    await expect(
+      details.getByRole("link", { name: /OpenStreetMap 要素/ }),
+    ).toBeVisible();
+  }
+});
+
 test("mobile timeline events open the event sheet and return to place details", async ({
   page,
 }) => {
@@ -441,6 +556,12 @@ test("mobile timeline events open the event sheet and return to place details", 
   await mockMapPage(page);
 
   await page.goto("/workspace/map");
+  const timeline = page.getByRole("region", { name: "历史时间轴" });
+  await expect(timeline).toBeVisible();
+  expect((await timeline.boundingBox())!.height).toBeLessThanOrEqual(176);
+  expect(
+    (await page.getByLabel("古舆地图画布").boundingBox())!.height,
+  ).toBeGreaterThan(844 * 0.55);
   await page.getByRole("button", { name: "查看历史事件：永安桥始建" }).click();
 
   const eventDialog = page.getByRole("dialog");

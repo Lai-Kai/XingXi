@@ -83,7 +83,7 @@ class MapPointOut(_Model):
     evidence: tuple[MapEvidenceOut, ...]
     review_status: ReviewStatus | None = None
     release_id: str | None = None
-    record_kind: Literal["reference", "corpus"] = "reference"
+    record_kind: Literal["reference", "corpus", "custom"] = "reference"
     start_year: int | None = None
     end_year: int | None = None
 
@@ -1206,6 +1206,14 @@ async def list_reference_map_points(point_id: list[str] = Query(default=[])) -> 
     """Read curated modern references separately from published knowledge assets."""
     selected = set(point_id)
     return [point for point in POINTS if point.record_kind == "reference" and (not selected or point.id in selected)]
+
+
+@router.get("/reference-events", response_model=list[TimelineEventOut])
+async def list_reference_map_events(point_id: list[str] = Query(default=[])) -> list[TimelineEventOut]:
+    """Read sourced reference chronology without changing a knowledge snapshot."""
+    selected = set(point_id)
+    reference_ids = {point.id for point in POINTS if point.record_kind == "reference" and (not selected or point.id in selected)}
+    return [event for event in EVENTS if event.record_kind == "reference" and event.release_id is None and event.evidence and event.point_id in reference_ids]
 
 
 @router.get("/points", response_model=list[MapPointOut])

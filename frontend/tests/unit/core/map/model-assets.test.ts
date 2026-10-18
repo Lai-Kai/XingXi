@@ -1,6 +1,10 @@
 import { describe, expect, it } from "@rstest/core";
 
-import { getPointModelAsset, MAP_MODEL_ASSETS } from "@/core/map/model-assets";
+import {
+  formatModelAssetSize,
+  getPointModelAsset,
+  MAP_MODEL_ASSETS,
+} from "@/core/map/model-assets";
 
 describe("map model bindings", () => {
   it("binds the seven existing models to exact reference point/entity pairs", () => {
@@ -61,5 +65,18 @@ describe("map model bindings", () => {
         recordKind: "reference",
       }),
     ).toBeNull();
+  });
+
+  it("labels a supplied GLB with its size in mebibytes for the model tab", () => {
+    for (const asset of MAP_MODEL_ASSETS) {
+      expect(formatModelAssetSize(asset.sizeBytes)).toBe(
+        `${(asset.sizeBytes! / (1024 * 1024)).toFixed(1)}MB`,
+      );
+    }
+    expect(formatModelAssetSize(71633044)).toBe("68.3MB");
+    expect(formatModelAssetSize(75036744)).toBe("71.6MB");
+    expect(formatModelAssetSize(undefined)).toBeNull();
+    expect(formatModelAssetSize(Number.NaN)).toBeNull();
+    expect(formatModelAssetSize(0)).toBeNull();
   });
 });

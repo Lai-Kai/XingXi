@@ -33,6 +33,7 @@ _ADMIN_DETAIL = "Administrator privileges are required to manage knowledge graph
 @router.get("/directory")
 async def graph_overview(
     request: Request,
+    view: Literal["published", "working"] = "published",
     scope: Literal["all", "people"] = "all",
     relation_type: str | None = Query(default=None, max_length=64),
     review_status: ReviewStatus | None = None,
@@ -50,6 +51,8 @@ async def graph_overview(
 
     user = await get_current_user_from_request(request)
     admin = user.system_role == "admin"
+    if view == "working" and not admin:
+        raise HTTPException(status_code=403, detail=_ADMIN_DETAIL)
     if review_status and review_status != ReviewStatus.REVIEWED and not admin:
         raise HTTPException(status_code=403, detail=_ADMIN_DETAIL)
     factory = get_session_factory()
@@ -58,6 +61,7 @@ async def graph_overview(
     try:
         result = await SqlGraphOverviewRepository(factory).read(
             admin=admin,
+            view=view,
             directory=request.url.path.endswith("/directory"),
             scope=scope,
             relation_type=relation_type,

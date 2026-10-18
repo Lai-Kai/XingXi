@@ -12,6 +12,7 @@ import {
   type Edge,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -21,7 +22,10 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { GraphReviewControls } from "@/components/workspace/graph-review-controls";
-import { reviewRelation } from "@/core/knowledge-graph/api";
+import {
+  invalidateGraphCatalogCache,
+  reviewRelation,
+} from "@/core/knowledge-graph/api";
 import { layoutGraphEntities } from "@/core/knowledge-graph/layout";
 import {
   fetchOverview,
@@ -69,6 +73,11 @@ const relations: Record<GraphRelation["relation_type"], string> = {
 const control = "rounded border bg-white px-3 py-2 text-sm disabled:opacity-50";
 
 export function GraphOverview({ isAdmin }: { isAdmin: boolean }) {
+  const [view, setView] = useState<"working" | "published">(
+    isAdmin ? "working" : "published",
+  );
+  const effectiveView = isAdmin ? view : "published";
+  const [notice, setNotice] = useState<string | null>(null);
   const [mode, setMode] = useState<"overview" | "local">("overview");
   const [scope, setScope] = useState<"all" | "people">("all");
   const [relationType, setRelationType] = useState("");
@@ -108,6 +117,7 @@ export function GraphOverview({ isAdmin }: { isAdmin: boolean }) {
   const currentMode = useRef(mode);
   currentMode.current = mode;
   const filterKey = JSON.stringify([
+    effectiveView,
     scope,
     relationType,
     review,
@@ -118,6 +128,7 @@ export function GraphOverview({ isAdmin }: { isAdmin: boolean }) {
   const loadedKey = useRef("");
   const data = mode === "overview" ? overview : local;
   const options: OverviewOptions = {
+    view: effectiveView,
     scope,
     relation_type: relationType,
     review_status: review || undefined,
@@ -194,6 +205,7 @@ export function GraphOverview({ isAdmin }: { isAdmin: boolean }) {
   }, [mode, center, filterKey]);
 
   const directoryOptions = {
+    view: effectiveView,
     scope,
     relation_type: relationType,
     review_status: review || undefined,
@@ -415,7 +427,23 @@ export function GraphOverview({ isAdmin }: { isAdmin: boolean }) {
             onReview={async (status, note) => {
               setSaving(true);
               try {
-                await reviewRelation(edge.id, status, note, edge.review_status);
+                const updated = await reviewRelation(
+                  edge.id,
+                  status,
+                  note,
+                  edge.review_status,
+                );
+                invalidateGraphCatalogCache();
+                if (effectiveView === "published") {
+                  setView("working");
+                  setMode("overview");
+                  setCenter(null);
+                }
+                setNotice(
+                  `关系${reviewLabels[updated.review_status]}，已更新工作图谱群组。`,
+                );
+                if (review && review !== updated.review_status) setReview("");
+                setComponent("");
                 setRefresh((v) => v + 1);
               } finally {
                 setSaving(false);
@@ -473,6 +501,50 @@ export function GraphOverview({ isAdmin }: { isAdmin: boolean }) {
 
   return (
     <section className="mt-4 space-y-4" aria-label="知识图谱浏览">
+      {isAdmin && (
+        <div className="space-y-2 rounded border bg-teal-50 p-3 text-sm">
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              className={control}
+              aria-label="图谱数据范围"
+              value={effectiveView}
+              onChange={(event) => {
+                setView(event.target.value as "working" | "published");
+                setMode("overview");
+                setCenter(null);
+                setComponent("");
+                setReview("");
+                setSelected(null);
+                setSelectedEdge(null);
+                setNotice(null);
+                viewport.current = null;
+              }}
+            >
+              <option value="working">工作图谱（含待复核关系）</option>
+              <option value="published">当前知识版本图谱</option>
+            </select>
+            <Link className={control} href="/workspace/library?upload=1">
+              导入文献生成图谱
+            </Link>
+            <Link className={control} href="/workspace/library">
+              从已有文献生成
+            </Link>
+          </div>
+          <p>
+            {effectiveView === "working"
+              ? "文献解析抽取后自动进入工作图谱；关系复核通过后，群组和计数随即更新。选择“已通过”可查看已复核关系。"
+              : "此范围展示当前知识版本中的关系；新抽取及新复核的关系可在工作图谱中查看。"}
+          </p>
+          {!!data?.authorization_pending_sources && (
+            <p>
+              工作资料中有 {data.authorization_pending_sources}{" "}
+              个来源待确认授权，
+              这里只展示已有主体、关系与出处定位。可到文献库确认内部处理用途后继续生成。
+            </p>
+          )}
+        </div>
+      )}
+      {notice && <p role="status">{notice}</p>}
       <div
         className="flex flex-wrap items-center gap-2"
         role="group"
@@ -539,7 +611,7 @@ export function GraphOverview({ isAdmin }: { isAdmin: boolean }) {
             setRefresh((v) => v + 1);
           }}
         >
-          重新加载
+          {effectiveView === "working" ? "更新工作图谱" : "重新加载"}
         </button>
       </div>
       {error && (
@@ -571,7 +643,11 @@ export function GraphOverview({ isAdmin }: { isAdmin: boolean }) {
             </div>
           )}
           {!data.total_edges && (
-            <p>当前知识版本和筛选下暂无可展示关系，请查看主体目录。</p>
+            <p>
+              {effectiveView === "working"
+                ? "当前筛选下暂无关系。可清除筛选，或导入文献生成新的关系网；没有连线的主体可在目录中查看。"
+                : "当前知识版本和筛选下暂无可展示关系，请查看主体目录。"}
+            </p>
           )}
         </>
       )}

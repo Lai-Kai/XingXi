@@ -7,7 +7,7 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 
@@ -271,6 +271,9 @@ class OperationsRepository:
         return snapshot
 
     async def prepare_release(self, session, release, *, actor_id: str, created_at) -> dict[str, Any]:  # noqa: ANN001
+        from deerflow.persistence.wu_culture.graph_repository import _entity_scope_expression
+        from deerflow.persistence.wu_culture.model import WuEntityRow
+
         if self._publication_map_manifest_factory is not None:
             map_manifest = await self._publication_map_manifest_factory(release)
         elif self._publication_map_manifest is not None:
@@ -279,6 +282,18 @@ class OperationsRepository:
             map_manifest = self._publication_map_manifest
         else:
             raise RuntimeError("release asset preparation requires a versioned map manifest")
+        graph_entities = None
+        if release.scope == "internal":
+            graph_entities = [
+                dict(row)
+                for row in (
+                    await session.execute(
+                        select(WuEntityRow.id, WuEntityRow.canonical_name, WuEntityRow.entity_type, WuEntityRow.review_status).where(_entity_scope_expression(release.id), WuEntityRow.review_status != "rejected").order_by(WuEntityRow.id)
+                    )
+                )
+                .mappings()
+                .all()
+            ]
         return await self.ensure_asset_snapshot_in_session(
             session,
             release_id=release.id,
@@ -286,6 +301,7 @@ class OperationsRepository:
             map_manifest=map_manifest,
             actor_id=actor_id,
             created_at=created_at,
+            graph_entities=graph_entities,
         )
 
     @staticmethod
@@ -317,6 +333,7 @@ class OperationsRepository:
         map_manifest: dict[str, Any],
         actor_id: str,
         created_at,
+        graph_entities: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         existing = (
             (
@@ -355,14 +372,18 @@ class OperationsRepository:
                 raise RuntimeError(f"asset snapshot disappeared for release {release_id!r}")
             return dict(refreshed)
         entities = (
-            (
-                await session.execute(
-                    text("SELECT id,canonical_name,entity_type,review_status FROM wu_entities WHERE release_id=:release_id ORDER BY id"),
-                    {"release_id": release_id},
+            graph_entities
+            if graph_entities is not None
+            else (
+                (
+                    await session.execute(
+                        text("SELECT id,canonical_name,entity_type,review_status FROM wu_entities WHERE release_id=:release_id ORDER BY id"),
+                        {"release_id": release_id},
+                    )
                 )
+                .mappings()
+                .all()
             )
-            .mappings()
-            .all()
         )
         graph_hash = hashlib.sha256(_json([dict(row) for row in entities]).encode()).hexdigest()
         map_hash = hashlib.sha256(_json(map_manifest).encode()).hexdigest()

@@ -60,13 +60,11 @@ describe("historical timeline scale", () => {
       itemWidth: 156,
       laneGap: 12,
     });
-    const sameYear = layout.groups.filter(
-      (item) => item.year === 1689,
-    );
+    const sameYear = layout.groups.filter((item) => item.year === 1689);
 
     expect(sameYear).toHaveLength(1);
     expect(sameYear[0]?.events).toHaveLength(2);
-    expect(layout.heightPx).toBeLessThanOrEqual(340);
+    expect(layout.heightPx).toBeLessThanOrEqual(200);
     expect(layout.widthPx).toBeGreaterThanOrEqual(960);
   });
 
@@ -101,6 +99,8 @@ describe("historical timeline scale", () => {
     expect(song).toBeDefined();
     expect(yuan).toBeDefined();
     expect(song!.track).not.toBe(yuan!.track);
-    expect(layout.eventTopPx).toBeGreaterThan(80);
+    expect(layout.eventTopPx).toBeGreaterThan(
+      32 + (layout.dynastyBandTrackCount - 1) * 18 + 16,
+    );
   });
 });

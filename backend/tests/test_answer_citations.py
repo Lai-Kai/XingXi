@@ -263,3 +263,32 @@ def test_middleware_rewrites_final_ai_message_using_tool_evidence_pack() -> None
     assert "[citation:1](evidence://evidence-1)" in message.content
     assert "missing-id" not in message.content
     assert message.response_metadata["citation_validation"]["rejected_count"] == 1
+
+
+@pytest.mark.parametrize("include_reasoning", [False, True])
+def test_citation_validation_handles_response_blocks_without_losing_or_duplicating_answer(include_reasoning: bool) -> None:
+    blocks = [
+        {"type": "text", "text": "先核对原文。[citation:7](evidence://evidence-1)"},
+        {"type": "text", "text": "再比较独立记载。[citation:8](evidence://missing-id)"},
+    ]
+    reasoning = {"type": "reasoning", "summary": [{"type": "summary_text", "text": "private-reasoning"}]}
+    if include_reasoning:
+        blocks.insert(0, reasoning)
+    payload = {"status": "supported", "evidence_pack": _pack().model_dump(mode="json"), "hits": []}
+    update = EvidenceCitationMiddleware().after_model(
+        {"messages": [ToolMessage(content=json.dumps(payload), tool_call_id="search-1"), AIMessage(content=blocks, id="answer-1")]},
+        runtime=object(),  # type: ignore[arg-type]
+    )
+
+    assert update is not None
+    message = update["messages"][0]
+    visible = "\n".join(block["text"] for block in message.content if block.get("type") == "text")
+    assert message.id == "answer-1"
+    assert visible.count("先核对原文。") == 1
+    assert visible.count("再比较独立记载。") == 1
+    assert "[citation:1](evidence://evidence-1)" in visible
+    assert "missing-id" not in visible
+    assert "private-reasoning" not in visible
+    assert message.response_metadata["citation_validation"]["rejected_count"] == 1
+    if include_reasoning:
+        assert message.content[0] == reasoning

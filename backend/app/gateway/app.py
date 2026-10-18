@@ -23,6 +23,7 @@ from app.gateway.routers import (
     channels,
     console,
     corpus_imports,
+    custom_map_points,
     entities,  # noqa: F401
     features,
     feedback,
@@ -31,12 +32,14 @@ from app.gateway.routers import (
     knowledge_graph,
     knowledge_releases,
     knowledge_search,
+    map_models,
     map_points,  # noqa: F401
     mcp,
     memory,
     models,
     operations,
     public_knowledge,
+    reconstructions,
     research_feed,
     research_projects,
     runs,
@@ -449,6 +452,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             except Exception:
                 logger.exception("Failed to stop scheduled task service")
 
+        if getattr(app.state, "reconstruction_service", None) is not None:
+            try:
+                await asyncio.wait_for(app.state.reconstruction_service.close(), timeout=5)
+            except Exception:
+                logger.warning("Reconstruction connection tasks will resume on the next request")
+
         # Drain the memory backend's pending-update buffer before the worker
         # exits (best-effort, bounded). IM channels and the scheduler are
         # already stopped above, so no new IM/scheduler updates arrive during
@@ -666,6 +675,9 @@ This gateway provides Xingxi runtime endpoints plus supporting model, MCP, memor
     app.include_router(knowledge_graph.router)
     app.include_router(entities.router)
     app.include_router(map_points.router)
+    app.include_router(map_models.router)
+    app.include_router(custom_map_points.router)
+    app.include_router(reconstructions.router)
     app.include_router(operations.router)
     from app.gateway.evaluations.api import router as evaluation_router
 

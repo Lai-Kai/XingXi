@@ -79,9 +79,7 @@ function tickStep(span: number): number {
   return nice * magnitude;
 }
 
-export function buildTimelineScale(
-  events: TimelineEventLike[],
-): TimelineScale {
+export function buildTimelineScale(events: TimelineEventLike[]): TimelineScale {
   const dated = datedEvents(events);
   if (!dated.length) return { startYear: 0, endYear: 1, span: 1 };
   const minimum = dated[0]!.yearStart;
@@ -151,12 +149,14 @@ function buildDynastyBands(
     trackEnds[track] = end;
     const leftPx = paddingPx + timelinePosition(start, scale) * usableWidthPx;
     const rightPx = paddingPx + timelinePosition(end, scale) * usableWidthPx;
-    return [{
-      ...dynasty,
-      leftPx,
-      widthPx: Math.max(1, rightPx - leftPx),
-      track,
-    }];
+    return [
+      {
+        ...dynasty,
+        leftPx,
+        widthPx: Math.max(1, rightPx - leftPx),
+        track,
+      },
+    ];
   });
   return { bands, trackCount: Math.max(1, trackEnds.length) };
 }
@@ -196,7 +196,7 @@ export function buildTimelineLayout<T extends TimelineEventLike>(
       ticks: [],
       dynastyBands: [],
       dynastyBandTrackCount: 0,
-      eventTopPx: 80,
+      eventTopPx: 56,
     };
   }
   const scale = buildTimelineScale(events);
@@ -208,39 +208,39 @@ export function buildTimelineLayout<T extends TimelineEventLike>(
   );
   const widthPx = usableWidthPx + paddingPx * 2;
   const laneGap = options.laneGap ?? 18;
-  const laneHeight = options.laneHeight ?? 104;
+  const laneHeight = options.laneHeight ?? 56;
   const dynastyBandLayout = buildDynastyBands(scale, usableWidthPx, paddingPx);
-  const eventTopPx = 88 + (dynastyBandLayout.trackCount - 1) * 22;
+  const eventTopPx = 56 + (dynastyBandLayout.trackCount - 1) * 18;
   const laneEnds: number[] = [];
-  const groups = groupDatedEvents(events).map(({ year, events: groupedEvents }) => {
-    const leftPx = paddingPx + timelinePosition(year, scale) * usableWidthPx;
-    const intervalStart = leftPx - itemWidth / 2;
-    const intervalEnd = leftPx + itemWidth / 2;
-    let lane = laneEnds.findIndex((end) => intervalStart >= end + laneGap);
-    if (lane < 0) {
-      // Dense data stays within two compact tracks; this fallback preserves
-      // the true x coordinate when both tracks are occupied.
-      lane = laneEnds.length < 2
-        ? laneEnds.length
-        : laneEnds.indexOf(Math.min(...laneEnds));
-    }
-    laneEnds[lane] = intervalEnd;
-    return {
-      id: `timeline-year-${year}`,
-      year,
-      events: groupedEvents,
-      leftPx,
-      lane,
-    };
-  });
+  const groups = groupDatedEvents(events).map(
+    ({ year, events: groupedEvents }) => {
+      const leftPx = paddingPx + timelinePosition(year, scale) * usableWidthPx;
+      const intervalStart = leftPx - itemWidth / 2;
+      const intervalEnd = leftPx + itemWidth / 2;
+      let lane = laneEnds.findIndex((end) => intervalStart >= end + laneGap);
+      if (lane < 0) {
+        // Dense data stays within two compact tracks; this fallback preserves
+        // the true x coordinate when both tracks are occupied.
+        lane =
+          laneEnds.length < 2
+            ? laneEnds.length
+            : laneEnds.indexOf(Math.min(...laneEnds));
+      }
+      laneEnds[lane] = intervalEnd;
+      return {
+        id: `timeline-year-${year}`,
+        year,
+        events: groupedEvents,
+        leftPx,
+        lane,
+      };
+    },
+  );
   const laneCount = Math.min(2, Math.max(1, laneEnds.length));
   return {
     scale,
     widthPx,
-    heightPx: Math.max(
-      260,
-      Math.min(340, eventTopPx + Math.min(2, laneCount) * laneHeight + 24),
-    ),
+    heightPx: eventTopPx + laneCount * laneHeight + 8,
     paddingPx,
     laneCount,
     groups,

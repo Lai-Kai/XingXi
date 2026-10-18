@@ -181,8 +181,9 @@ def build_search_sources_tool(
         Call this before making factual historical claims. Every returned hit
         contains stable document, volume, section, and page locators; verbatim
         source text is returned in the evidence pack.
-        Treat an insufficient response as "暂无明确方志记载" rather than evidence
-        that an event or object never existed.
+        An insufficient response only limits local verification. Still offer
+        useful background with a brief qualification and no invented citations;
+        never infer that an event or object did not exist from a search miss.
         When a response supplies resolved_query and next_cursor, use that
         resolved_query for the next page.
 

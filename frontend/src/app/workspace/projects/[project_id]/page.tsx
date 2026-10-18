@@ -160,7 +160,7 @@ export default function ResearchProjectWorkspacePage() {
         !documentIds.has(document.id) &&
         (!query ||
           document.title.toLocaleLowerCase("zh-CN").includes(query) ||
-          document.edition.toLocaleLowerCase("zh-CN").includes(query)),
+          (document.edition ?? "").toLocaleLowerCase("zh-CN").includes(query)),
     );
   }, [availableDocuments, documentIds, documentQuery]);
 

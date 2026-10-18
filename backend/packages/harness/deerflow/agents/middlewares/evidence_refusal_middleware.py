@@ -1,4 +1,4 @@
-"""Force structured refusal when retrieval lacks usable historical evidence."""
+"""Keep research answers useful while labelling their actual evidence limits."""
 
 from __future__ import annotations
 
@@ -11,54 +11,20 @@ from langchain.agents import AgentState
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.runtime import Runtime
+from wu_culture.citations import validate_answer_citations
 from wu_culture.evidence_pack import EvidencePack, EvidencePackItem, EvidencePackStatus
+from wu_culture.models import ReviewStatus, SourceLevel
 from wu_culture.refusal import (
-    RefusalReason,
     evaluate_refusal,
     is_historical_nonexistence_claim,
 )
 
+from ._message_content import message_text as _message_text
+from ._message_content import set_message_text as _set_message_text
+
 logger = logging.getLogger(__name__)
 
 _INLINE_REASONING_RE = re.compile(r"<think>\s*([\s\S]*?)\s*</think>", re.IGNORECASE)
-
-
-def _message_text(content: Any) -> str | None:
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        pieces: list[str] = []
-        for part in content:
-            if isinstance(part, str):
-                pieces.append(part)
-            elif isinstance(part, dict) and isinstance(part.get("text"), str):
-                pieces.append(part["text"])
-            else:
-                return None
-        return "\n".join(pieces) if pieces else None
-    return None
-
-
-def _set_message_text(message: AIMessage, text: str) -> AIMessage:
-    content = message.content
-    if isinstance(content, str) or content is None:
-        return message.model_copy(update={"content": text})
-    if isinstance(content, list):
-        replaced = False
-        new_parts: list[Any] = []
-        for part in content:
-            if not replaced and isinstance(part, str):
-                new_parts.append(text)
-                replaced = True
-            elif not replaced and isinstance(part, dict) and part.get("type") in {"text", "output_text"}:
-                new_parts.append({**part, "text": text})
-                replaced = True
-            else:
-                new_parts.append(part)
-        if not replaced:
-            new_parts.append({"type": "text", "text": text})
-        return message.model_copy(update={"content": new_parts})
-    return message.model_copy(update={"content": text})
 
 
 def _inline_reasoning(content: Any) -> str | None:
@@ -163,11 +129,14 @@ def _merge_evidence_packs(packs: list[EvidencePack]) -> EvidencePack | None:
     )
 
 
-def _latest_retrieval_context(messages: list[Any]) -> tuple[str | None, EvidencePack | None, list[str]]:
+def _latest_retrieval_context(messages: list[Any]) -> tuple[str | None, EvidencePack | None, list[str], str | None]:
     statuses: list[str] = []
     packs: list[EvidencePack] = []
     document_ids: list[str] = []
+    verified_topic_query: str | None = None
     for message in reversed(messages):
+        if isinstance(message, HumanMessage) and not (message.additional_kwargs or {}).get("hide_from_ui"):
+            break
         if not isinstance(message, ToolMessage):
             continue
         text = _message_text(message.content)
@@ -183,6 +152,12 @@ def _latest_retrieval_context(messages: list[Any]) -> tuple[str | None, Evidence
         # retrieval results and must not affect evidence refusal decisions.
         if "evidence_pack" not in data and "hits" not in data:
             continue
+        # Daily-topic prompts include presentation instructions; relevance is
+        # checked against the card query returned after its evidence was loaded
+        # and authorized, rather than those incidental instruction words.
+        resolved_query = data.get("resolved_query")
+        if verified_topic_query is None and data.get("attached_daily_topic_evidence") is True and isinstance(resolved_query, str) and resolved_query.strip():
+            verified_topic_query = resolved_query.strip()
         if "status" in data:
             statuses.append(str(data.get("status") or "insufficient"))
             pack_data = data.get("evidence_pack")
@@ -201,24 +176,52 @@ def _latest_retrieval_context(messages: list[Any]) -> tuple[str | None, Evidence
                     if isinstance(doc_id, str):
                         document_ids.append(doc_id)
     if not statuses and not packs:
-        return None, None, document_ids
+        return None, None, document_ids, verified_topic_query
 
     pack = _merge_evidence_packs(packs)
     if pack is not None and pack.items:
         # A supported pack remains supported even when a later exploratory
         # query returned no rows. This distinguishes "one query missed" from
         # "the corpus has no usable evidence".
-        status = "supported" if "supported" in statuses else next(
-            (value for value in statuses if value not in {"insufficient", "empty"}),
-            "supported",
+        status = (
+            "supported"
+            if "supported" in statuses
+            else next(
+                (value for value in statuses if value not in {"insufficient", "empty"}),
+                "supported",
+            )
         )
     else:
         status = statuses[0] if statuses else None
-    return status, pack, list(dict.fromkeys(document_ids))
+    return status, pack, list(dict.fromkeys(document_ids)), verified_topic_query
+
+
+def _source_quality_note(pack: EvidencePack | None, answer: str) -> str:
+    """Source grading and snippet review describe quality, not retrieval success."""
+    if pack is None or not pack.items:
+        return ""
+    items = pack.items
+    cited_ids = {ref.evidence_id for ref in validate_answer_citations(answer, pack=pack).valid_refs}
+    if cited_ids:
+        items = tuple(item for item in items if item.evidence_id in cited_ids)
+    notes: list[str] = []
+    unrated = sum(item.source_level is SourceLevel.U for item in items)
+    low_grade = sum(item.source_level in {SourceLevel.D, SourceLevel.E} for item in items)
+    pending = sum(item.review_status is ReviewStatus.PENDING for item in items)
+    disputed = sum(item.review_status is ReviewStatus.DISPUTED for item in items)
+    if unrated:
+        notes.append("来源尚未评级" if unrated == len(items) else "部分来源尚未评级")
+    if low_grade:
+        notes.append("D/E 级材料仅作研究线索，相关说法仍需核验" if low_grade == len(items) else "部分 D/E 级材料仅作研究线索，相关说法仍需核验")
+    if pending:
+        notes.append("引用片段待复核" if pending == len(items) else "部分引用片段待复核")
+    if disputed:
+        notes.append("引用材料存在争议，需保留不同说法" if disputed == len(items) else "部分引用材料存在争议，需保留不同说法")
+    return "资料说明：" + "；".join(notes) + "。" if notes else ""
 
 
 class EvidenceRefusalMiddleware(AgentMiddleware[AgentState]):
-    """Replace unsupported historical answers with the product refusal contract."""
+    """Preserve the answer and distinguish source records from verified facts."""
 
     def after_model(self, state: AgentState, runtime: Runtime) -> dict[str, Any] | None:  # noqa: ARG002
         return self._apply(state)
@@ -234,11 +237,11 @@ class EvidenceRefusalMiddleware(AgentMiddleware[AgentState]):
         if _has_tool_calls(message):
             return None
 
-        status, pack, document_ids = _latest_retrieval_context(messages)
+        status, pack, document_ids, verified_topic_query = _latest_retrieval_context(messages)
         if status is None and pack is None:
             return None
 
-        query = _latest_user_query(messages)
+        query = verified_topic_query or _latest_user_query(messages)
         refusal = evaluate_refusal(
             query=query or "（未捕获用户问题）",
             search_status=status,
@@ -248,32 +251,28 @@ class EvidenceRefusalMiddleware(AgentMiddleware[AgentState]):
         )
         text = _message_text(message.content) or ""
         answer_text = _visible_answer(message.content)
-        low_grade_only = refusal.decision.reason is RefusalReason.LOW_GRADE_ONLY
+        quality_note = _source_quality_note(pack, answer_text)
         must_rewrite = refusal.decision.should_refuse
         nonexistence = is_historical_nonexistence_claim(text)
 
-        if not must_rewrite and not low_grade_only and not nonexistence:
+        if not must_rewrite and not quality_note and not nonexistence:
             return None
 
         message = _preserve_reasoning(message)
         if must_rewrite:
             supplement = _guard_unverified_supplement(answer_text)
-            replacement = refusal.text
             if supplement:
-                replacement += "\n\n补充分析（以下内容未被当前本地文献核验）：\n" + supplement
-            updated = _set_message_text(message, replacement)
-        elif low_grade_only:
-            supplement = _guard_unverified_supplement(answer_text)
-            replacement = (
-                "当前检索到的材料均为 D/E/U 级或待复核来源，暂无经复核的明确记载。"
-                "以下内容保留为补充分析，不作为已核定史实："
-            )
-            if supplement:
-                replacement += "\n\n" + supplement
+                replacement = supplement + f"\n\n本地资料核验：{refusal.message}；以上为背景说明或待核验分析。"
+            else:
+                replacement = refusal.text
             updated = _set_message_text(message, replacement)
         else:
-            # Soft guard: strip nonexistence overclaim while keeping answer body.
-            guarded = answer_text + "\n\n说明：当前检索未支持“历史上不存在”之类绝对判断；未找到记载不等于历史上不存在。"
+            guarded = answer_text
+            if nonexistence:
+                guarded = _guard_unverified_supplement(guarded)
+                guarded += "\n\n说明：当前检索未支持“历史上不存在”之类绝对判断；未找到记载不等于历史上不存在。"
+            if quality_note and quality_note not in guarded:
+                guarded += "\n\n" + quality_note
             updated = _set_message_text(message, guarded)
 
         metadata = dict(updated.response_metadata or {})
@@ -282,6 +281,7 @@ class EvidenceRefusalMiddleware(AgentMiddleware[AgentState]):
             "reason": refusal.decision.reason.value,
             "nonexistence_claim_blocked": nonexistence,
             "message": refusal.message,
+            "search_scope_summary": refusal.search_scope_summary,
         }
         updated = updated.model_copy(update={"response_metadata": metadata})
         return {"messages": [updated]}

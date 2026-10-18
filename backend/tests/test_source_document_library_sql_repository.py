@@ -12,11 +12,8 @@ from wu_culture.storage import ObjectKind, StoredObject
 from deerflow.persistence.base import Base
 from deerflow.persistence.object_storage import ObjectMetadataRow
 from deerflow.persistence.wu_culture import (
-    IngestionEventRow,
+    WU_CULTURE_TABLES,
     IngestionJobRow,
-    IngestionStepRow,
-    SourceDocumentRow,
-    SourceFileRow,
     SqlIngestionJobRepository,
     SqlSourceDocumentRepository,
     SqlSourceFileRepository,
@@ -44,14 +41,7 @@ async def _exercise_library_page(tmp_path):
         await connection.run_sync(
             lambda sync_connection: Base.metadata.create_all(
                 sync_connection,
-                tables=[
-                    SourceDocumentRow.__table__,
-                    ObjectMetadataRow.__table__,
-                    SourceFileRow.__table__,
-                    IngestionJobRow.__table__,
-                    IngestionStepRow.__table__,
-                    IngestionEventRow.__table__,
-                ],
+                tables=[*WU_CULTURE_TABLES, ObjectMetadataRow.__table__],
             )
         )
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -125,3 +115,77 @@ async def _exercise_library_page(tmp_path):
     assert items[0].files[0].ingestion_job.id == "job-2"
 
     await engine.dispose()
+
+
+def test_library_review_status_tracks_exact_latest_chunks_and_pages_independently_of_job(tmp_path):
+    asyncio.run(_exercise_library_review(tmp_path))
+
+
+async def _exercise_library_review(tmp_path):
+    import json
+
+    from sqlalchemy import insert, update
+    from test_text_review_sql_repository import _seed_review_targets
+    from wu_culture import ReviewStatus
+    from wu_culture.review import ReviewBatchRequest, ReviewRequest, ReviewTargetType
+
+    from deerflow.persistence.wu_culture import WU_CULTURE_TABLES, ChunkSetRow, CleanedOcrPageRow, SqlReviewRepository, TextChunkRow
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'library-review.db'}")
+    async with engine.begin() as connection:
+        await connection.run_sync(lambda sync: Base.metadata.create_all(sync, tables=[*WU_CULTURE_TABLES, ObjectMetadataRow.__table__]))
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    await _seed_review_targets(factory)
+    job, event_record = create_ingestion_job(job_id="job-failed", document_id="document-1", source_file_id="file-1", idempotency_key="test-job", created_by="admin-1", now=NOW)
+    await SqlIngestionJobRepository(factory).create(job, event_record)
+    async with factory.begin() as session:
+        await session.execute(update(IngestionJobRow).where(IngestionJobRow.id == job.id).values(status="failed", error_code="index_failed", error_message="temporary failure"))
+    repository = SqlSourceDocumentRepository(factory)
+
+    async def current():
+        items, _ = await repository.list_library_page()
+        item = items[0].files[0]
+        assert item.ingestion_job.status.value == "failed"
+        return item
+
+    try:
+        assert (await current()).review_status is ReviewStatus.PENDING
+        review = SqlReviewRepository(factory)
+        await review.review_many(
+            document_id="document-1",
+            source_file_id="file-1",
+            batch=ReviewBatchRequest(
+                items=(ReviewRequest(target_type=ReviewTargetType.PAGE, target_id="cleaned-page-1", decision=ReviewStatus.REVIEWED), ReviewRequest(target_type=ReviewTargetType.CHUNK, target_id="chunk-1", decision=ReviewStatus.REVIEWED))
+            ),
+            reviewed_by="admin-1",
+            reviewed_at=NOW,
+            batch_id="library-review",
+        )
+        assert (await current()).review_status is ReviewStatus.REVIEWED
+        async with factory.begin() as session:
+            page = await session.get(CleanedOcrPageRow, "cleaned-page-1")
+            page_values = {column.name: getattr(page, column.name) for column in CleanedOcrPageRow.__table__.columns}
+            await session.execute(insert(CleanedOcrPageRow), [{**page_values, "id": "unused-new-page", "generation_number": 2, "review_status": "pending"}])
+        assert (await current()).review_status is ReviewStatus.REVIEWED
+        async with factory.begin() as session:
+            chunk_set = await session.get(ChunkSetRow, "chunk-set-1")
+            values = {column.name: getattr(chunk_set, column.name) for column in ChunkSetRow.__table__.columns}
+            await session.execute(insert(ChunkSetRow), [{**values, "id": "chunk-set-2", "split_version": "split-v2", "generated_at": NOW + timedelta(days=1)}])
+            chunk = await session.get(TextChunkRow, "chunk-1")
+            values = {column.name: getattr(chunk, column.name) for column in TextChunkRow.__table__.columns}
+            await session.execute(insert(TextChunkRow), [{**values, "id": "chunk-2", "chunk_set_id": "chunk-set-2", "split_version": "split-v2", "review_status": "pending"}])
+        assert (await current()).chunk_set_id == "chunk-set-2"
+        assert (await current()).review_status is ReviewStatus.PENDING
+        async with factory.begin() as session:
+            await session.execute(update(TextChunkRow).where(TextChunkRow.id == "chunk-2").values(review_status="reviewed"))
+            await session.execute(update(CleanedOcrPageRow).where(CleanedOcrPageRow.id == "cleaned-page-1").values(review_status="disputed"))
+        assert (await current()).review_status is ReviewStatus.DISPUTED
+        async with factory.begin() as session:
+            await session.execute(update(CleanedOcrPageRow).where(CleanedOcrPageRow.id == "cleaned-page-1").values(review_status="rejected"))
+        assert (await current()).review_status is ReviewStatus.REJECTED
+        async with factory.begin() as session:
+            await session.execute(update(CleanedOcrPageRow).where(CleanedOcrPageRow.id == "cleaned-page-1").values(review_status="reviewed"))
+            await session.execute(update(TextChunkRow).where(TextChunkRow.id == "chunk-2").values(cleaned_page_ids_json=json.dumps(["missing-page"])))
+        assert (await current()).review_status is ReviewStatus.PENDING
+    finally:
+        await engine.dispose()

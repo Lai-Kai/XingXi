@@ -7,11 +7,12 @@ import httpx
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI
-from sqlalchemy import update
+from sqlalchemy import event, inspect, select, update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.gateway.routers import knowledge_graph
 from deerflow.persistence.base import Base
+from deerflow.persistence.wu_culture import overview_repository
 from deerflow.persistence.wu_culture.model import (
     WU_CULTURE_TABLES,
     EvidenceRow,
@@ -138,13 +139,16 @@ async def test_cursor_binds_filters_release_and_visible_data(overview_db):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("target,values", [
-    (WuEntityRow, {"review_status": "rejected"}),
-    (WuEntityRow, {"updated_at": datetime.now(UTC) + timedelta(days=1)}),
-    (SourceDocumentRow, {"authorization_valid_until": datetime.now(UTC) - timedelta(days=1)}),
-    (EvidenceRow, {"review_status": "pending"}),
-    (TextChunkRow, {"review_status": "disputed"}),
-])
+@pytest.mark.parametrize(
+    "target,values",
+    [
+        (WuEntityRow, {"review_status": "rejected"}),
+        (WuEntityRow, {"updated_at": datetime.now(UTC) + timedelta(days=1)}),
+        (SourceDocumentRow, {"authorization_valid_until": datetime.now(UTC) - timedelta(days=1)}),
+        (EvidenceRow, {"review_status": "pending"}),
+        (TextChunkRow, {"review_status": "disputed"}),
+    ],
+)
 async def test_ordinary_reads_fail_closed_on_each_visibility_gate(overview_db, target, values):
     client, factory = overview_db
     first = (await client.get("/api/knowledge-graph/overview", params={"max_edges": 1})).json()
@@ -181,3 +185,196 @@ async def test_component_local_filters_and_directory_pagination(overview_db):
     assert seen == ["0", "1", "2", "3", "4"]
     directory = (await client.get("/api/knowledge-graph/directory", params={"name": "木", "dynasty": "唐", "entity_type": "place"})).json()
     assert [n["id"] for n in directory["nodes"]] == ["3"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("view", ["overview", "directory"])
+async def test_graph_reads_load_only_linked_evidence_metadata(overview_db, view):
+    client, factory = overview_db
+    # A large text corpus must not be hydrated just to show a small graph.
+    async with factory.begin() as session:
+        for i in range(40):
+            key = f"unlinked-{i}"
+            session.add(TextChunkRow(id=key, document_id="0", original_text="正文" * 5000, normalized_text="正文" * 5000, page_start=2, page_end=2, review_status="reviewed"))
+            await session.flush()
+            session.add(EvidenceRow(id=key, document_id="0", chunk_id=key, quote="引文" * 5000, source_level="A", review_status="reviewed"))
+            session.add(KnowledgeReleaseItemRow(release_id="release", ordinal=100 + i, document_id="0", source_file_id="file", chunk_set_id="set", chunk_id=key, content_sha256="b" * 64, cleaned_page_ids_json="[]"))
+
+    loaded_evidence = {}
+    loaded_chunks = {}
+
+    def track_evidence(row, _context):
+        loaded_evidence[row.id] = inspect(row).unloaded
+
+    def track_chunk(row, _context):
+        loaded_chunks[row.id] = inspect(row).unloaded
+
+    event.listen(EvidenceRow, "load", track_evidence)
+    event.listen(TextChunkRow, "load", track_chunk)
+    try:
+        response = await client.get(f"/api/knowledge-graph/{view}")
+    finally:
+        event.remove(EvidenceRow, "load", track_evidence)
+        event.remove(TextChunkRow, "load", track_chunk)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["total_edges"] == 2
+    assert set(loaded_evidence) == {str(i) for i in range(7)}
+    assert all("quote" in unloaded for unloaded in loaded_evidence.values())
+    assert all({"original_text", "normalized_text"} <= unloaded for unloaded in loaded_chunks.values())
+
+
+@pytest.mark.asyncio
+async def test_shared_source_authorization_is_checked_once_per_request(overview_db, monkeypatch):
+    client, factory = overview_db
+    async with factory.begin() as session:
+        session.add(TextChunkRow(id="shared", document_id="0", original_text="补充", normalized_text="补充", page_start=2, page_end=2, review_status="reviewed"))
+        await session.flush()
+        session.add(EvidenceRow(id="shared", document_id="0", chunk_id="shared", quote="补充", source_level="A", review_status="reviewed"))
+        session.add(KnowledgeReleaseItemRow(release_id="release", ordinal=100, document_id="0", source_file_id="file", chunk_set_id="set", chunk_id="shared", content_sha256="b" * 64, cleaned_page_ids_json="[]"))
+        await session.flush()
+        session.add(WuEntityEvidenceRow(entity_id="0", evidence_id="shared"))
+
+    calls = []
+    evaluate = overview_repository.evaluate_source_access
+
+    def track_access(document, **kwargs):
+        calls.append(document.id)
+        return evaluate(document, **kwargs)
+
+    monkeypatch.setattr(overview_repository, "evaluate_source_access", track_access)
+    first = await client.get("/api/knowledge-graph/overview")
+    assert first.status_code == 200, first.text
+    assert {e["id"] for e in first.json()["edges"]} == {"a", "b"}
+    assert calls.count("0") == 1
+
+    async with factory.begin() as session:
+        await session.execute(update(SourceDocumentRow).where(SourceDocumentRow.id == "0").values(authorization_status="revoked"))
+    following = await client.get("/api/knowledge-graph/directory")
+    assert following.status_code == 200, following.text
+    assert "0" not in {n["id"] for n in following.json()["nodes"]}
+    assert calls.count("0") == 2
+
+
+@pytest.mark.asyncio
+async def test_working_groups_include_unpublished_review_chains_without_publishing(overview_db, monkeypatch):
+    client, factory = overview_db
+
+    async def admin(request, **kwargs):
+        return SimpleNamespace(id="admin", system_role="admin")
+
+    monkeypatch.setattr(knowledge_graph, "require_admin_user", admin)
+    async with factory.begin() as session:
+        # A new extracted chain has not entered the active manifest. Its endpoint
+        # entities remain pending even after the relation receives human review.
+        await session.execute(update(WuEntityRow).where(WuEntityRow.id == "7").values(release_id=None, review_status="pending"))
+        await session.execute(update(WuRelationRow).where(WuRelationRow.id == "e").values(release_id=None, review_status="pending"))
+    params = {"view": "working", "review_status": "reviewed"}
+    headers = {"x-role": "admin"}
+    before = (await client.get("/api/knowledge-graph/overview", params=params, headers=headers)).json()
+    assert "e" not in {e["id"] for e in before["edges"]}
+    response = await client.patch("/api/knowledge-graph/relations/e/review", headers=headers, json={"review_status": "reviewed", "expected_status": "pending"})
+    assert response.status_code == 200, response.text
+    page = (await client.get("/api/knowledge-graph/overview", params=params, headers=headers)).json()
+    assert page["view"] == "working" and page["release_id"] is None
+    assert "e" in {e["id"] for e in page["edges"]}
+    assert "7" in {n["id"] for n in page["nodes"]}
+    assert any(group["total_nodes"] >= 3 for group in page["components"])
+    directory = (await client.get("/api/knowledge-graph/directory", params=params, headers=headers)).json()
+    assert "7" in {n["id"] for n in directory["nodes"]}
+    assert "e" not in {e["id"] for e in (await client.get("/api/knowledge-graph/overview")).json()["edges"]}
+    # Corrections also recompute membership; approving again restores the chain
+    # without inserting duplicate graph facts or publishing a new edition.
+    rejected = await client.patch("/api/knowledge-graph/relations/e/review", headers=headers, json={"review_status": "rejected", "expected_status": "reviewed", "review_note": "证据待重核"})
+    assert rejected.status_code == 200, rejected.text
+    hidden = (await client.get("/api/knowledge-graph/overview", params={"view": "working"}, headers=headers)).json()
+    assert "7" not in {n["id"] for n in hidden["nodes"]}
+    restored = await client.patch("/api/knowledge-graph/relations/e/review", headers=headers, json={"review_status": "reviewed", "expected_status": "rejected", "review_note": "已重新核验原文"})
+    assert restored.status_code == 200, restored.text
+    shown = (await client.get("/api/knowledge-graph/overview", params=params, headers=headers)).json()
+    assert [e["id"] for e in shown["edges"]].count("e") == 1
+    async with factory() as session:
+        assert (await session.get(KnowledgeReleaseStateRow, "active")).active_release_id == "release"
+        assert (await session.scalars(select(KnowledgeReleaseRow.id))).all() == ["release"]
+        assert (await session.get(KnowledgeReleaseRow, "release")).manifest_sha256 == "a" * 64
+        assert len((await session.scalars(select(KnowledgeReleaseItemRow.chunk_id))).all()) == 7
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("view", ["overview", "directory"])
+async def test_working_graph_is_admin_review_metadata_even_without_an_active_release(overview_db, view):
+    client, factory = overview_db
+    async with factory.begin() as session:
+        await session.execute(update(KnowledgeReleaseStateRow).values(active_release_id=None))
+        await session.execute(update(SourceDocumentRow).where(SourceDocumentRow.id == "7").values(authorization_status="unconfirmed", visibility_scope="internal", authorized_uses_json="[]"))
+    result = await client.get(f"/api/knowledge-graph/{view}", params={"view": "working"}, headers={"x-role": "admin"})
+    assert result.status_code == 200, result.text
+    page = result.json()
+    assert page["view"] == "working" and page["release_id"] is None
+    assert "7" in {n["id"] for n in page["nodes"]}
+    assert page["authorization_pending_sources"] == 1
+    assert all("quote" not in evidence for evidence in page["evidence"])
+    assert (await client.get(f"/api/knowledge-graph/{view}", params={"view": "working"})).status_code == 403
+    assert (await client.get(f"/api/knowledge-graph/{view}")).json()["nodes"] == []
+    async with factory() as session:
+        assert (await session.get(SourceDocumentRow, "7")).authorization_status == "unconfirmed"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["revoked", "expired"])
+async def test_working_graph_excludes_restricted_sources_and_invalidates_cursors(overview_db, status):
+    client, factory = overview_db
+    params = {"view": "working", "max_edges": 1}
+    headers = {"x-role": "admin"}
+    first = (await client.get("/api/knowledge-graph/overview", params=params, headers=headers)).json()
+    async with factory.begin() as session:
+        await session.execute(update(SourceDocumentRow).where(SourceDocumentRow.id == "2").values(authorization_status=status))
+    page = (await client.get("/api/knowledge-graph/overview", params={"view": "working"}, headers=headers)).json()
+    assert "2" not in {n["id"] for n in page["nodes"]}
+    assert "b" not in {e["id"] for e in page["edges"]}
+    response = await client.get("/api/knowledge-graph/overview", params={**params, "cursor": first["next_cursor"]}, headers=headers)
+    assert response.status_code == 409
+    assert (await client.get("/api/knowledge-graph/overview", params={"view": "published", "cursor": first["next_cursor"]}, headers=headers)).status_code == 409
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "values",
+    [
+        {"authorized_uses_json": '["public_quote"]'},
+        {"authorization_valid_until": datetime.now(UTC) - timedelta(days=1)},
+        {"authorization_valid_from": datetime.now(UTC) + timedelta(days=1)},
+        {"authorization_status": "unconfirmed", "visibility_scope": "public", "authorized_uses_json": "[]"},
+        {"authorization_status": "unconfirmed", "visibility_scope": "internal", "authorized_uses_json": "[]", "authorization_valid_until": datetime.now(UTC) + timedelta(days=1)},
+    ],
+)
+async def test_working_review_inspection_does_not_override_other_source_policies(overview_db, values):
+    client, factory = overview_db
+    async with factory.begin() as session:
+        await session.execute(update(SourceDocumentRow).where(SourceDocumentRow.id == "2").values(**values))
+    response = await client.get("/api/knowledge-graph/overview", params={"view": "working"}, headers={"x-role": "admin"})
+    assert response.status_code == 200, response.text
+    page = response.json()
+    assert "2" not in {n["id"] for n in page["nodes"]}
+    assert "b" not in {e["id"] for e in page["edges"]}
+    assert page["authorization_pending_sources"] == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scope", ["internal", "public"])
+async def test_internal_graph_retains_only_evidence_bound_earlier_internal_facts(overview_db, scope):
+    client, factory = overview_db
+    async with factory.begin() as session:
+        await session.execute(update(KnowledgeReleaseRow).where(KnowledgeReleaseRow.id == "release").values(scope=scope, version_number=2))
+        for key, version in [("earlier", 1), ("future", 3)]:
+            session.add(KnowledgeReleaseRow(id=key, version_number=version, release_notes="test", status="ready", scope="internal", manifest_sha256=key[0] * 64, created_by="admin", created_at=datetime.now(UTC)))
+        await session.flush()
+        await session.execute(update(WuEntityRow).where(WuEntityRow.id.in_(["0", "7"])).values(release_id="earlier"))
+        await session.execute(update(WuEntityRow).where(WuEntityRow.id == "2").values(release_id="future"))
+        await session.execute(update(WuRelationRow).where(WuRelationRow.id == "a").values(release_id="earlier"))
+    response = await client.get("/api/knowledge-graph/directory", headers={"x-role": "admin"})
+    assert response.status_code == 200, response.text
+    ids = {node["id"] for node in response.json()["nodes"]}
+    assert ("0" in ids) is (scope == "internal")
+    assert "2" not in ids  # A later edition cannot leak into a frozen Run.
+    assert "7" not in ids  # Earlier facts still need exact current-manifest Evidence.

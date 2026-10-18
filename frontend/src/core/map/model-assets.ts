@@ -114,6 +114,23 @@ export const MAP_MODEL_ASSETS: readonly MapModelAsset[] = [
   },
 ];
 
+const BYTES_PER_MEBIBYTE = 1024 * 1024;
+
+/**
+ * Human-readable size of a supplied GLB, e.g. `68.3MB`. Returns null when the
+ * descriptor carries no usable size, so callers can fall back to the bare label.
+ */
+export function formatModelAssetSize(sizeBytes?: number): string | null {
+  if (
+    typeof sizeBytes !== "number" ||
+    !Number.isFinite(sizeBytes) ||
+    sizeBytes <= 0
+  ) {
+    return null;
+  }
+  return `${(sizeBytes / BYTES_PER_MEBIBYTE).toFixed(1)}MB`;
+}
+
 export function getPointModelAsset(
   point: Pick<MapPoint, "id" | "entityId" | "recordKind"> | null | undefined,
 ): MapModelAsset | null {

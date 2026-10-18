@@ -21,6 +21,7 @@ from deerflow.persistence.channel_connections.model import (
     ChannelOAuthStateRow,
 )
 from deerflow.persistence.feedback.model import FeedbackRow
+from deerflow.persistence.map_records import custom_points, reconstruction_jobs
 from deerflow.persistence.models.run_event import RunEventRow
 from deerflow.persistence.object_storage.model import ObjectMetadataRow
 from deerflow.persistence.run.model import RunRow
@@ -31,6 +32,8 @@ from deerflow.persistence.user.model import UserRow
 from deerflow.persistence.wu_culture.model import ChunkSetRow, CleanedOcrPageRow, EvidenceRow, OcrPageAttemptRow, OcrRegionRow, ParsedBlockRow, ParsedDocumentRow, SourceDocumentRow, SourceFileRow, TextChunkRow, TextCleaningChangeRow
 
 __all__ = [
+    "custom_points",
+    "reconstruction_jobs",
     "ChannelConnectionRow",
     "ChannelConversationRow",
     "ChannelCredentialRow",
