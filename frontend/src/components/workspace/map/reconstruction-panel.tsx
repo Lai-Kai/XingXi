@@ -12,6 +12,7 @@ import {
   reconstructionArtifact,
   reconstructionCapabilities,
   refreshReconstruction,
+  retryReconstructionConnection,
   uploadReconstruction,
   type Reconstruction,
   type ReconstructionCapabilities,
@@ -200,6 +201,29 @@ export function ReconstructionPanel({
       if (mounted.current) setProgress(null);
     }
   };
+  const retryJob = async (job: Reconstruction) => {
+    setError("");
+    try {
+      const value = await retryReconstructionConnection(job.id);
+      if (mounted.current) replace(value);
+    } catch (failure) {
+      if (mounted.current)
+        setError(failure instanceof Error ? failure.message : "重新连接失败");
+    }
+  };
+  const reconnect = async () => {
+    try {
+      await Promise.all(
+        jobs
+          .filter((job) => job.status === "transferring")
+          .map((job) => retryReconstructionConnection(job.id)),
+      );
+      if (mounted.current) setReload((value) => value + 1);
+    } catch (failure) {
+      if (mounted.current)
+        setError(failure instanceof Error ? failure.message : "重新连接失败");
+    }
+  };
   const cancel = async (job: Reconstruction) => {
     setCancelling(job.id);
     setError("");
@@ -233,7 +257,7 @@ export function ReconstructionPanel({
           <Button
             variant="ghost"
             className="mt-2 min-h-11"
-            onClick={() => setReload((value) => value + 1)}
+            onClick={() => void reconnect()}
           >
             重新连接
           </Button>
@@ -423,6 +447,15 @@ export function ReconstructionPanel({
                   onClick={() => void cancel(job)}
                 >
                   取消重建
+                </Button>
+              )}
+              {job.status === "transferring" && job.connection_error && (
+                <Button
+                  variant="outline"
+                  className="min-h-11"
+                  onClick={() => void retryJob(job)}
+                >
+                  重试连接
                 </Button>
               )}
               {job.status === "completed" && job.artifact && (

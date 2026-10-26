@@ -9,7 +9,14 @@ import {
   DialogDescription,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { parseColoredPly } from "@/core/map/ply";
+import {
+  createDemandRenderer,
+  createRenderResources,
+  observeRenderVisibility,
+  previewPixelRatio,
+} from "@/core/map/demand-render";
+import { coloredPlyGeometry } from "@/core/map/ply";
+import type { ColoredPlyData } from "@/core/map/ply-data";
 
 type ViewerControls = {
   move: (element: HTMLDivElement) => void;
@@ -21,11 +28,13 @@ type ViewerControls = {
 };
 
 export default function PointCloudViewer({
-  bytes,
+  data,
   title,
+  light = true,
 }: {
-  bytes: ArrayBuffer;
+  data: ColoredPlyData;
   title: string;
+  light?: boolean;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const expandedHost = useRef<HTMLDivElement>(null);
@@ -41,9 +50,10 @@ export default function PointCloudViewer({
 
   useEffect(() => {
     let stopped = false;
-    let dispose = () => {
-      /* Assigned when the renderer is created. */
-    };
+    const resources = createRenderResources();
+    resources.add(() => {
+      runtime.current = null;
+    });
     setReady(false);
     setFailed(false);
     setState("正在准备彩色点云…");
@@ -56,15 +66,15 @@ export default function PointCloudViewer({
         import("three/addons/controls/OrbitControls.js"),
       ]);
       if (stopped || !host.current) return;
-      const geometry = parseColoredPly(bytes);
-      let renderer: InstanceType<typeof THREE.WebGLRenderer>;
-      try {
-        renderer = new THREE.WebGLRenderer({ antialias: true });
-      } catch (error) {
-        geometry.dispose();
-        throw error;
-      }
-      renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+      const geometry = coloredPlyGeometry(data);
+      resources.add(() => geometry.dispose());
+      const renderer = new THREE.WebGLRenderer({ antialias: !light });
+      resources.add(() => {
+        renderer.dispose();
+        renderer.forceContextLoss();
+        renderer.domElement.remove();
+      });
+      renderer.setPixelRatio(previewPixelRatio(light, devicePixelRatio));
       renderer.setClearColor("#172422");
       renderer.domElement.setAttribute("aria-label", "彩色点云三维场景");
       renderer.domElement.style.touchAction = "none";
@@ -75,9 +85,10 @@ export default function PointCloudViewer({
         // Converted Gaussian opacity is not surface coverage for equal-size points.
         // Show solid RGB by default; retain Alpha as an explicit viewing option.
         transparent: false,
-        alphaTest: 0.01,
+        alphaTest: 0,
         depthWrite: true,
       });
+      resources.add(() => material.dispose());
       material.onBeforeCompile = (shader) => {
         shader.fragmentShader = shader.fragmentShader.replace(
           "#include <clipping_planes_fragment>",
@@ -91,8 +102,33 @@ export default function PointCloudViewer({
       scene.add(points);
       const camera = new THREE.PerspectiveCamera(50, 1, 0.001, 10000);
       const controls = new OrbitControls(camera, renderer.domElement);
+      resources.add(() => controls.dispose());
       controls.enableDamping = true;
       let activeHost = host.current;
+      const demand = createDemandRenderer({
+        render: () => {
+          const changed = controls.update();
+          renderer.render(scene, camera);
+          return changed;
+        },
+        onState: (state, frames) => {
+          renderer.domElement.dataset.renderState = state;
+          renderer.domElement.dataset.renderFrames = String(frames);
+        },
+      });
+      resources.add(() => demand.dispose());
+      renderer.domElement.dataset.renderPointCount = String(data.count);
+      renderer.domElement.dataset.sourcePointCount = String(data.totalCount);
+      renderer.domElement.dataset.pixelRatio = String(renderer.getPixelRatio());
+      renderer.domElement.dataset.parseThread = "worker";
+      let stopVisibility = () => {
+        /* Assigned after attaching the canvas to its active host. */
+      };
+      controls.addEventListener("change", demand.invalidate);
+      resources.add(() =>
+        controls.removeEventListener("change", demand.invalidate),
+      );
+      resources.add(() => stopVisibility());
       const resize = () => {
         const width = activeHost.clientWidth,
           height = activeHost.clientHeight;
@@ -100,8 +136,10 @@ export default function PointCloudViewer({
         renderer.setSize(width, height);
         camera.aspect = width / height;
         camera.updateProjectionMatrix();
+        demand.invalidate();
       };
       const observer = new ResizeObserver(resize);
+      resources.add(() => observer.disconnect());
       const reset = () => {
         points.updateMatrixWorld(true);
         const sphere = geometry
@@ -121,6 +159,7 @@ export default function PointCloudViewer({
         camera.updateProjectionMatrix();
         controls.target.copy(sphere.center);
         controls.update();
+        demand.invalidate();
       };
       runtime.current = {
         move: (element) => {
@@ -130,11 +169,13 @@ export default function PointCloudViewer({
           )
             return;
           observer.disconnect();
+          stopVisibility();
           activeHost = element;
           element.appendChild(renderer.domElement);
           resize();
           reset();
           observer.observe(element);
+          stopVisibility = observeRenderVisibility(element, demand.setVisible);
         },
         reset,
         flip: () => {
@@ -143,42 +184,28 @@ export default function PointCloudViewer({
         },
         size: (value) => {
           material.size = value;
+          demand.invalidate();
         },
         background: (value) => {
           renderer.setClearColor(value);
+          demand.invalidate();
         },
         alpha: (value) => {
           material.transparent = value;
+          material.alphaTest = value ? 0.01 : 0;
           material.needsUpdate = true;
+          demand.invalidate();
         },
-      };
-      let disposed = false;
-      dispose = () => {
-        if (disposed) return;
-        disposed = true;
-        runtime.current = null;
-        observer.disconnect();
-        renderer.setAnimationLoop(null);
-        controls.dispose();
-        geometry.dispose();
-        material.dispose();
-        renderer.dispose();
-        renderer.forceContextLoss();
-        renderer.domElement.remove();
       };
       runtime.current.move(expandedHost.current ?? host.current);
       reset();
-      renderer.setAnimationLoop(() => {
-        controls.update();
-        renderer.render(scene, camera);
-      });
       setState(
-        `${geometry.getAttribute("position").count.toLocaleString("zh-CN")} 个彩色点 · 拖动旋转 · 滚轮或双指缩放`,
+        `${data.count.toLocaleString("zh-CN")} / ${data.totalCount.toLocaleString("zh-CN")} 个彩色点 · ${light ? "轻量预览" : "完整精度"} · 拖动旋转 · 滚轮或双指缩放`,
       );
       setReady(true);
     })().catch((error: unknown) => {
       if (stopped) return;
-      dispose();
+      resources.dispose();
       setFailed(true);
       setState(
         error instanceof Error
@@ -188,9 +215,9 @@ export default function PointCloudViewer({
     });
     return () => {
       stopped = true;
-      dispose();
+      resources.dispose();
     };
-  }, [bytes, retry]);
+  }, [data, light, retry]);
 
   useEffect(() => {
     const element = expanded ? expandedHost.current : host.current;

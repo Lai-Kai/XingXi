@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import shutil
 import uuid
 from datetime import UTC, datetime
@@ -12,7 +13,10 @@ from fastapi import HTTPException
 
 from .config import IMAGE_EXTENSIONS, TERMINAL, VIDEO_EXTENSIONS, ReconstructionConfig
 from .flux_pipeline import DEFAULT_PROMPT, PROFILE
+from .storage import require_persistent_space
 from .store import JobStore
+
+logger = logging.getLogger(__name__)
 
 
 class ReconstructionService:
@@ -20,9 +24,57 @@ class ReconstructionService:
         self.config, self.store, self.remote = config, store, remote
         self.tasks: dict[str, asyncio.Task] = {}
         self.locks: dict[str, asyncio.Lock] = {}
+        self.monitor_task: asyncio.Task | None = None
+        self.monitor_stop = asyncio.Event()
+        self.monitor_last_cycle: str | None = None
+
+    def start_monitor(self, *, interval: float = 15):
+        """Observe already-authorized jobs independently of browser connections."""
+        if self.monitor_task is None or self.monitor_task.done():
+            self.monitor_stop.clear()
+            self.monitor_task = asyncio.create_task(self._monitor(interval), name="reconstruction-state-monitor")
+
+    async def _monitor(self, interval):
+        while not self.monitor_stop.is_set():
+            try:
+                await self.reconcile()
+                self.monitor_last_cycle = datetime.now(UTC).isoformat()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Reconstruction state reconciliation failed; next cycle will retry")
+            try:
+                await asyncio.wait_for(self.monitor_stop.wait(), timeout=interval)
+            except TimeoutError:
+                pass
+
+    async def reconcile(self):
+        cursor = None
+        gate = asyncio.Semaphore(4)
+
+        async def inspect(job):
+            async with gate:
+                if self.monitor_stop.is_set():
+                    return
+                task = self.tasks.get(job["id"])
+                if task is not None and not task.done():
+                    return
+                try:
+                    await self.refresh(job["id"])
+                except Exception:
+                    logger.exception("Could not reconcile reconstruction %s", job["id"])
+
+        while not self.monitor_stop.is_set():
+            page = await self.store.list_active(after_id=cursor, limit=100)
+            if not page:
+                return
+            await asyncio.gather(*(inspect(job) for job in page))
+            cursor = page[-1]["id"]
+            if len(page) < 100:
+                return
 
     def public(self, job):
-        fields = ("id", "title", "point_id", "point_name", "quality", "input_type", "status", "stage", "created_at", "log", "error", "connection_error", "cancel_requested")
+        fields = ("id", "title", "point_id", "point_name", "entity_id", "quality", "input_type", "status", "stage", "created_at", "log", "error", "connection_error", "cancel_requested")
         result = {key: job.get(key) for key in fields}
         result["files"] = [{"name": item["name"], "size": item["size"]} for item in job["files"]]
         result["preprocessing"] = job.get("preprocessing", "none")
@@ -37,7 +89,7 @@ class ReconstructionService:
             result["artifact_url"] = f"/api/reconstructions/{job['id']}/artifact/final.ply"
         return result
 
-    async def create(self, uploads, *, owner_id, title, quality, point_id, point_name, request_id, preprocessing="none", preprocess_prompt=None, preprocess_seed=42):
+    async def create(self, uploads, *, owner_id, title, quality, point_id, point_name, request_id, entity_id=None, preprocessing="none", preprocess_prompt=None, preprocess_seed=42):
         if preprocessing not in {"none", "flux3"}:
             raise HTTPException(400, "未知图片预处理方式")
         if preprocessing == "flux3" and not self.config.flux3_enabled:
@@ -64,6 +116,7 @@ class ReconstructionService:
             for index, (upload, extension) in enumerate(zip(uploads, extensions, strict=True)):
                 stored_name = f"{index:05d}{extension}"
                 path = directory / "source" / stored_name
+                await asyncio.to_thread(require_persistent_space, self.config.local_root, upload.size or 0)
 
                 # One bounded chunk per worker call; never buffer a video in RAM.
                 def copy_upload():
@@ -84,6 +137,8 @@ class ReconstructionService:
 
                 records.append(await asyncio.to_thread(copy_upload))
             identity = [title, quality, point_id, point_name, records]
+            if entity_id is not None:
+                identity.append({"entity_id": entity_id})
             if preprocessing == "flux3":
                 identity.append({"pipeline_profile": PROFILE, "prompt": prompt, "seed": preprocess_seed})
             fingerprint = hashlib.sha256(json.dumps(identity, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
@@ -94,6 +149,7 @@ class ReconstructionService:
                 "title": title,
                 "point_id": point_id,
                 "point_name": point_name,
+                "entity_id": entity_id,
                 "quality": quality,
                 "input_type": "video" if video else "images",
                 "files": records,
@@ -142,16 +198,28 @@ class ReconstructionService:
         job = await self.get(job_id)
         if job["status"] in TERMINAL:
             return self.public(job)
-        if job["status"] == "transferring":
-            self.start(job)
+        task = self.tasks.get(job_id)
+        if task is not None and not task.done():
             return self.public(job)
         async with self.locks.setdefault(job_id, asyncio.Lock()):
             try:
                 state = await asyncio.to_thread(self.remote.inspect, job_id)
+                if state.get("remote_missing"):
+                    age = (datetime.now(UTC) - datetime.fromisoformat(job["created_at"])).total_seconds()
+                    if age > 120:
+                        state = {"status": "failed", "stage": "failed", "error_code": "not_started", "error": "素材未送达远端，任务未启动；请重新提交素材"}
                 job = await self.store.patch(job_id, {**state, "connection_error": None})
             except Exception:
                 job = await self.store.patch(job_id, {"connection_error": "远程连接暂不可用，保留上次状态；请重试"})
         return self.public(job)
+
+    async def retry_connection(self, job_id):
+        # Explicit POST only: reading status never starts a remote process.
+        job = await self.get(job_id)
+        if job["status"] == "transferring":
+            self.start(job)
+            return self.public(job)
+        return await self.refresh(job_id)
 
     async def cancel(self, job_id):
         job = await self.get(job_id)
@@ -180,5 +248,9 @@ class ReconstructionService:
 
     async def close(self):
         # Remote supervisors outlive the Gateway; no training process is cancelled here.
+        self.monitor_stop.set()
+        if self.monitor_task is not None:
+            self.monitor_task.cancel()
+            await asyncio.gather(self.monitor_task, return_exceptions=True)
         if self.tasks:
             await asyncio.gather(*list(self.tasks.values()), return_exceptions=True)

@@ -4,6 +4,10 @@ import maplibregl, { type Map, type Marker } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useRef, useState } from "react";
 
+import {
+  mapPixelRatio,
+  type MapPerformanceMode,
+} from "@/core/map/display-performance";
 import { buildUncertaintyFeatureCollection } from "@/core/map/geometry";
 import {
   buildMapStyle,
@@ -297,6 +301,7 @@ export function MapLibreCanvas({
   onPickLocation,
   onReload,
   cameraPadding,
+  performanceMode = "balanced",
   className,
 }: {
   points: MapPoint[];
@@ -321,6 +326,7 @@ export function MapLibreCanvas({
   onPickLocation?: (location: { lon: number; lat: number }) => void;
   onReload?: () => void;
   cameraPadding?: { top: number; right: number; bottom: number; left: number };
+  performanceMode?: MapPerformanceMode;
   className?: string;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -340,6 +346,8 @@ export function MapLibreCanvas({
   onPickLocationRef.current = onPickLocation;
   const selectedIdRef = useRef(selectedId);
   const cameraPaddingRef = useRef(cameraPadding);
+  const performanceModeRef = useRef(performanceMode);
+  performanceModeRef.current = performanceMode;
   const [status, setStatus] = useState<"loading" | "ready" | "error">(
     "loading",
   );
@@ -357,6 +365,10 @@ export function MapLibreCanvas({
       center: [120.5019, 31.2589],
       zoom: 14.5,
       attributionControl: { compact: true },
+      pixelRatio: mapPixelRatio(
+        performanceModeRef.current,
+        window.devicePixelRatio,
+      ),
     });
     map.addControl(
       new maplibregl.NavigationControl({ showCompass: false }),
@@ -381,8 +393,10 @@ export function MapLibreCanvas({
         .getBearing()
         .toFixed(0);
     };
+    let resizeFrame = 0;
     const resizeObserver = new ResizeObserver(() => {
-      requestAnimationFrame(() => {
+      cancelAnimationFrame(resizeFrame);
+      resizeFrame = requestAnimationFrame(() => {
         map.resize();
         const currentSelectedId = selectedIdRef.current;
         const selectedPoint = pointsRef.current.find(
@@ -392,6 +406,15 @@ export function MapLibreCanvas({
       });
     });
     resizeObserver.observe(container);
+    const stage = container.closest<HTMLElement>(".research-map");
+    const moving = () => {
+      if (stage) stage.dataset.mapMoving = "true";
+    };
+    const idle = () => {
+      if (stage) stage.dataset.mapMoving = "false";
+    };
+    map.on("movestart", moving);
+    map.on("moveend", idle);
     const pick = (event: maplibregl.MapMouseEvent) => {
       if (!pickLocationRef.current) return;
       const lon = ((((event.lngLat.lng + 180) % 360) + 360) % 360) - 180;
@@ -425,6 +448,10 @@ export function MapLibreCanvas({
       markerViewsRef.current = [];
       userMarkerRef.current?.remove();
       resizeObserver.disconnect();
+      cancelAnimationFrame(resizeFrame);
+      map.off("movestart", moving);
+      map.off("moveend", idle);
+      idle();
       map.off("click", pick);
       map.off("zoom", syncMarkerLabels);
       map.off("move", syncCameraState);
@@ -435,6 +462,23 @@ export function MapLibreCanvas({
       focusedEventIdRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const update = () => {
+      const ratio = mapPixelRatio(
+        performanceModeRef.current,
+        window.devicePixelRatio,
+      );
+      map.setPixelRatio(ratio);
+      if (containerRef.current)
+        containerRef.current.dataset.mapPixelRatio = String(ratio);
+    };
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, [performanceMode]);
 
   useEffect(() => {
     // Keep camera targets in the exposed map area while the raster canvas
@@ -843,6 +887,7 @@ export function MapLibreCanvas({
         ref={containerRef}
         className="h-full w-full"
         data-map-engine="maplibre-gl"
+        data-map-performance-mode={performanceMode}
         data-map-picking={String(pickLocation)}
         data-map-status={status}
         data-map-base-opacity="1"

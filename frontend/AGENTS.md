@@ -297,3 +297,8 @@ stream bodies ahead of the generic Gateway fallback in `next.config.js`; retain
 authentication, CSRF and Range headers. Unit regressions cover uploads over 10 MiB
 and partial downloads. Browser coverage lives in `map-create-point`,
 `map-create-model`, `map-reconstruction` and `reconstruction-proxy` specs.
+
+Map model completion: while the map is visible, refresh the registered-model catalog every15seconds and on visibility return; avoid state updates for unchanged results and abort on unmount. A closed reconstruction panel must not prevent completed models appearing. Retrying a transfer uses the explicit admin POST retry-connection endpoint, never a GET side effect.
+
+
+Map preview performance (2026-10-25): `core/map/ply-data.ts` owns pure scalar parsing and `ply-worker{,-client}.ts` transfers/cancels buffers off the UI thread; preview defaults to 300000 sampled RGB points, with an explicit full mode (5000000 max) rereading source and preserving original downloads/colors/alpha/bounds. `demand-render.ts` owns idle/hidden/offscreen scheduling, Orbit damping and Spark onDirty wakeups. Release observers, event listeners and GPU resources; expansion moves the same canvas. `display-performance.ts` caps map DPR (balanced1.5/light1), stores the local preference and disables overlay blur in light/drag modes. Do not alter OSM pixels or fixed model marker meanings. Model clients consume `/model-assets/page` and the dedicated upload proxy must permit that path. Deterministic software fixtures live in tests/fixtures/map-ply.ts; browser regressions include map-preview-performance.spec.ts. See ../docs/map-model-integrity-performance.md for limits.

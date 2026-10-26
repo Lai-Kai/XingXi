@@ -30,12 +30,61 @@ export const modelsForPoint = (
       model.point_id === point.id && model.entity_id === point.entityId,
   );
 
+export type MapModelsPage = {
+  data: RegisteredMapModel[];
+  next_cursor: string | null;
+};
+
+export async function listMapModelsPage({
+  signal,
+  pointId,
+  cursor,
+  limit = 100,
+}: {
+  signal?: AbortSignal;
+  pointId?: string;
+  cursor?: string;
+  limit?: number;
+} = {}): Promise<MapModelsPage> {
+  signal?.throwIfAborted();
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (pointId !== undefined) query.set("point_id", pointId);
+  if (cursor !== undefined) query.set("cursor", cursor);
+  const response = await fetch(`${base()}/page?${query.toString()}`, {
+    signal,
+  });
+  if (!response.ok) throw new Error("暂时无法读取已接入模型");
+  const value = (await response.json()) as Partial<MapModelsPage> | null;
+  if (
+    !value ||
+    !Array.isArray(value.data) ||
+    (value.next_cursor !== null &&
+      (typeof value.next_cursor !== "string" || !value.next_cursor))
+  ) {
+    throw new Error("模型分页接口返回无效响应");
+  }
+  signal?.throwIfAborted();
+  return value as MapModelsPage;
+}
+
 export async function listMapModels(
   signal?: AbortSignal,
+  pointId?: string,
 ): Promise<RegisteredMapModel[]> {
-  const response = await fetch(base(), { signal });
-  if (!response.ok) throw new Error("暂时无法读取已接入模型");
-  return response.json() as Promise<RegisteredMapModel[]>;
+  const models = new Map<string, RegisteredMapModel>();
+  const cursors = new Set<string>();
+  let cursor: string | undefined;
+  do {
+    const page = await listMapModelsPage({ signal, pointId, cursor });
+    for (const model of page.data) models.set(model.id, model);
+    if (page.next_cursor === null) return [...models.values()];
+    if (cursors.has(page.next_cursor)) {
+      throw new Error("模型分页游标重复，请刷新后重试");
+    }
+    cursors.add(page.next_cursor);
+    cursor = page.next_cursor;
+  } while (cursor);
+  return [...models.values()];
 }
 
 export function uploadMapModel(

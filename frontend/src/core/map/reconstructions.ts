@@ -66,6 +66,10 @@ export const refreshReconstruction = (id: string, signal?: AbortSignal) =>
   fetch(`${base()}/${encodeURIComponent(id)}`, { signal }).then(
     result<Reconstruction>,
   );
+export const retryReconstructionConnection = (id: string) =>
+  fetch(`${base()}/${encodeURIComponent(id)}/retry-connection`, {
+    method: "POST",
+  }).then(result<Reconstruction>);
 export const cancelReconstruction = (id: string) =>
   fetch(`${base()}/${encodeURIComponent(id)}/cancel`, { method: "POST" }).then(
     result<Reconstruction>,

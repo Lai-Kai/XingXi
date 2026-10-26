@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import posixpath
@@ -125,24 +126,46 @@ class SSHRemote:
                     sftp.put(str(Path(__file__).with_name("flux_pipeline.py")), module)
                     sftp.posix_rename(module, root + "/flux_pipeline.py")
                 self.write_json(sftp, root + "/config.json", config)
+                # The supervisor's stdlib validator is deployed before the
+                # entry point. Claimed/older running jobs remain untouched.
+                module = root + "/ply_validation." + uuid.uuid4().hex + ".part"
+                sftp.put(str(Path(__file__).with_name("ply_validation.py")), module)
+                sftp.posix_rename(module, root + "/ply_validation.py")
                 temporary = root + "/runner." + uuid.uuid4().hex + ".part"
                 sftp.put(str(Path(__file__).with_name("runner.py")), temporary)
                 sftp.posix_rename(temporary, root + "/runner.py")
                 if job.get("cancel_requested"):
                     with sftp.open(root + "/cancel.request", "w"):
                         pass
-            command = "nohup python3 " + shlex.quote(root + "/runner.py") + " " + shlex.quote(root) + " >/dev/null 2>&1 </dev/null &"
-            _, stdout, stderr = client.exec_command(command, timeout=20)
-            if stdout.channel.recv_exit_status() != 0:
-                raise RuntimeError("远程启动失败")
+                command = "nohup python3 " + shlex.quote(root + "/runner.py") + " " + shlex.quote(root) + " >/dev/null 2>&1 </dev/null &"
+                _, stdout, stderr = client.exec_command(command, timeout=20)
+                if stdout.channel.recv_exit_status() != 0:
+                    raise RuntimeError("远程启动失败")
         return self.inspect(job["id"])
+
+    @staticmethod
+    def inspection_command(root):
+        # Existing jobs may still have an older runner.py. Execute the new
+        # read-only inspector without overwriting their running supervisor.
+        source = base64.b64encode(Path(__file__).with_name("runner.py").read_bytes()).decode("ascii")
+        script = (
+            "import base64,json,sys; "
+            "namespace={'__name__':'remote_inspector'}; "
+            "exec(compile(base64.b64decode('" + source + "'),'runner-inspector','exec'),namespace); "
+            "print(json.dumps(namespace['inspect_job'](sys.argv[1]),ensure_ascii=False))"
+        )
+        return "python3 -c " + shlex.quote(script) + " " + shlex.quote(root)
 
     def inspect(self, job_id):
         root = self.root(job_id)
-        with self.connection() as (_, sftp):
-            result = self.read_json(sftp, root + "/status.json")
-            if not result:
-                result = {"status": "running", "stage": "starting"}
+        with self.connection() as (client, sftp):
+            _, stdout, stderr = client.exec_command(self.inspection_command(root), timeout=30)
+            raw = stdout.read(256 * 1024)
+            if stdout.channel.recv_exit_status() != 0:
+                raise RuntimeError("远程任务存活检查失败")
+            result = json.loads(raw)
+            if not isinstance(result, dict) or "status" not in result:
+                raise RuntimeError("远程任务存活检查响应无效")
             try:
                 projects = sftp.listdir(root + "/projects")
             except FileNotFoundError:

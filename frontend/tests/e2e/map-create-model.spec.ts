@@ -87,6 +87,9 @@ async function setup(
   await page.route("**/api/map/model-assets", (route) =>
     route.fulfill({ json: models() }),
   );
+  await page.route("**/api/map/model-assets/page?**", (route) =>
+    route.fulfill({ json: { data: models(), next_cursor: null } }),
+  );
   await page.route("**/api/reconstructions/capabilities", (route) =>
     route.fulfill({
       json: {
@@ -151,7 +154,7 @@ test("top-level create imports real colored PLY, persists across reload and adds
     .getByRole("button", { name: "保存并接入地图", exact: true })
     .click();
   await expect(page.locator('[data-slot="dialog-content"]')).toHaveCount(0);
-  await expect(page.getByText(/个彩色点 · 拖动旋转/)).toBeVisible({
+  await expect(page.getByText(/个彩色点.*拖动旋转/)).toBeVisible({
     timeout: 60000,
   });
   expect(posted).toContain(point.id);
@@ -159,7 +162,11 @@ test("top-level create imports real colored PLY, persists across reload and adds
   expect(csrf).toBe("model-csrf");
   await expect(page.getByLabel("已接入模型")).toHaveValue(id);
   await expect(
-    page.getByRole("button", { name: new RegExp(`地图点位 ${point.name}`) }),
+    // A mobile model Sheet intentionally hides the background map from AT.
+    page.getByRole("button", {
+      name: new RegExp(`地图点位 ${point.name}`),
+      includeHidden: true,
+    }),
   ).toHaveAttribute("data-has-model", "true");
   await page
     .getByLabel("彩色点云三维场景")
@@ -168,7 +175,7 @@ test("top-level create imports real colored PLY, persists across reload and adds
   await selectPoint(page);
   await page.getByRole("tab", { name: "三维预览", exact: true }).click();
   await expect(page.getByLabel("已接入模型")).toHaveValue(id);
-  await expect(page.getByText(/个彩色点 · 拖动旋转/)).toBeVisible({
+  await expect(page.getByText(/个彩色点.*拖动旋转/)).toBeVisible({
     timeout: 60000,
   });
 });
@@ -247,7 +254,7 @@ test("point detail creates an image reconstruction and completed output enters t
   });
   await page.getByRole("tab", { name: "三维预览", exact: true }).click();
   await expect(page.getByLabel("已接入模型")).toHaveValue(id);
-  await expect(page.getByText(/个彩色点 · 拖动旋转/)).toBeVisible({
+  await expect(page.getByText(/个彩色点.*拖动旋转/)).toBeVisible({
     timeout: 60000,
   });
 });
@@ -301,7 +308,7 @@ test("mobile import shows useful errors and retries the same idempotency request
   expect(keys).toHaveLength(2);
   expect(keys[0]).not.toBe("missing");
   expect(keys[0]).toBe(keys[1]);
-  await expect(page.getByText(/个彩色点 · 拖动旋转/)).toBeVisible({
+  await expect(page.getByText(/个彩色点.*拖动旋转/)).toBeVisible({
     timeout: 60000,
   });
 });

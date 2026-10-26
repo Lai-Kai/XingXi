@@ -13,6 +13,7 @@ import pytest_asyncio
 from fastapi import FastAPI, Request
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from app.gateway.map_model_points import get_model_points
 from app.gateway.reconstructions import runner
 from app.gateway.reconstructions.config import ReconstructionConfig
 from app.gateway.reconstructions.service import ReconstructionService
@@ -48,6 +49,10 @@ async def fixture(tmp_path):
     app = FastAPI()
     app.include_router(reconstructions.router)
     app.dependency_overrides[reconstructions.get_service] = lambda: service
+    app.dependency_overrides[get_model_points] = lambda: {
+        "pt-bridge": SimpleNamespace(id="pt-bridge", entity_id="entity-bridge", name="古桥"),
+        "point": SimpleNamespace(id="point", entity_id="entity", name="古桥"),
+    }
     app.dependency_overrides[reconstructions.get_current_user_from_request] = lambda: SimpleNamespace(id="admin", system_role="admin")
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         yield client, service, remote, app
@@ -169,7 +174,7 @@ def make_result(root, *, valid=True, target=None):
     project = root / "projects" / "generated"
     project.mkdir(parents=True)
     ply = project / "final.ply"
-    attributes = ["x", "y", "z", "opacity", "scale_0", "rot_0"] if valid else ["x", "y", "z"]
+    attributes = ["x", "y", "z", "f_dc_0", "f_dc_1", "f_dc_2", "opacity", "scale_0", "scale_1", "scale_2", "rot_0", "rot_1", "rot_2", "rot_3"] if valid else ["x", "y", "z"]
     header = "ply\nformat binary_little_endian 1.0\nelement vertex 1\n" + "".join(f"property float {name}\n" for name in attributes) + "end_header\n"
     ply.write_bytes(header.encode() + struct.pack("<" + "f" * len(attributes), *([1.0] * len(attributes))))
     (project / "project.json").write_text(json.dumps({"status": "completed", "output": {"finalPly": str(target or ply)}}))
