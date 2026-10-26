@@ -96,3 +96,26 @@ test("unknown model paths never forward requests to the Gateway", async () => {
   expect(response.status).toBe(404);
   expect(upstream).not.toHaveBeenCalled();
 });
+
+test("model pages preserve point, limit and cursor query parameters", async () => {
+  const upstream = rs
+    .spyOn(globalThis, "fetch")
+    .mockResolvedValue(Response.json({ data: [], next_cursor: null }));
+  const request = {
+    method: "GET",
+    headers: new Headers({ cookie: "session=private" }),
+    signal: new AbortController().signal,
+    nextUrl: new URL(
+      "https://research.example.com/api/map/model-assets/page?point_id=point-1&limit=20&cursor=next",
+    ),
+  } as unknown as NextRequest;
+  const response = await readModel(request, {
+    params: Promise.resolve({ segments: ["page"] }),
+  });
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ data: [], next_cursor: null });
+  const target = upstream.mock.calls[0]![0];
+  expect(target instanceof Request ? target.url : target.toString()).toContain(
+    "/api/map/model-assets/page?point_id=point-1&limit=20&cursor=next",
+  );
+});

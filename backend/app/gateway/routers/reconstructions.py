@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse
 from starlette.datastructures import UploadFile
 
 from app.gateway.deps import get_current_user_from_request
+from app.gateway.map_model_points import get_model_points
 from app.gateway.reconstructions.config import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS, ReconstructionConfig
 from app.gateway.reconstructions.service import ReconstructionService
 from app.gateway.reconstructions.ssh import SSHRemote
@@ -58,8 +59,12 @@ async def create(
     preprocess_prompt: Annotated[str | None, Form(max_length=4000)] = None,
     preprocess_seed: Annotated[int, Form(ge=0, le=2**53 - 1)] = 42,
     user=Depends(admin),
+    points=Depends(get_model_points),
     service=Depends(get_service),
 ):
+    point = points.get(point_id) if point_id is not None else None
+    if point_id is not None and point is None:
+        raise HTTPException(404, "请选择地图中已有的点位")
     if isinstance(service.remote, SSHRemote) and not await asyncio.to_thread(lambda: service.config.enabled):
         raise HTTPException(503, "请先配置 SSH 连接、可信主机公钥并安装 reconstruction 依赖")
     async with request.form(max_files=service.config.max_files, max_part_size=service.config.max_bytes) as form:
@@ -74,7 +79,8 @@ async def create(
             title=title.strip(),
             quality=quality,
             point_id=point_id,
-            point_name=point_name,
+            point_name=point.name if point is not None else None,
+            entity_id=point.entity_id if point is not None else None,
             request_id=request_id,
             preprocessing=preprocessing,
             preprocess_prompt=preprocess_prompt,
@@ -101,3 +107,18 @@ async def cancel(job_id: str, user=Depends(admin), service=Depends(get_service))
 async def artifact(job_id: str, user=Depends(admin), service=Depends(get_service)):
     path = await service.artifact(job_id)
     return FileResponse(path, media_type="application/octet-stream", filename="final.ply", headers={"Cache-Control": "private, no-store"})
+
+
+async def start_service(app):
+    """Lifespan hook: restore polling before the first browser request."""
+    import os
+
+    if os.environ.get("XINGXI_EVALUATION_CHILD") == "1" or get_session_factory() is None:
+        return
+    service = await get_service(Request({"type": "http", "app": app}))
+    service.start_monitor()
+
+
+@router.post("/{job_id}/retry-connection")
+async def retry_connection(job_id: str, user=Depends(admin), service=Depends(get_service)):
+    return await service.retry_connection(job_id)

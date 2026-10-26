@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from sqlalchemy import insert, select, update
+from sqlalchemy import JSON, and_, case, cast, func, insert, or_, select, tuple_, update
 from sqlalchemy.exc import IntegrityError
 
 from deerflow.persistence.map_records import job_metadata as metadata
@@ -58,3 +58,86 @@ class JobStore:
             query = query.where(jobs.c.point_id == point_id)
         async with self.sessions() as session:
             return [json.loads(row[0]) for row in (await session.execute(query.order_by(jobs.c.created_at.desc()).limit(limit))).all()]
+
+    async def list_active(self, *, after_id: str | None = None, limit: int = 100) -> list[dict]:
+        """Keyset-page only live jobs; completed imports never consume the budget."""
+        async with self.sessions() as session:
+            if session.bind.dialect.name == "sqlite":
+                status = func.json_extract(jobs.c.data_json, "$.status")
+            else:
+                status = cast(jobs.c.data_json, JSON)["status"].as_string()
+            query = select(jobs.c.data_json).where(status.in_(["transferring", "running"]))
+            if after_id is not None:
+                query = query.where(jobs.c.id > after_id)
+            rows = (await session.execute(query.order_by(jobs.c.id).limit(limit))).all()
+            return [json.loads(row[0]) for row in rows]
+
+    async def list_model_assets(self, bindings: dict[str, str], *, point_id: str | None = None, before: tuple[str, str] | None = None, limit: int = 100) -> list[dict]:
+        """Filter completed, currently bound model candidates before keyset limiting."""
+        if point_id is not None:
+            bindings = {point_id: bindings[point_id]} if point_id in bindings else {}
+        if not bindings:
+            return []
+        async with self.sessions() as session:
+            if session.bind.dialect.name == "sqlite":
+
+                def field(*path):
+                    return func.json_extract(jobs.c.data_json, "$." + ".".join(path))
+
+                def missing(*path):
+                    return func.json_type(jobs.c.data_json, "$." + ".".join(path)).is_(None)
+
+                def type_of(*path):
+                    return func.json_type(jobs.c.data_json, "$." + ".".join(path))
+
+                string_type = "text"
+                size_valid = and_(type_of("artifact", "size") == "integer", field("artifact", "size") > 0)
+            else:
+                data = cast(jobs.c.data_json, JSON)
+
+                def value(path):
+                    item = data
+                    for key in path:
+                        item = item[key]
+                    return item
+
+                def field(*path):
+                    return value(path).as_string()
+
+                def missing(*path):
+                    return value(path).is_(None)
+
+                def type_of(*path):
+                    return func.json_typeof(value(path))
+
+                string_type = "string"
+                # Validate numeric text without a cast: malformed historical
+                # JSON must not trigger an invalid-integer SQL error.
+                size_valid = and_(type_of("artifact", "size") == "number", field("artifact", "size").op("~")("^[1-9][0-9]*$"))
+            # Old reconstruction records omitted entity_id. Only absence retains
+            # that compatibility; explicit null and different entities are excluded.
+            binding = or_(and_(missing("entity_id"), jobs.c.point_id.in_(list(bindings))), tuple_(jobs.c.point_id, field("entity_id")).in_(list(bindings.items())))
+            format_ = case((missing("artifact", "format"), "ply"), else_=field("artifact", "format"))
+            kind = case((missing("artifact", "kind"), "gaussian"), else_=field("artifact", "kind"))
+            query = select(jobs.c.data_json).where(
+                field("status") == "completed",
+                type_of("artifact") == "object",
+                size_valid,
+                type_of("artifact", "sha256") == string_type,
+                func.length(field("artifact", "sha256")) == 64,
+                type_of("title") == string_type,
+                func.length(field("title")) > 0,
+                binding,
+                format_.in_(["ply", "glb"]),
+                kind.in_(["gaussian", "point_cloud", "mesh"]),
+                field("id") == jobs.c.id,
+                func.length(field("id")) <= 64,
+                field("point_id") == jobs.c.point_id,
+                field("created_at") == jobs.c.created_at,
+                func.length(field("created_at")) <= 64,
+            )
+            if before is not None:
+                created_at, job_id = before
+                query = query.where(or_(jobs.c.created_at < created_at, and_(jobs.c.created_at == created_at, jobs.c.id < job_id)))
+            rows = (await session.execute(query.order_by(jobs.c.created_at.desc(), jobs.c.id.desc()).limit(limit))).all()
+            return [json.loads(row[0]) for row in rows]

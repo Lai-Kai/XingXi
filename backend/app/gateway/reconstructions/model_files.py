@@ -9,44 +9,9 @@ from pathlib import Path
 
 from fastapi import HTTPException
 
+from .ply_validation import inspect_ply
+
 MAX_MODEL_BYTES = 256 * 1024**2
-
-
-def inspect_ply(path: Path, size: int) -> dict:
-    with path.open("rb") as stream:
-        header = bytearray()
-        while len(header) < 65536:
-            line = stream.readline(1024)
-            if not line:
-                break
-            header.extend(line)
-            if line.strip() == b"end_header":
-                break
-        if not bytes(header).startswith((b"ply\n", b"ply\r\n")) or not header.rstrip().endswith(b"end_header"):
-            raise ValueError("PLY 文件头无效")
-        element, count, encoding, properties = "", 0, "", {}
-        for line in header.decode("utf-8").splitlines():
-            parts = line.split()
-            if not parts:
-                continue
-            if parts[0] == "format":
-                encoding = parts[1]
-            elif parts[0] == "element":
-                element = parts[1]
-                if element == "vertex":
-                    count = int(parts[2])
-            elif parts[0] == "property" and element == "vertex" and len(parts) == 3:
-                properties[parts[2]] = parts[1]
-        gaussian = {"opacity", "scale_0", "rot_0"}.issubset(properties)
-        colored = any(set(keys).issubset(properties) for keys in [("red", "green", "blue"), ("r", "g", "b"), ("diffuse_red", "diffuse_green", "diffuse_blue"), ("diffuse_r", "diffuse_g", "diffuse_b")])
-        if encoding not in {"ascii", "binary_little_endian", "binary_big_endian"} or not {"x", "y", "z"}.issubset(properties) or not (gaussian or colored):
-            raise ValueError("PLY 需要 XYZ 和 RGB 颜色或 Gaussian 属性")
-        if count <= 0 or size <= len(header):
-            raise ValueError("PLY 没有点数据")
-        widths = {"char": 1, "int8": 1, "uchar": 1, "uint8": 1, "short": 2, "int16": 2, "ushort": 2, "uint16": 2, "int": 4, "int32": 4, "uint": 4, "uint32": 4, "float": 4, "float32": 4, "double": 8, "float64": 8}
-        if encoding != "ascii" and size < len(header) + count * sum(widths[value] for value in properties.values()):
-            raise ValueError("PLY 点数据被截断")
-        return {"format": "ply", "kind": "gaussian" if gaussian else "point_cloud", "splat_count" if gaussian else "point_count": count}
 
 
 def inspect_glb(path: Path, size: int) -> dict:

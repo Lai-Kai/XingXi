@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.gateway.auth_disabled import warn_if_auth_disabled_enabled
 from app.gateway.auth_middleware import AuthMiddleware
@@ -394,6 +395,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
         await start_evaluations(app)
 
+        # Poll persistent reconstruction jobs even when no map panel is open.
+        await reconstructions.start_service(app)
+
         # Prime the evidence-bound daily feed before the first browser request.
         # The service returns its verified seed selection first and performs
         # popularity/RAG refresh work in its own bounded background task.
@@ -598,8 +602,14 @@ This gateway provides Xingxi runtime endpoints plus supporting model, MCP, memor
         ],
     )
 
+    @app.exception_handler(StarletteHTTPException)
     @app.exception_handler(HTTPException)
-    async def handle_http_error(_request: Request, exc: HTTPException):
+    async def handle_http_error(request: Request, exc: StarletteHTTPException):
+        from app.gateway.reconstructions.storage import insufficient_storage, is_storage_exhaustion
+
+        if request.url.path.rstrip("/") in {"/api/reconstructions", "/api/map/model-assets"} and is_storage_exhaustion(exc):
+            failure = insufficient_storage()
+            return gateway_error_response(failure.status_code, failure.detail)
         return gateway_error_response(exc.status_code, exc.detail)
 
     @app.exception_handler(RequestValidationError)
@@ -609,7 +619,19 @@ This gateway provides Xingxi runtime endpoints plus supporting model, MCP, memor
     @app.exception_handler(Exception)
     async def handle_unexpected_error(_request: Request, exc: Exception):
         logger.exception("Unhandled Gateway error", exc_info=exc)
+        import errno
+
+        if isinstance(exc, OSError) and exc.errno in {errno.ENOSPC, errno.EDQUOT}:
+            from app.gateway.reconstructions.storage import insufficient_storage
+
+            failure = insufficient_storage()
+            return gateway_error_response(failure.status_code, failure.detail)
         return gateway_error_response(500, "The Gateway could not complete the request", retryable=True)
+
+    # Multipart admission runs inside Auth/CSRF, before FastAPI reads Form bodies.
+    from app.gateway.upload_storage_middleware import MapUploadStorageMiddleware
+
+    app.add_middleware(MapUploadStorageMiddleware)
 
     # Auth: reject unauthenticated requests to non-public paths (fail-closed safety net)
     app.add_middleware(AuthMiddleware)

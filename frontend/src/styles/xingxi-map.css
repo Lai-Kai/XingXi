@@ -1,4 +1,13 @@
 /* Map presentation from feat/ui-redesign, scoped to the existing workspace. */
+.research-map[data-map-performance-mode="light"] .research-map-header,
+.research-map[data-map-performance-mode="light"] .research-map-hud,
+.research-map[data-map-performance-mode="light"] .research-map-timeline,
+.research-map[data-map-moving="true"] .research-map-header,
+.research-map[data-map-moving="true"] .research-map-hud,
+.research-map[data-map-moving="true"] .research-map-timeline {
+  backdrop-filter: none;
+  background-color: var(--card);
+}
 .research-map button:focus-visible,
 .research-year-range:focus-visible {
   outline: 2px solid var(--ring);

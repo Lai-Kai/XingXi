@@ -2,12 +2,21 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import {
+  createDemandRenderer,
+  createRenderResources,
+  observeRenderVisibility,
+  previewPixelRatio,
+} from "@/core/map/demand-render";
+
 export default function GaussianViewer({
   url,
   fileBytes,
+  light = true,
 }: {
   url?: string;
   fileBytes?: ArrayBuffer;
+  light?: boolean;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const frame = useRef<((subject: boolean) => void) | null>(null);
@@ -16,9 +25,10 @@ export default function GaussianViewer({
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     let stopped = false;
-    let dispose = () => {
-      /* Resources are assigned after the dynamic imports. */
-    };
+    const resources = createRenderResources();
+    resources.add(() => {
+      frame.current = null;
+    });
     const controller = new AbortController();
     setFailed(false);
     setState("正在加载高斯模型…");
@@ -32,18 +42,48 @@ export default function GaussianViewer({
       const element = host.current;
       if (stopped || !element) return;
       const renderer = new THREE.WebGLRenderer({ antialias: false });
-      renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+      resources.add(() => {
+        renderer.dispose();
+        renderer.forceContextLoss();
+        renderer.domElement.remove();
+      });
+      renderer.setPixelRatio(previewPixelRatio(light, devicePixelRatio));
       renderer.setClearColor(0x172422);
       renderer.domElement.setAttribute("aria-label", "高斯三维场景");
       element.appendChild(renderer.domElement);
       const scene = new THREE.Scene();
       const camera = new THREE.PerspectiveCamera(50, 1, 0.001, 10000);
       const controls = new OrbitControls(camera, renderer.domElement);
+      resources.add(() => controls.dispose());
       controls.enableDamping = true;
-      const spark = new SparkRenderer({ renderer });
+      const demand = createDemandRenderer({
+        render: () => {
+          const changed = controls.update();
+          renderer.render(scene, camera);
+          return changed;
+        },
+        onState: (state, frames) => {
+          renderer.domElement.dataset.renderState = state;
+          renderer.domElement.dataset.renderFrames = String(frames);
+        },
+      });
+      resources.add(() => demand.dispose());
+      renderer.domElement.dataset.pixelRatio = String(renderer.getPixelRatio());
+      controls.addEventListener("change", demand.invalidate);
+      resources.add(() =>
+        controls.removeEventListener("change", demand.invalidate),
+      );
+      const stopVisibility = observeRenderVisibility(
+        element,
+        demand.setVisible,
+      );
+      resources.add(stopVisibility);
+      // Spark signals asynchronous initialization, sorting and LOD completions.
+      // Waking onDirty avoids freezing an empty/unsorted first frame when idle.
+      const spark = new SparkRenderer({ renderer, onDirty: demand.invalidate });
+      resources.add(() => spark.dispose());
       scene.add(spark);
       let mesh: InstanceType<typeof SplatMesh> | null = null;
-      let disposed = false;
       const observer = new ResizeObserver(() => {
         const width = element.clientWidth,
           height = element.clientHeight;
@@ -51,22 +91,11 @@ export default function GaussianViewer({
           renderer.setSize(width, height);
           camera.aspect = width / height;
           camera.updateProjectionMatrix();
+          demand.invalidate();
         }
       });
+      resources.add(() => observer.disconnect());
       observer.observe(element);
-      dispose = () => {
-        if (disposed) return;
-        disposed = true;
-        observer.disconnect();
-        renderer.setAnimationLoop(null);
-        controls.dispose();
-        mesh?.dispose();
-        spark.dispose();
-        renderer.dispose();
-        renderer.forceContextLoss();
-        renderer.domElement.remove();
-        frame.current = null;
-      };
       // Authenticated same-origin bytes, cancellable when switching points/tabs.
       let bytes: Uint8Array;
       if (fileBytes) bytes = new Uint8Array(fileBytes);
@@ -81,9 +110,13 @@ export default function GaussianViewer({
       }
       if (stopped) return;
       mesh = new SplatMesh({ fileBytes: bytes, fileName: "final.ply" });
+      resources.add(() => mesh?.dispose());
       scene.add(mesh);
       await mesh.initialized;
       if (stopped) return;
+      renderer.domElement.dataset.sourcePointCount = String(
+        mesh.packedSplats?.numSplats ?? 0,
+      );
       mesh.quaternion.set(1, 0, 0, 0);
       mesh.updateMatrixWorld(true);
       const box = mesh.getBoundingBox().applyMatrix4(mesh.matrixWorld);
@@ -145,16 +178,16 @@ export default function GaussianViewer({
         camera.updateProjectionMatrix();
         controls.target.copy(center);
         controls.update();
+        demand.invalidate();
       };
       frame.current(true);
-      renderer.setAnimationLoop(() => {
-        controls.update();
-        renderer.render(scene, camera);
-      });
-      setState("拖动旋转 · 滚轮缩放");
+      demand.invalidate();
+      setState(
+        `${light ? "轻量分辨率预览" : "完整精度"} · 拖动旋转 · 滚轮缩放`,
+      );
     })().catch((error: unknown) => {
       if (!stopped) {
-        dispose();
+        resources.dispose();
         setFailed(true);
         setState(
           error instanceof Error
@@ -166,9 +199,9 @@ export default function GaussianViewer({
     return () => {
       stopped = true;
       controller.abort();
-      dispose();
+      resources.dispose();
     };
-  }, [url, fileBytes, retry]);
+  }, [url, fileBytes, light, retry]);
   return (
     <section aria-label="高斯模型预览" className="space-y-2">
       <div

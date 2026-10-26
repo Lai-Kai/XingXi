@@ -258,9 +258,9 @@ test("renders a previously completed real Gaussian PLY on demand and disposes on
   await open(page);
   await expect(page.getByLabel("高斯三维场景")).toHaveCount(0);
   await page.getByRole("button", { name: "查看高斯模型" }).click();
-  await expect(
-    page.getByText("拖动旋转 · 滚轮缩放", { exact: true }),
-  ).toBeVisible({ timeout: 60000 });
+  await expect(page.getByText(/拖动旋转 · 滚轮缩放/)).toBeVisible({
+    timeout: 60000,
+  });
   await expect(page.getByLabel("高斯三维场景")).toBeVisible();
   await page.getByLabel("高斯三维场景").scrollIntoViewIfNeeded();
   await page.getByLabel("高斯三维场景").screenshot({
@@ -297,7 +297,7 @@ test("opens a real local RGB PLY with its colors, supports one expanded canvas a
   await page.getByRole("tab", { name: "三维预览", exact: true }).click();
   await expect(page.locator("canvas[aria-label$='三维场景']")).toHaveCount(0);
   await page.getByLabel("打开本地 PLY").setInputFiles(ply!);
-  await expect(page.getByText(/个彩色点 · 拖动旋转/)).toBeVisible({
+  await expect(page.getByText(/个彩色点.*拖动旋转/)).toBeVisible({
     timeout: 60000,
   });
   const canvas = page.getByLabel("彩色点云三维场景");
@@ -321,13 +321,17 @@ test("opens a real local RGB PLY with its colors, supports one expanded canvas a
     page.getByRole("dialog").getByLabel("彩色点云三维场景"),
   ).toBeVisible();
   await expect
-    .poll(async () => (await canvas.boundingBox())!.width)
-    .toBeGreaterThan(size.width);
+    .poll(async () => {
+      const expanded = (await canvas.boundingBox())!;
+      return expanded.width * expanded.height;
+    })
+    .toBeGreaterThan(size.width * size.height);
   await page
     .getByRole("dialog")
     .screenshot({ path: resolve(colorReports, "local-rgb-expanded.png") });
   await page.getByRole("button", { name: "返回点位详情", exact: true }).click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  // Mobile retains its point-details Sheet after the expanded viewer closes.
+  await expect(page.locator('[data-slot="dialog-content"]')).toHaveCount(0);
   await expect(canvas).toHaveCount(1);
   await expect(canvas).toBeVisible();
   await page.getByRole("tab", { name: "史料考据", exact: true }).click();
@@ -371,7 +375,7 @@ test("previews a completed remote RGB artifact without assuming Gaussian metadat
   await expect(page.getByText(/487,474 个彩色点/)).toBeVisible();
   expect(downloads).toBe(0);
   await page.getByRole("button", { name: "查看彩色点云", exact: true }).click();
-  await expect(page.getByText(/个彩色点 · 拖动旋转/)).toBeVisible({
+  await expect(page.getByText(/个彩色点.*拖动旋转/)).toBeVisible({
     timeout: 60000,
   });
   await expect(page.getByLabel("彩色点云三维场景")).toBeVisible();
@@ -409,7 +413,7 @@ test("recovers from invalid PLY and supports colored point clouds in the mobile 
   });
   await expect(page.getByRole("alert")).toContainText("PLY 文件头");
   await page.getByLabel("打开本地 PLY").setInputFiles(ply!);
-  await expect(page.getByText(/个彩色点 · 拖动旋转/)).toBeVisible({
+  await expect(page.getByText(/个彩色点.*拖动旋转/)).toBeVisible({
     timeout: 60000,
   });
   await expect(page.getByRole("alert")).toHaveCount(0);
@@ -425,4 +429,41 @@ test("recovers from invalid PLY and supports colored point clouds in the mobile 
   await expect(page.locator('[data-slot="dialog-content"]')).toHaveCount(0);
   await page.getByRole("button", { name: "关闭本地文件", exact: true }).click();
   await expect(page.getByLabel("彩色点云三维场景")).toHaveCount(0);
+});
+
+test("connection retry uses explicit POST for the same task", async ({
+  page,
+}) => {
+  await setup(page, [
+    { ...job, status: "transferring", connection_error: "远程连接暂不可用" },
+  ]);
+  let retries = 0;
+  await page.route(
+    `**/api/reconstructions/${job.id}/retry-connection`,
+    async (route) => {
+      expect(route.request().method()).toBe("POST");
+      retries += 1;
+      await route.fulfill({ json: job });
+    },
+  );
+  await open(page);
+  await page.getByRole("button", { name: "重试连接", exact: true }).click();
+  await expect.poll(() => retries).toBe(1);
+});
+
+test("map refreshes registered results while no reconstruction panel is open", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await setup(page);
+  let reads = 0;
+  await page.route("**/api/map/model-assets/page?**", async (route) => {
+    reads += 1;
+    await route.fulfill({ json: { data: [], next_cursor: null } });
+  });
+  await page.goto("/workspace/map");
+  await expect.poll(() => reads).toBe(1);
+  await page.clock.runFor(15_100);
+  await expect.poll(() => reads).toBe(2);
+  await expect(page.getByRole("heading", { name: job.title })).toHaveCount(0);
 });

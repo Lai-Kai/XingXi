@@ -10,7 +10,7 @@ async function proxy(
 ) {
   const { segments = [] } = await context.params;
   const suffix = segments.join("/");
-  if (suffix && !/^[a-f0-9-]{36}\/file$/.test(suffix))
+  if (suffix && suffix !== "page" && !/^[a-f0-9-]{36}\/file$/.test(suffix))
     return Response.json({ detail: "模型入口不存在" }, { status: 404 });
   const origin = (
     process.env.DEER_FLOW_INTERNAL_GATEWAY_BASE_URL ?? "http://127.0.0.1:8001"

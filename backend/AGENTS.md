@@ -1117,3 +1117,8 @@ them without importing Gateway code. The original map revisions
 `0046_agent_evaluation_cases`. Never overwrite either existing migration chain.
 `tests/test_map_migration_integration.py` covers empty databases, both previous
 heads, retained rows and non-destructive schema autogeneration.
+
+Reconstruction reliability: Gateway lifespan starts a bounded persistent status monitor; GET only inspects. Explicit admin POST retry-connection is the only connection retry surface. Keep `.started` claims across failures, machine/PID start fingerprints, and independent supervisor heartbeat metadata so FLUX progress updates cannot erase liveness. Do not automatically restart interrupted training. Register MapUploadStorageMiddleware inside Auth/CSRF and translate wrapped multipart ENOSPC/EDQUOT to 507 before generic errors. See `../docs/map-reconstruction-reliability.md`.
+
+
+Map model integrity (2026-10-25): `app.gateway.map_model_points.get_model_points` is the shared point dependency for imports and reconstruction. Supplied IDs require canonical name/entity binding before files/SSH; standalone unbound tasks remain valid. `/api/map/model-assets/page` uses SQL filtering before created_at/id keyset limits, bound cursors and 1..200 pages. Preserve the old array protocol without truncation. Shared `reconstructions/ply_validation.py` is Python3.8 stdlib-only, bounded validation of full ASCII/binary records; new SSH jobs receive it, legacy in-memory inspectors import lazily. It checks file integrity, not geometry or visual quality. See ../docs/map-model-integrity-performance.md and test_{reconstruction_point_binding,map_asset_paging,ply_integrity}.py.

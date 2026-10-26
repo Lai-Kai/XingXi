@@ -58,6 +58,11 @@ import {
 import { useAuth } from "@/core/auth/AuthProvider";
 import { planMapRoute } from "@/core/map/api";
 import {
+  readMapPerformance,
+  saveMapPerformance,
+  type MapPerformanceMode,
+} from "@/core/map/display-performance";
+import {
   defaultMapLayerOpacity,
   getRenderableMapLayers,
 } from "@/core/map/layers";
@@ -918,17 +923,35 @@ export default function MapPage() {
   const [resumeModelAfterPoint, setResumeModelAfterPoint] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
-    void listMapModels(controller.signal)
-      .then((models) => {
+    let pending = false;
+    const load = async () => {
+      if (pending || document.hidden) return;
+      pending = true;
+      try {
+        const models = await listMapModels(controller.signal);
         if (!controller.signal.aborted) {
-          setRegisteredModels(models);
+          setRegisteredModels((current) =>
+            JSON.stringify(current) === JSON.stringify(models)
+              ? current
+              : models,
+          );
           setModelError("");
         }
-      })
-      .catch(() => {
+      } catch {
         if (!controller.signal.aborted) setModelError("已接入模型暂时不可用");
-      });
-    return () => controller.abort();
+      } finally {
+        pending = false;
+      }
+    };
+    void load();
+    const timer = setInterval(() => void load(), 15_000);
+    const onVisibility = () => void load();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+      controller.abort();
+    };
   }, [modelsReload]);
   const {
     baseCatalog,
@@ -980,6 +1003,15 @@ export default function MapPage() {
   const [pointDetailTab, setPointDetailTab] = useState("overview");
   const [visibleLayerIds, setVisibleLayerIds] = useState<string[] | null>(null);
   const [layerOpacity, setLayerOpacity] = useState<Record<string, number>>({});
+  const [performanceMode, setPerformanceMode] =
+    useState<MapPerformanceMode>("balanced");
+  useEffect(() => {
+    try {
+      setPerformanceMode(readMapPerformance(window.localStorage));
+    } catch {
+      // Keep the default when the browser denies access to localStorage itself.
+    }
+  }, []);
   const [activeRouteId, setActiveRouteId] = useState<string | null>(null);
   const [routeStopIds, setRouteStopIds] = useState<string[]>([]);
   const [showTrajectory, setShowTrajectory] = useState(false);
@@ -987,6 +1019,13 @@ export default function MapPage() {
     string | null
   >(null);
   const [playing, setPlaying] = useState(false);
+  useEffect(() => {
+    const pause = () => {
+      if (document.hidden) setPlaying(false);
+    };
+    document.addEventListener("visibilitychange", pause);
+    return () => document.removeEventListener("visibilitychange", pause);
+  }, []);
   const [activeEventId, setActiveEventId] = useState<string | null>(null);
   const [detailView, setDetailView] = useState<"event" | "point" | "year">(
     "point",
@@ -1706,6 +1745,28 @@ export default function MapPage() {
       </SheetHeader>
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
         <section aria-label="地图图层">
+          <label className="bg-muted mb-5 flex min-h-12 items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm">
+            <span>
+              <span className="block font-medium">地图流畅模式</span>
+              <span className="text-muted-foreground block text-xs">
+                降低显示精细度并关闭浮层模糊，适合拖动卡顿时使用
+              </span>
+            </span>
+            <input
+              type="checkbox"
+              aria-label="地图流畅模式"
+              checked={performanceMode === "light"}
+              onChange={(event) => {
+                const mode = event.target.checked ? "light" : "balanced";
+                setPerformanceMode(mode);
+                try {
+                  saveMapPerformance(window.localStorage, mode);
+                } catch {
+                  // The in-memory preference still applies in restricted browsers.
+                }
+              }}
+            />
+          </label>
           <h3 className="text-foreground text-sm font-medium">底图模式</h3>
           <div
             role="group"
@@ -2087,7 +2148,10 @@ export default function MapPage() {
   );
 
   return (
-    <div className="research-map bg-background text-foreground relative isolate flex h-full min-h-0 flex-col">
+    <div
+      className="research-map bg-background text-foreground relative isolate flex h-full min-h-0 flex-col"
+      data-map-performance-mode={performanceMode}
+    >
       <header className="research-map-header bg-card/95 absolute top-3 right-3 left-3 z-20 flex min-h-12 items-center gap-1 rounded-xl border px-2 shadow-sm backdrop-blur md:gap-3 md:px-4 md:py-2">
         <SidebarTrigger className="md:hidden" />
         <MapIcon className="text-primary hidden size-4 shrink-0 sm:block" />
@@ -2138,6 +2202,7 @@ export default function MapPage() {
           <section className="relative min-h-0 flex-1">
             <MapLibreCanvas
               key={reloadKey}
+              performanceMode={performanceMode}
               cameraPadding={cameraPadding}
               points={points}
               modelPointIds={modelPointIds}
