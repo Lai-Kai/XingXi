@@ -5,6 +5,8 @@ export type GlbAssetDescriptor = {
   title: string;
   description?: string;
   src?: string;
+  previewSrc?: string;
+  previewSizeBytes?: number;
   poster?: string;
   generator?: string;
   license: string;
@@ -28,6 +30,8 @@ export const MAP_MODEL_ASSETS: readonly MapModelAsset[] = [
     title: "木渎古镇 · 大门模型",
     description: "古镇入口示意，关联到木渎古镇点位；具体门址待核实。",
     src: "/models/mudu-gate/v1/model.3966d61b08b7.glb",
+    previewSrc: "/models/mudu-gate/v1/preview.9cf1b0ace04a.glb",
+    previewSizeBytes: 1263212,
     sizeBytes: 20577288,
     generator: "Tripo",
     license: "待确认",
@@ -41,6 +45,8 @@ export const MAP_MODEL_ASSETS: readonly MapModelAsset[] = [
     title: "虹饮山房 · 模型预览",
     description: "根据照片生成的建筑示意，不表示完整园林。",
     src: "/models/hongyin/v1/model.af8089412860.glb",
+    previewSrc: "/models/hongyin/v1/preview.630df9ef7231.glb",
+    previewSizeBytes: 3411684,
     sizeBytes: 59741080,
     generator: "Tripo",
     license: "待确认",
@@ -54,6 +60,8 @@ export const MAP_MODEL_ASSETS: readonly MapModelAsset[] = [
     title: "古松园 · 古松示意",
     description: "模型对象为古松，不表示整个古松园。",
     src: "/models/gusong-tree/v1/model.59f2b1689b0f.glb",
+    previewSrc: "/models/gusong-tree/v1/preview.343e015c347e.glb",
+    previewSizeBytes: 3862136,
     sizeBytes: 71633044,
     generator: "Tripo",
     license: "待确认",
@@ -67,6 +75,8 @@ export const MAP_MODEL_ASSETS: readonly MapModelAsset[] = [
     title: "榜眼府第 · 模型预览",
     description: "根据照片生成的示意，具体建筑范围待核实。",
     src: "/models/bangyan/v1/model.c6345f1a451d.glb",
+    previewSrc: "/models/bangyan/v1/preview.3a1b0f52d3fc.glb",
+    previewSizeBytes: 5639684,
     sizeBytes: 65870372,
     generator: "Tripo",
     license: "待确认",
@@ -80,6 +90,8 @@ export const MAP_MODEL_ASSETS: readonly MapModelAsset[] = [
     title: "明月古寺 · 模型预览",
     description: "根据照片生成的示意，不表示完整寺院。",
     src: "/models/mingyue/v1/model.b2c499e22f05.glb",
+    previewSrc: "/models/mingyue/v1/preview.8a3168870452.glb",
+    previewSizeBytes: 2531800,
     sizeBytes: 58305884,
     generator: "Tripo",
     license: "待确认",
@@ -93,6 +105,8 @@ export const MAP_MODEL_ASSETS: readonly MapModelAsset[] = [
     title: "灵岩山寺 · 山门模型",
     description: "模型对象为山门，不表示整个灵岩山寺。",
     src: "/models/lingyan-gate/v1/model.00f2396c74d0.glb",
+    previewSrc: "/models/lingyan-gate/v1/preview.517ce2299ead.glb",
+    previewSizeBytes: 1098512,
     sizeBytes: 67757752,
     generator: "Tripo",
     license: "待确认",
@@ -106,6 +120,8 @@ export const MAP_MODEL_ASSETS: readonly MapModelAsset[] = [
     title: "永安桥 · 模型预览",
     description: "桥梁生成示意；地图上的位置仍为近似定位，待实地核实。",
     src: "/models/yongan-bridge/v1/model.39ae9c010f74.glb",
+    previewSrc: "/models/yongan-bridge/v1/preview.fd3b7fc4b565.glb",
+    previewSizeBytes: 6141388,
     sizeBytes: 75036744,
     generator: "Tripo",
     license: "待确认",

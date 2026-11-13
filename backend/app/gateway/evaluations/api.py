@@ -84,19 +84,19 @@ async def catalog(request: Request, cases: EvaluationCaseRepository = Depends(ca
     return {"version": SUITE_VERSION, "execution_mode": "replay", "available": getattr(request.app.state, "evaluation_service", None) is not None, "cases": active, "core_count": sum(case["id"] in core_ids for case in active)}
 
 
-@router.get("/cases")
+@router.get("/questions")
 async def list_cases(request: Request, repo: EvaluationCaseRepository = Depends(case_repository)):
     await reader(request)
     return {"execution_mode": "replay", "methods": methods(), "cases": await CaseCatalog(repo).list()}
 
 
-@router.post("/cases", status_code=201)
+@router.post("/questions", status_code=201)
 async def create_case(body: CaseCreate, request: Request, repo: EvaluationCaseRepository = Depends(case_repository)):
     user = await writer(request)
     return await CaseCatalog(repo).create(body, actor_id=str(user.id))
 
 
-@router.delete("/cases/{case_id}")
+@router.delete("/questions/{case_id}")
 async def delete_case(case_id: str, request: Request, repo: EvaluationCaseRepository = Depends(case_repository)):
     user = await writer(request)
     try:
@@ -105,7 +105,7 @@ async def delete_case(case_id: str, request: Request, repo: EvaluationCaseReposi
         raise HTTPException(404, str(exc)) from exc
 
 
-@router.post("/cases/{case_id}/restore")
+@router.post("/questions/{case_id}/restore")
 async def restore_case(case_id: str, request: Request, repo: EvaluationCaseRepository = Depends(case_repository)):
     user = await writer(request)
     try:

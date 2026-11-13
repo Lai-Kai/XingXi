@@ -299,10 +299,10 @@ export interface Translations {
     };
     recipes: {
       label: string;
-      trending: { title: string; desc: string };
-      news: { title: string; desc: string };
-      issues: { title: string; desc: string };
-      weekly: { title: string; desc: string };
+      mapSources: { title: string; desc: string; prompt: string };
+      mapPoints: { title: string; desc: string; prompt: string };
+      placeNames: { title: string; desc: string; prompt: string };
+      mapWeekly: { title: string; desc: string; prompt: string };
     };
   };
 
@@ -423,6 +423,7 @@ export interface Translations {
     unavailableShort: string;
     setupTitle: (name: string) => string;
     setupEditTitle: (name: string) => string;
+    bindingInstruction: (name: string, code: string) => string;
     setupDescription: string;
     saveAndConnect: string;
     saveChanges: string;
@@ -493,6 +494,7 @@ export interface Translations {
   uploads: {
     uploading: string;
     uploadingFiles: string;
+    uploadFailed: string;
     limitsHint: (
       maxFiles: number,
       maxFileSize: string,
@@ -574,6 +576,8 @@ export interface Translations {
     memory: {
       title: string;
       description: string;
+      loadError: string;
+      actionError: string;
       empty: string;
       accountDisabledTitle: string;
       accountDisabledDescription: string;
@@ -662,6 +666,7 @@ export interface Translations {
     tools: {
       title: string;
       description: string;
+      loadError: string;
       adminRequired: string;
       empty: string;
     };
@@ -671,14 +676,18 @@ export interface Translations {
       disabled: string;
     };
     skills: {
+      retryLoad: string;
       title: string;
       description: string;
+      loadError: string;
       createSkill: string;
       emptyTitle: string;
       emptyDescription: string;
       emptyButton: string;
       adminRequired: string;
       installAdminRequired: string;
+      installSuccess: string;
+      installFailed: string;
     };
     notification: {
       title: string;
@@ -706,6 +715,7 @@ export interface Translations {
       passwordMismatch: string;
       passwordTooShort: string;
       passwordChangedSuccess: string;
+      passwordChangeError: string;
       networkError: string;
       updating: string;
       updatePassword: string;

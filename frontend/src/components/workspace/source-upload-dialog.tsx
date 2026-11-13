@@ -30,8 +30,6 @@ import {
   retryIngestionStep,
   SourceUploadError,
   uploadSourceFile,
-  type IngestionJob,
-  type IngestionStepName,
   type SourceDocumentSummary,
   type SourceDocumentCreateInput,
   type SourceUploadLimits,
@@ -40,10 +38,15 @@ import {
   type SourceUploadTask,
 } from "@/core/source-files/api";
 import {
+  sourcePreparationStatus,
+  sourceUploadConflictMessage,
+} from "@/core/source-files/presentation";
+import {
   createSourceUploadQueue,
   sourceConflictActions,
   type SourceUploadQueueItem,
 } from "@/core/source-files/queue";
+import { publicErrorMessage } from "@/core/ui/presentation";
 
 const emptySourceRegistration: SourceDocumentCreateInput = {
   title: "",
@@ -75,25 +78,6 @@ const statusText = {
   failed: "失败",
   cancelled: "已取消",
 } as const;
-
-const ingestionStepText: Record<IngestionStepName, string> = {
-  parse: "解析",
-  ocr: "OCR",
-  clean: "清洗",
-  chunk: "切分",
-  review: "复核",
-  index: "索引",
-};
-
-function ingestionStatusText(job: IngestionJob) {
-  if (job.status === "awaiting_review") return "待复核";
-  if (job.status === "completed") return "入库完成";
-  if (job.status === "cancelled") return "入库已取消";
-  const step = job.current_step ? ingestionStepText[job.current_step] : "处理";
-  if (job.status === "failed") return `${step}失败`;
-  if (job.status === "running") return `${step}中`;
-  return `待${step}`;
-}
 
 export function SourceUploadDialog({
   open,
@@ -139,8 +123,7 @@ export function SourceUploadDialog({
         );
       })
       .catch((error: unknown) => {
-        if (active)
-          setLoadError(error instanceof Error ? error.message : "加载失败");
+        if (active) setLoadError(publicErrorMessage(error, "加载失败"));
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -177,8 +160,7 @@ export function SourceUploadDialog({
           } catch (error) {
             if (active)
               updateItem(item.id, {
-                ingestionError:
-                  error instanceof Error ? error.message : "无法读取入库进度",
+                ingestionError: publicErrorMessage(error, "无法读取入库进度"),
               });
           }
         }),
@@ -231,11 +213,16 @@ export function SourceUploadDialog({
         progress: 100,
         uploaded: result.file,
         ingestionJob: result.ingestionJob,
-        ingestionError: result.ingestionError,
+        ingestionError: result.ingestionError
+          ? "文件已上传，但资料处理尚未启动，请稍后重试。"
+          : undefined,
       });
       onUploaded(result);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "上传失败";
+      const message =
+        (error instanceof SourceUploadError
+          ? sourceUploadConflictMessage(error.code)
+          : null) ?? publicErrorMessage(error, "上传失败，请重试。");
       updateItem(item.id, {
         status: message === "上传已取消" ? "cancelled" : "failed",
         error: message,
@@ -256,8 +243,7 @@ export function SourceUploadDialog({
       updateItem(item.id, { ingestionJob, ingestionError: undefined });
     } catch (error) {
       updateItem(item.id, {
-        ingestionError:
-          error instanceof Error ? error.message : "无法取消入库任务",
+        ingestionError: publicErrorMessage(error, "无法取消入库任务"),
       });
     }
   }
@@ -269,8 +255,7 @@ export function SourceUploadDialog({
       updateItem(item.id, { ingestionJob, ingestionError: undefined });
     } catch (error) {
       updateItem(item.id, {
-        ingestionError:
-          error instanceof Error ? error.message : "无法重试入库步骤",
+        ingestionError: publicErrorMessage(error, "无法重试入库步骤"),
       });
     }
   }
@@ -304,9 +289,7 @@ export function SourceUploadDialog({
       setRegistration(emptySourceRegistration);
       setShowRegistration(false);
     } catch (error) {
-      setRegistrationError(
-        error instanceof Error ? error.message : "无法登记资料来源",
-      );
+      setRegistrationError(publicErrorMessage(error, "无法登记资料来源"));
     } finally {
       setRegistering(false);
     }
@@ -329,7 +312,7 @@ export function SourceUploadDialog({
         <DialogHeader>
           <DialogTitle>上传文献文件</DialogTitle>
           <DialogDescription>
-            上传后自动解析文献、抽取主体与关系，并生成附带文献出处的待复核图谱。
+            上传后整理文献，生成附有出处、供人工复核的关系图谱。
           </DialogDescription>
         </DialogHeader>
 
@@ -343,7 +326,7 @@ export function SourceUploadDialog({
               <div className="mb-1.5 flex items-center justify-between gap-3">
                 <label
                   htmlFor="source-document"
-                  className="font-medium text-[#344247]"
+                  className="text-muted-foreground font-medium"
                 >
                   资料来源
                 </label>
@@ -355,29 +338,29 @@ export function SourceUploadDialog({
                       setRegistrationError("");
                       setShowRegistration((current) => !current);
                     }}
-                    className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[#9ab9bd] px-2.5 text-xs text-[#285f68] hover:bg-[#edf5f5] disabled:opacity-40"
+                    className="border-primary text-primary hover:bg-muted/60 inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs disabled:opacity-40"
                   >
                     <BookPlus className="size-3.5" />
                     {showRegistration ? "取消登记" : "登记资料来源"}
                   </button>
                 )}
               </div>
-              <label className="my-3 flex items-start gap-2 text-sm text-[#435358]">
+              <label className="text-muted-foreground my-3 flex items-start gap-2 text-sm">
                 <input
                   type="checkbox"
                   checked={generateGraph}
                   disabled={isUploading}
                   onChange={(event) => setGenerateGraph(event.target.checked)}
-                  className="mt-0.5 size-4 accent-[#247f8c]"
+                  className="accent-primary mt-0.5 size-4"
                 />
-                允许内部解析文献并自动生成待复核关系图谱
+                允许用于内部研究，并生成待复核关系图谱
               </label>
               <select
                 id="source-document"
                 value={sourceId}
                 disabled={loading || sources.length === 0 || isUploading}
                 onChange={(event) => setSourceId(event.target.value)}
-                className="h-10 w-full rounded-md border border-[#cfdadc] bg-white px-3 outline-none focus:border-[#4f929b]"
+                className="border-border bg-card focus:border-primary h-10 w-full rounded-md border px-3 outline-none"
               >
                 {sources.length === 0 && (
                   <option value="">暂无已登记来源</option>
@@ -400,7 +383,7 @@ export function SourceUploadDialog({
                       setRegistrationError("");
                       setShowRegistration(true);
                     }}
-                    className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-md bg-[#245f68] px-3 text-sm text-white hover:bg-[#1d5159]"
+                    className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-md px-3 text-sm"
                   >
                     <BookPlus className="size-4" />
                     先登记资料来源
@@ -411,14 +394,14 @@ export function SourceUploadDialog({
 
             {showRegistration && (
               <form
-                className="space-y-3 border-y border-[#dce5e6] bg-[#f5f8f8] px-3 py-4"
+                className="border-border bg-muted/60 space-y-3 border-y px-3 py-4"
                 onSubmit={(event) => {
                   event.preventDefault();
                   void registerSource();
                 }}
               >
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="text-xs font-medium text-[#435358]">
+                  <label className="text-muted-foreground text-xs font-medium">
                     来源标题
                     <input
                       required
@@ -429,10 +412,10 @@ export function SourceUploadDialog({
                           title: event.target.value,
                         }))
                       }
-                      className="mt-1.5 h-9 w-full rounded-md border border-[#cbd8da] bg-white px-3 text-sm outline-none focus:border-[#4f929b]"
+                      className="border-border bg-card focus:border-primary mt-1.5 h-9 w-full rounded-md border px-3 text-sm outline-none"
                     />
                   </label>
-                  <label className="text-xs font-medium text-[#435358]">
+                  <label className="text-muted-foreground text-xs font-medium">
                     版本信息
                     <input
                       required
@@ -444,10 +427,10 @@ export function SourceUploadDialog({
                         }))
                       }
                       placeholder="例如：1996 年版"
-                      className="mt-1.5 h-9 w-full rounded-md border border-[#cbd8da] bg-white px-3 text-sm outline-none focus:border-[#4f929b]"
+                      className="border-border bg-card focus:border-primary mt-1.5 h-9 w-full rounded-md border px-3 text-sm outline-none"
                     />
                   </label>
-                  <label className="text-xs font-medium text-[#435358]">
+                  <label className="text-muted-foreground text-xs font-medium">
                     来源机构
                     <input
                       required
@@ -458,10 +441,10 @@ export function SourceUploadDialog({
                           source_institution: event.target.value,
                         }))
                       }
-                      className="mt-1.5 h-9 w-full rounded-md border border-[#cbd8da] bg-white px-3 text-sm outline-none focus:border-[#4f929b]"
+                      className="border-border bg-card focus:border-primary mt-1.5 h-9 w-full rounded-md border px-3 text-sm outline-none"
                     />
                   </label>
-                  <label className="text-xs font-medium text-[#435358]">
+                  <label className="text-muted-foreground text-xs font-medium">
                     资料持有人
                     <input
                       required
@@ -472,10 +455,10 @@ export function SourceUploadDialog({
                           holder: event.target.value,
                         }))
                       }
-                      className="mt-1.5 h-9 w-full rounded-md border border-[#cbd8da] bg-white px-3 text-sm outline-none focus:border-[#4f929b]"
+                      className="border-border bg-card focus:border-primary mt-1.5 h-9 w-full rounded-md border px-3 text-sm outline-none"
                     />
                   </label>
-                  <label className="text-xs font-medium text-[#435358]">
+                  <label className="text-muted-foreground text-xs font-medium">
                     来源类型
                     <select
                       value={registration.source_type}
@@ -490,7 +473,7 @@ export function SourceUploadDialog({
                               : null,
                         }))
                       }
-                      className="mt-1.5 h-9 w-full rounded-md border border-[#cbd8da] bg-white px-3 text-sm outline-none focus:border-[#4f929b]"
+                      className="border-border bg-card focus:border-primary mt-1.5 h-9 w-full rounded-md border px-3 text-sm outline-none"
                     >
                       <option value="gazetteer">地方志</option>
                       <option value="inscription">碑刻题记</option>
@@ -504,7 +487,7 @@ export function SourceUploadDialog({
                     </select>
                   </label>
                   {registration.source_type === "other" && (
-                    <label className="text-xs font-medium text-[#435358]">
+                    <label className="text-muted-foreground text-xs font-medium">
                       自定义资料类型
                       <input
                         required
@@ -517,11 +500,11 @@ export function SourceUploadDialog({
                           }))
                         }
                         placeholder="例如：家谱、报刊、书信、照片集"
-                        className="mt-1.5 h-9 w-full rounded-md border border-[#cbd8da] bg-white px-3 text-sm outline-none focus:border-[#4f929b]"
+                        className="border-border bg-card focus:border-primary mt-1.5 h-9 w-full rounded-md border px-3 text-sm outline-none"
                       />
                     </label>
                   )}
-                  <label className="text-xs font-medium text-[#435358]">
+                  <label className="text-muted-foreground text-xs font-medium">
                     来源等级
                     <select
                       value={registration.source_level}
@@ -532,7 +515,7 @@ export function SourceUploadDialog({
                             .value as SourceDocumentCreateInput["source_level"],
                         }))
                       }
-                      className="mt-1.5 h-9 w-full rounded-md border border-[#cbd8da] bg-white px-3 text-sm outline-none focus:border-[#4f929b]"
+                      className="border-border bg-card focus:border-primary mt-1.5 h-9 w-full rounded-md border px-3 text-sm outline-none"
                     >
                       <option value="A">A · 原始权威资料</option>
                       <option value="B">B · 可靠整理资料</option>
@@ -557,7 +540,7 @@ export function SourceUploadDialog({
                       !registration.source_institution.trim() ||
                       !registration.holder.trim()
                     }
-                    className="h-9 rounded-md bg-[#245f68] px-4 text-sm text-white hover:bg-[#1d5159] disabled:cursor-not-allowed disabled:opacity-40"
+                    className="bg-primary text-primary-foreground hover:bg-primary/90 h-9 rounded-md px-4 text-sm disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     {registering ? "正在保存…" : "保存来源"}
                   </button>
@@ -565,8 +548,8 @@ export function SourceUploadDialog({
               </form>
             )}
 
-            <div className="flex items-center justify-between gap-3 border-b border-[#e0e7e8] pb-3">
-              <div className="min-w-0 text-xs text-[#697a7e]">
+            <div className="border-border flex items-center justify-between gap-3 border-b pb-3">
+              <div className="text-muted-foreground min-w-0 text-xs">
                 {limits
                   ? `最多 ${limits.max_files} 个，单个不超过 ${readableSize(limits.max_file_size)}`
                   : "正在读取上传限制"}
@@ -586,7 +569,7 @@ export function SourceUploadDialog({
                 type="button"
                 disabled={!limits || isUploading}
                 onClick={() => inputRef.current?.click()}
-                className="flex h-9 shrink-0 items-center gap-2 rounded-md border border-[#8aafb4] px-3 text-sm text-[#275f68] hover:bg-[#edf5f5] disabled:cursor-not-allowed disabled:opacity-40"
+                className="border-primary text-primary hover:bg-muted/60 flex h-9 shrink-0 items-center gap-2 rounded-md border px-3 text-sm disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <FileUp className="size-4" />
                 选择文件
@@ -595,25 +578,25 @@ export function SourceUploadDialog({
 
             <div className="min-h-28">
               {queue.length === 0 ? (
-                <div className="flex min-h-28 items-center justify-center text-sm text-[#7a898d]">
+                <div className="text-muted-foreground flex min-h-28 items-center justify-center text-sm">
                   尚未选择文件
                 </div>
               ) : (
                 queue.map((item) => (
                   <div
                     key={item.id}
-                    className="grid grid-cols-[minmax(0,1fr)_96px_36px] items-center gap-3 border-b border-[#e7ecec] py-3 last:border-b-0"
+                    className="border-border grid grid-cols-[minmax(0,1fr)_96px_36px] items-center gap-3 border-b py-3 last:border-b-0"
                   >
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <FileText className="size-4 shrink-0 text-[#568087]" />
+                        <FileText className="text-muted-foreground size-4 shrink-0" />
                         <span
                           className="truncate text-sm font-medium"
                           title={item.file.name}
                         >
                           {item.file.name}
                         </span>
-                        <span className="shrink-0 text-xs text-[#7b898d]">
+                        <span className="text-muted-foreground shrink-0 text-xs">
                           {readableSize(item.file.size)}
                         </span>
                       </div>
@@ -632,7 +615,7 @@ export function SourceUploadDialog({
                       {item.ingestionJob?.status === "awaiting_review" && (
                         <Link
                           href="/workspace/knowledge-graph"
-                          className="mt-1 inline-block text-xs text-[#275f68] underline"
+                          className="text-primary mt-1 inline-block text-xs underline"
                         >
                           查看待复核关系图谱
                         </Link>
@@ -659,7 +642,7 @@ export function SourceUploadDialog({
                                   duplicatePolicy: "reference_existing",
                                 })
                               }
-                              className="flex h-7 items-center gap-1.5 rounded-md border border-[#8aafb4] px-2.5 text-xs text-[#275f68] hover:bg-[#edf5f5]"
+                              className="border-primary text-primary hover:bg-muted/60 flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-xs"
                             >
                               <Link2 className="size-3.5" />
                               引用已有
@@ -676,7 +659,7 @@ export function SourceUploadDialog({
                                   versionOfFileId: item.existingFile?.id,
                                 })
                               }
-                              className="flex h-7 items-center gap-1.5 rounded-md border border-[#8aafb4] px-2.5 text-xs text-[#275f68] hover:bg-[#edf5f5]"
+                              className="border-primary text-primary hover:bg-muted/60 flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-xs"
                             >
                               <GitBranch className="size-3.5" />
                               建立新版本
@@ -691,11 +674,11 @@ export function SourceUploadDialog({
                           ? "text-[#28734e]"
                           : item.status === "failed"
                             ? "text-[#a13d3d]"
-                            : "text-[#617277]"
+                            : "text-muted-foreground"
                       }`}
                     >
                       {item.status === "uploaded" && item.ingestionJob
-                        ? ingestionStatusText(item.ingestionJob)
+                        ? sourcePreparationStatus(item.ingestionJob)
                         : item.status === "uploading"
                           ? `${item.progress}%`
                           : statusText[item.status]}
@@ -709,7 +692,7 @@ export function SourceUploadDialog({
                           if (task) task.cancel();
                           else updateItem(item.id, { status: "cancelled" });
                         }}
-                        className="flex size-8 items-center justify-center rounded-md text-[#6a787c] hover:bg-[#eef3f3]"
+                        className="text-muted-foreground hover:bg-muted/60 flex size-8 items-center justify-center rounded-md"
                       >
                         <X className="size-4" />
                       </button>
@@ -722,7 +705,7 @@ export function SourceUploadDialog({
                         type="button"
                         title="重试当前入库步骤"
                         onClick={() => void retryProcessing(item)}
-                        className="flex size-8 items-center justify-center rounded-md text-[#356f77] hover:bg-[#e9f2f3]"
+                        className="text-primary hover:bg-accent flex size-8 items-center justify-center rounded-md"
                       >
                         <RotateCcw className="size-4" />
                       </button>
@@ -734,7 +717,7 @@ export function SourceUploadDialog({
                         type="button"
                         title="取消入库任务"
                         onClick={() => void cancelProcessing(item)}
-                        className="flex size-8 items-center justify-center rounded-md text-[#6a787c] hover:bg-[#eef3f3]"
+                        className="text-muted-foreground hover:bg-muted/60 flex size-8 items-center justify-center rounded-md"
                       >
                         <X className="size-4" />
                       </button>
@@ -744,7 +727,7 @@ export function SourceUploadDialog({
                         type="button"
                         title="重试上传"
                         onClick={() => void startItem(item)}
-                        className="flex size-8 items-center justify-center rounded-md text-[#356f77] hover:bg-[#e9f2f3]"
+                        className="text-primary hover:bg-accent flex size-8 items-center justify-center rounded-md"
                       >
                         <RotateCcw className="size-4" />
                       </button>
@@ -763,7 +746,7 @@ export function SourceUploadDialog({
             type="button"
             disabled={isUploading}
             onClick={() => onOpenChange(false)}
-            className="h-9 rounded-md border border-[#ccd7d9] px-4 text-sm hover:bg-[#f0f4f4] disabled:opacity-40"
+            className="border-border hover:bg-muted/60 h-9 rounded-md border px-4 text-sm disabled:opacity-40"
           >
             关闭
           </button>
@@ -775,7 +758,7 @@ export function SourceUploadDialog({
                 .filter((item) => item.status === "queued")
                 .forEach((item) => void startItem(item));
             }}
-            className="h-9 rounded-md bg-[#202b2e] px-4 text-sm text-white hover:bg-[#354347] disabled:cursor-not-allowed disabled:opacity-40"
+            className="bg-primary text-primary-foreground hover:bg-primary/90 h-9 rounded-md px-4 text-sm disabled:cursor-not-allowed disabled:opacity-40"
           >
             {isUploading ? "正在上传" : "开始上传"}
           </button>

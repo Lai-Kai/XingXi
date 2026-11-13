@@ -39,6 +39,7 @@ import {
   setResearchProjectArchived,
   type ResearchProject as ApiResearchProject,
 } from "@/core/projects/api";
+import { publicErrorMessage } from "@/core/ui/presentation";
 import { isIMEComposing } from "@/lib/ime";
 
 type ResearchProject = ApiResearchProject & {
@@ -75,7 +76,7 @@ export default function ProjectsPage() {
         })),
       );
     } catch (error) {
-      setLoadError(error instanceof Error ? error.message : "无法读取研究项目");
+      setLoadError(publicErrorMessage(error, "无法读取研究项目"));
     } finally {
       setLoading(false);
     }
@@ -116,9 +117,7 @@ export default function ProjectsPage() {
       setShowArchived(false);
       setDialogOpen(false);
     } catch (error) {
-      setActionError(
-        error instanceof Error ? error.message : "无法创建研究项目",
-      );
+      setActionError(publicErrorMessage(error, "无法创建研究项目"));
     } finally {
       setCreating(false);
     }
@@ -137,9 +136,7 @@ export default function ProjectsPage() {
         ),
       );
     } catch (error) {
-      setActionError(
-        error instanceof Error ? error.message : "无法更新项目状态",
-      );
+      setActionError(publicErrorMessage(error, "无法更新项目状态"));
     } finally {
       setArchivingId(null);
     }
@@ -147,7 +144,7 @@ export default function ProjectsPage() {
 
   if (!mayManageProjects) {
     return (
-      <main className="size-full overflow-y-auto bg-[#f7fafb] text-[#202b2e]">
+      <main className="xingxi-module bg-muted/60 text-foreground size-full overflow-y-auto">
         <BusinessMobileHeader title="研究项目" />
         <div className="mx-auto min-h-full max-w-7xl px-4 py-7 sm:px-8 lg:px-10 lg:py-10">
           <BusinessPageHeader
@@ -159,7 +156,7 @@ export default function ProjectsPage() {
             icon={ShieldAlert}
             title="当前角色不使用研究项目"
             description="研究人员和研学团队可以建立项目；游客/公众可继续使用文史检索、智能问答与古舆地图。"
-            className="mt-6 min-h-[440px] border-t border-[#dbe4e5]"
+            className="border-border mt-6 min-h-[440px] border-t"
           />
         </div>
       </main>
@@ -167,7 +164,7 @@ export default function ProjectsPage() {
   }
 
   return (
-    <main className="size-full overflow-y-auto bg-[#f7fafb] text-[#202b2e]">
+    <main className="xingxi-module bg-muted/60 text-foreground size-full overflow-y-auto">
       <BusinessMobileHeader title="研究项目" />
 
       <div className="mx-auto min-h-full max-w-7xl px-4 py-7 sm:px-8 lg:px-10 lg:py-10">
@@ -179,7 +176,7 @@ export default function ProjectsPage() {
             <button
               type="button"
               onClick={() => setDialogOpen(true)}
-              className="flex h-10 w-fit items-center gap-2 rounded-md bg-[#202b2e] px-4 text-sm text-white hover:bg-[#354347]"
+              className="bg-primary text-primary-foreground hover:bg-primary/90 flex h-10 w-fit items-center gap-2 rounded-md px-4 text-sm"
             >
               <Plus className="size-4" />
               新建项目
@@ -197,14 +194,14 @@ export default function ProjectsPage() {
         )}
 
         <section className="mt-6">
-          <div className="flex items-center gap-2 border-b border-[#dbe4e5] pb-3">
+          <div className="border-border flex items-center gap-2 border-b pb-3">
             <button
               type="button"
               onClick={() => setShowArchived(false)}
               className={`h-9 rounded-md px-4 text-sm ${
                 !showArchived
-                  ? "bg-[#dfeaec] font-medium text-[#285f68]"
-                  : "text-[#68797e] hover:bg-[#edf3f4]"
+                  ? "bg-accent text-primary font-medium"
+                  : "text-muted-foreground hover:bg-muted/60"
               }`}
             >
               {activeCount} 个项目
@@ -214,8 +211,8 @@ export default function ProjectsPage() {
               onClick={() => setShowArchived(true)}
               className={`flex h-9 items-center gap-2 rounded-md px-4 text-sm ${
                 showArchived
-                  ? "bg-[#dfeaec] font-medium text-[#285f68]"
-                  : "text-[#68797e] hover:bg-[#edf3f4]"
+                  ? "bg-accent text-primary font-medium"
+                  : "text-muted-foreground hover:bg-muted/60"
               }`}
             >
               <Archive className="size-4" />
@@ -245,7 +242,7 @@ export default function ProjectsPage() {
                   <button
                     type="button"
                     onClick={() => setDialogOpen(true)}
-                    className="mt-5 flex h-10 items-center gap-2 rounded-md border border-[#80aeb5] px-4 text-sm text-[#286873] hover:bg-[#edf5f5]"
+                    className="border-primary text-primary hover:bg-muted/60 mt-5 flex h-10 items-center gap-2 rounded-md border px-4 text-sm"
                   >
                     <Plus className="size-4" />
                     创建第一个项目
@@ -258,10 +255,10 @@ export default function ProjectsPage() {
               {visibleProjects.map((project) => (
                 <article
                   key={project.id}
-                  className="relative rounded-md border border-[#d5e0e1] bg-white p-5 transition hover:border-[#8fb4ba] hover:shadow-[0_8px_24px_rgba(44,76,82,0.08)]"
+                  className="xingxi-panel border-border bg-card hover:border-primary relative rounded-2xl border p-5 transition hover:shadow-[0_8px_24px_rgba(44,76,82,0.08)]"
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <span className="flex size-10 items-center justify-center rounded-md bg-[#e4eff0] text-[#356f77]">
+                    <span className="bg-accent text-primary flex size-10 items-center justify-center rounded-md">
                       <BookOpenText className="size-5" />
                     </span>
                     <button
@@ -269,7 +266,7 @@ export default function ProjectsPage() {
                       disabled={archivingId === project.id}
                       onClick={() => void toggleArchive(project.id)}
                       title={project.archived ? "取消归档" : "归档项目"}
-                      className="relative z-10 flex size-8 items-center justify-center rounded-md text-[#718186] hover:bg-[#edf3f4] hover:text-[#2d5960] disabled:cursor-wait disabled:opacity-50"
+                      className="text-muted-foreground hover:bg-muted/60 hover:text-primary relative z-10 flex size-8 items-center justify-center rounded-md disabled:cursor-wait disabled:opacity-50"
                     >
                       {project.archived ? (
                         <Archive className="size-4" />
@@ -290,7 +287,7 @@ export default function ProjectsPage() {
                     status={project.archived ? "archived" : "active"}
                     className="mt-3"
                   />
-                  <div className="mt-5 flex items-center justify-between border-t border-[#e4eaeb] pt-4 text-xs text-[#718186]">
+                  <div className="border-border text-muted-foreground mt-5 flex items-center justify-between border-t pt-4 text-xs">
                     <span>{project.documentCount} 份文献</span>
                     <span className="flex items-center gap-2">
                       创建于 {project.createdAt}

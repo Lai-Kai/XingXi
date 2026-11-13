@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+import type { DailyResearchFeed } from "../../src/core/research-feed/api";
+
 import { mockLangGraphAPI } from "./utils/mock-api";
 
 test.describe("Xingxi home", () => {
@@ -12,7 +14,7 @@ test.describe("Xingxi home", () => {
         body: JSON.stringify({
           kind: "daily_grounded",
           generated_for: "2026-07-29",
-          next_refresh_at: "2026-07-30T00:00:00+08:00",
+          next_refresh_at: "2099-07-30T00:00:00+08:00",
           items: [
             {
               id: "daily-bridge",
@@ -273,21 +275,31 @@ test.describe("Xingxi home", () => {
       });
   });
 
-  test("feed tabs and personalization settings are interactive", async ({
+  test("document leads and collections use the actual daily sources", async ({
     page,
   }) => {
     await page.goto("/workspace");
 
-    await page.getByRole("tab", { name: "最新收录" }).click();
     await expect(
-      page.getByText("民国时期木渎镇区商号与街巷名称索引"),
+      page.getByRole("link", { name: "木渎古桥名称沿革", exact: true }),
     ).toBeVisible();
-
-    await page.getByRole("button", { name: "个性化设置" }).click();
-    await expect(page.getByText("关注的研究方向")).toBeVisible();
-    await page.getByRole("button", { name: "园林" }).click();
-    await expect(page.getByRole("button", { name: "园林" })).toHaveAttribute(
-      "aria-pressed",
+    await page.getByRole("tab", { name: "文献线索" }).click();
+    await expect(
+      page.getByRole("heading", { name: "（康熙）吴县志" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "12–13页 · 查看原文" }),
+    ).toBeVisible();
+    await page.getByRole("tab", { name: "专题阅读" }).click();
+    await expect(page.getByRole("heading", { name: "古迹考证" })).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "木渎古桥名称沿革", exact: true }),
+    ).toHaveAttribute("href", /evidence_id=evidence-bridge/);
+    await page.getByRole("tab", { name: "专题阅读" }).press("Home");
+    await expect(page.getByRole("tab", { name: "今日选题" })).toBeFocused();
+    await page.getByRole("tab", { name: "今日选题" }).press("ArrowRight");
+    await expect(page.getByRole("tab", { name: "文献线索" })).toHaveAttribute(
+      "aria-selected",
       "true",
     );
   });
@@ -307,6 +319,198 @@ test.describe("Xingxi home", () => {
     expect(url.searchParams.get("topic_query")).toBe("木渎 古桥");
     expect(url.searchParams.getAll("document_id")).toEqual(["document-bridge"]);
     expect(url.searchParams.getAll("evidence_id")).toEqual(["evidence-bridge"]);
+  });
+
+  test("quick questions stay editable and source preferences travel with the query", async ({
+    page,
+  }) => {
+    await page.goto("/workspace");
+    await expect(page.getByRole("button", { name: "开始研究" })).toBeDisabled();
+    await page.getByRole("button", { name: /人物与地方记忆/ }).click();
+    const input = page.getByLabel("研究问题");
+    await expect(input).toBeFocused();
+    await expect(input).toHaveValue(/范仲淹/);
+    await input.fill("香溪沿岸有哪些古桥？");
+    await page.getByRole("button", { name: "地方志", exact: true }).click();
+    const inscriptions = page.getByRole("button", {
+      name: "碑刻拓片",
+      exact: true,
+    });
+    await inscriptions.click();
+    await expect(inscriptions).toHaveAttribute("aria-pressed", "true");
+    await inscriptions.click();
+    await expect(inscriptions).toHaveAttribute("aria-pressed", "false");
+    await page.getByRole("button", { name: "开始研究" }).click();
+    expect(new URL(page.url()).searchParams.get("prompt")).toBe(
+      "香溪沿岸有哪些古桥？\n\n优先查阅：地方志。请注明出处与页码。",
+    );
+  });
+
+  test("Chinese composition Enter does not submit and Shift+Enter keeps a multiline draft", async ({
+    page,
+  }) => {
+    await page.goto("/workspace");
+    const input = page.getByLabel("研究问题");
+    await input.fill("木渎古桥");
+    await input.dispatchEvent("keydown", {
+      key: "Enter",
+      code: "Enter",
+      keyCode: 229,
+      isComposing: true,
+    });
+    await expect(page).toHaveURL(/\/workspace$/);
+    await input.press("End");
+    await input.press("Shift+Enter");
+    await input.pressSequentially("出处");
+    await expect(input).toHaveValue("木渎古桥\n出处");
+    await input.press("Enter");
+    await expect(page).toHaveURL(/\/workspace\/chats\/new\?/);
+  });
+
+  test("source preview loads the selected Evidence and closes with keyboard focus restored", async ({
+    page,
+  }) => {
+    await page.route(
+      "**/api/knowledge-search/evidence/evidence-bridge",
+      (route) =>
+        route.fulfill({
+          json: {
+            evidence_id: "evidence-bridge",
+            document_id: "document-bridge",
+            chunk_id: "chunk-bridge",
+            source_file_id: null,
+            document_title: "（康熙）吴县志",
+            edition: "康熙刻本",
+            volume: "卷一",
+            section: "桥梁",
+            page_start: 12,
+            page_end: 13,
+            folio_start: null,
+            folio_end: null,
+            quote: "完整桥梁原文与上下文",
+            source_level: "A",
+            review_status: "reviewed",
+            href: "evidence://evidence-bridge",
+          },
+        }),
+    );
+    await page.goto("/workspace");
+    const preview = page.getByRole("button", {
+      name: "查看原文：（康熙）吴县志",
+      exact: true,
+    });
+    await preview.click();
+    const sheet = page.getByRole("dialog", { name: "原文与出处" });
+    await expect(sheet).toBeVisible();
+    await expect(
+      sheet.getByText("木渎桥梁原文", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      sheet.getByText("完整桥梁原文与上下文", { exact: true }),
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(sheet).toBeHidden();
+    await expect(preview).toBeFocused();
+  });
+
+  test("failed Evidence loading keeps the feed excerpt available", async ({
+    page,
+  }) => {
+    await page.route(
+      "**/api/knowledge-search/evidence/evidence-bridge",
+      (route) => route.fulfill({ status: 503, json: { detail: "暂时不可用" } }),
+    );
+    await page.goto("/workspace");
+    await page
+      .getByRole("button", { name: "查看原文：（康熙）吴县志", exact: true })
+      .click();
+    const sheet = page.getByRole("dialog", { name: "原文与出处" });
+    await expect(sheet.getByText("暂无法打开该资料出处详情")).toBeVisible();
+    await expect(
+      sheet.getByText("木渎桥梁原文", { exact: true }),
+    ).toBeVisible();
+  });
+
+  test("the highlighted sidebar entry opens the agent module once", async ({
+    page,
+  }) => {
+    await page.goto("/workspace");
+    const entry = page.getByRole("link", { name: "星羲智能体", exact: true });
+    await expect(entry).toHaveCount(1);
+    await expect(entry).toHaveAttribute("href", "/workspace/agent");
+    await expect(
+      page.getByRole("button", { name: "新建检索项目", exact: true }),
+    ).toHaveCount(0);
+    await entry.click();
+    await expect(page).toHaveURL(/\/workspace\/agent$/);
+    await expect(entry).toHaveAttribute("aria-current", "page");
+    await expect(
+      page.getByRole("link", { name: "开始对话", exact: true }),
+    ).toBeVisible();
+  });
+
+  test("more topics expand in place and retain the original dated source scope", async ({
+    page,
+  }) => {
+    const pending = page.waitForResponse((response) =>
+      response.url().includes("/api/research-feed/daily?"),
+    );
+    await page.goto("/workspace");
+    const feed = (await (await pending).json()) as DailyResearchFeed;
+    await page.route("**/api/research-feed/history?days=7", (route) =>
+      route.fulfill({
+        json: {
+          kind: "daily_grounded_history",
+          current: feed,
+          previous: [
+            {
+              ...feed,
+              generated_for: "2026-07-28",
+              items: [{ ...feed.items[0], title: "往日桥梁选题" }],
+            },
+          ],
+          history_days: 7,
+        },
+      }),
+    );
+    await page.getByRole("button", { name: "查看更多今日与往日选题" }).click();
+    await expect(page).toHaveURL(/\/workspace$/);
+    await expect(
+      page.getByRole("link", { name: "往日桥梁选题", exact: true }),
+    ).toHaveAttribute("href", /evidence_id=evidence-bridge/);
+    await page.getByRole("button", { name: "收起更多选题" }).click();
+    await expect(
+      page.getByRole("link", { name: "往日桥梁选题", exact: true }),
+    ).toHaveCount(0);
+  });
+
+  test("mobile home keeps the composer in the viewport and opens navigation", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/workspace");
+    await expect(
+      page.getByRole("heading", { name: "今天想查阅哪一段木渎历史？" }),
+    ).toBeVisible();
+    const input = page.getByLabel("研究问题");
+    const box = await input.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(390);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
+    await page.locator("[data-sidebar='trigger']:visible").first().click();
+    await expect(
+      page.locator("[data-mobile='true'][data-sidebar='sidebar']"),
+    ).toBeVisible();
+    await page.getByRole("link", { name: "星羲智能体", exact: true }).click();
+    await expect(page).toHaveURL(/\/workspace\/agent$/);
+    await expect(
+      page.locator("[data-mobile='true'][data-sidebar='sidebar']"),
+    ).not.toBeVisible();
   });
 
   for (const entry of ["木渎古桥名称沿革", "开始了解"]) {
@@ -385,7 +589,7 @@ test.describe("Xingxi home", () => {
 
     await expect(
       page.getByText("部分内容暂时使用本地资料", { exact: true }),
-    ).toBeVisible();
+    ).toHaveCount(0);
     await expect(
       page.getByText("地方文献怎样记载朱买臣与吴地的联系？", { exact: true }),
     ).toBeVisible();

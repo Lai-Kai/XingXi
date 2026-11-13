@@ -4,7 +4,7 @@ This file provides guidance to AI coding agents (Claude Code, Codex, and others)
 
 ## Project Overview
 
-Automatic question management uses `/api/operations/evaluations/cases` (GET/POST), `DELETE /cases/{id}`, and `POST /cases/{id}/restore`. `evaluations/case_catalog.py` merges code-owned replay templates with SQL custom questions and activation overrides in migration `0046_agent_evaluation_cases` / `operations/evaluation_cases.py`. Built-in overrides store no case JSON; custom questions inherit a whitelisted scenario/mode with bounded declarative term checks. Governance readers can inspect full methods and rules; only admins mutate. New executions resolve active questions (explicit IDs override smoke), while historical reruns use frozen snapshots regardless of deletion. The CLI continues to use its isolated code-owned suite.
+Automatic question management uses `/api/operations/evaluations/questions` (GET/POST), `DELETE /questions/{id}`, and `POST /questions/{id}/restore`. Manual evaluation retains `/api/operations/evaluations/cases`; never register both catalogs at the same method/path or rely on router order. `tests/test_evaluation_question_routes.py` checks both on the real `create_app()`, including role restrictions and mutation dispatch. `evaluations/case_catalog.py` merges code-owned replay templates with SQL custom questions and activation overrides in migration `0046_agent_evaluation_cases` / `operations/evaluation_cases.py`. Built-in overrides store no case JSON; custom questions inherit a whitelisted scenario/mode with bounded declarative term checks. Governance readers can inspect full methods and rules; only admins mutate. New executions resolve active questions (explicit IDs override smoke), while historical reruns use frozen snapshots regardless of deletion. The CLI continues to use its isolated code-owned suite.
 
 Automatic Agent evaluations live in `app/gateway/evaluations/` with `/api/operations/evaluations/{catalog,executions}` endpoints. SQL migration `0044_agent_evaluations` preserves legacy manual runs and adds immutable attempt results, append-only reviews, idempotency keys and one shared worker lease. The application service claims jobs, launches a separate Gateway process with a fresh synthetic SQLite corpus and scripted model, and saves observed RunJournal tools/evidence plus rule checks. `XINGXI_EVALUATION_CHILD=1` prevents recursive evaluation/ingestion workers; seeding also requires an empty database. The child never inherits provider credentials or enables external tracing. Expired leases become errors, and retries create new linked batches. All execution/cancel/rerun/review writes require admin; reads/exports require `governance:read`. Harness persistence must not import this application package. Missing observations cannot pass and offline evaluation outcomes must not affect online accuracy. See `../docs/agent-evaluation-testing.md` for CLI/report behavior and replay limitations.
 
@@ -103,6 +103,8 @@ deer-flow/
 - An ordinary asynchronous `search_sources` query with an empty EvidencePack may retry once using `wu_culture.fulltext.build_keyword_retry_query`. This removes only standalone question wording such as `历史联系` and keeps at least two subject terms. The retry preserves the resolved Release, authorization and filters, reports `resolved_query` and `retrieval_attempts`, and skips quoted queries, cursor requests, daily-topic queries and alias-expansion decisions. Follow-up pagination uses `resolved_query`. The exact full-text API does not simplify keywords.
 
 ## Important Development Guidelines
+
+Map automatic reconstruction CPU policy (2026-10-29): the external immutable parallel runner bounds camera preparation to 8 COLMAP workers and one BLAS/OpenMP thread per worker. New jobs freeze the configured runner version; never overwrite a running bundle. A failed job may be migrated only after confirming no live supervisor/controller/owned children, preserving input/quality and recording old/new versions with a revision CAS. Resume through the existing service; read polling must not reopen terminal jobs. Shared edit-cache reads/publications are optional: record cache warnings while preserving successful frame receipts; only cache metadata uses 0640 to enable inherited named read ACLs, leaving private job JSON unchanged. Evidence and actual training outcome: `../docs/map-auto-flow-20261029.md`.
 
 ### Documentation Update Policy
 **CRITICAL: Always update README.md and AGENTS.md after every code change**
@@ -519,6 +521,14 @@ Additional providers also live here (`boxlite`, `brave`, `browserless`, `crawl4a
 
 ### Skills System (`packages/harness/deerflow/skills/`)
 
+- The Gateway must register `routers.skills.router` in `create_app`; settings and
+  the chat skill picker both use the authenticated `/api/skills` catalog. Keep
+  ordinary-user reads and admin-only mutations. The router imports the native
+  `skills/skillscan/orchestrator.py` through installation/edit dependencies;
+  removing that implementation breaks registration and safety checks. The
+  restored implementation is from the parent of `71412c01`. Regression coverage
+  in `tests/test_gateway_skills_registration.py` checks the real application
+  routes, filesystem listing, persisted toggle, permissions and static blocking.
 - **Location**: `deer-flow/skills/{public,custom}/`
 - **Format**: Directory with `SKILL.md` (YAML frontmatter: name, description, license, allowed-tools, required-secrets)
 - **Loading**: `load_skills()` recursively scans namespace directories under `skills/{public,custom}`, but stops descending once it finds a `SKILL.md`; that directory is a package boundary, so no nested `SKILL.md` is registered as a runtime skill. SkillScan has a deliberately narrower packaging rule: known eval fixtures are permitted as support data, while other nested `SKILL.md` files are reported as package defects. It parses runtime metadata and reads enabled state from extensions_config.json.
@@ -1117,3 +1127,13 @@ them without importing Gateway code. The original map revisions
 `0046_agent_evaluation_cases`. Never overwrite either existing migration chain.
 `tests/test_map_migration_integration.py` covers empty databases, both previous
 heads, retained rows and non-destructive schema autogeneration.
+
+Host-native map reconstruction: the optional dependency and localhost SSH worker are configured by `../scripts/configure_map_reconstruction.py` as the deployment owner. Store keys/config under `runtime_home()/reconstruction-worker/ssh` and jobs separately under `reconstruction-worker/jobs`; never copy interactive account passwords. Authorize the dedicated key only from 127.0.0.1 with `restrict`, reject unknown host keys and verify SFTP before publishing environment settings. Keep original/FLUX branches, job idempotency and admin authorization. Setup regressions are `../tests/test_map_reconstruction_setup.py`; deployment evidence is documented in `../docs/map-server-reconstruction-activation.md`.
+
+Reconstruction reliability: Gateway lifespan starts a bounded persistent status monitor; GET only inspects. Explicit admin POST retry-connection is the only connection retry surface. Keep `.started` claims across failures, machine/PID start fingerprints, and independent supervisor heartbeat metadata so FLUX progress updates cannot erase liveness. Do not automatically restart interrupted training. Register MapUploadStorageMiddleware inside Auth/CSRF and translate wrapped multipart ENOSPC/EDQUOT to 507 before generic errors. See `../docs/map-reconstruction-reliability.md`.
+
+
+Map model integrity (2026-10-25): `app.gateway.map_model_points.get_model_points` is the shared point dependency for imports and reconstruction. Supplied IDs require canonical name/entity binding before files/SSH; standalone unbound tasks remain valid. `/api/map/model-assets/page` uses SQL filtering before created_at/id keyset limits, bound cursors and 1..200 pages. Preserve the old array protocol without truncation. Shared `reconstructions/ply_validation.py` is Python3.8 stdlib-only, bounded validation of full ASCII/binary records; new SSH jobs receive it, legacy in-memory inspectors import lazily. It checks file integrity, not geometry or visual quality. See ../docs/map-model-integrity-performance.md and test_{reconstruction_point_binding,map_asset_paging,ply_integrity}.py.
+
+
+Parallel reconstruction (2026-10-27): optional XINGXI_PARALLEL_RUNNER_ROOT is snapshotted per new task. Explicit admin POST /api/reconstructions/{id}/resume uses JobStore.begin_resume SQL CAS; ordinary patches must retain terminal immutability. Keep old runners/claims compatible and support the parallel_v2 Gaussian/RGB artifact manifest. GET never resumes work. See ../docs/map-parallel-reconstruction.md.

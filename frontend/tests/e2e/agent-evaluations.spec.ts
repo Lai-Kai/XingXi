@@ -139,18 +139,20 @@ test("automatic evaluations retain failures, reviews, exports and cancelled reru
   });
   await page.goto("/workspace/operations");
   await page.getByRole("button", { name: "回归评测", exact: true }).click();
-  await page.getByRole("link", { name: "打开 Agent 评测" }).click();
+  await page.getByRole("link", { name: "打开 问答评测" }).click();
   await expect(page).toHaveURL(/\/workspace\/evaluations$/);
   const panel = page.getByRole("region", {
-    name: "Agent 自动评测",
+    name: "问答评测",
     exact: true,
   });
-  await panel.getByRole("button", { name: "引用核对 · 查看轨迹" }).click();
+  await panel.getByRole("button", { name: "引用核对 · 查看详情" }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByText("示例错误回答")).toBeVisible();
-  await dialog.getByText("引用必须存在", { exact: true }).click();
-  await expect(dialog.getByText("错误引用", { exact: true })).toBeVisible();
-  await expect(dialog.getByText("real-run-id", { exact: true })).toBeVisible();
+  await dialog.getByText("引用来源有效且已获授权", { exact: true }).click();
+  await expect(
+    dialog.getByText("本项未达到预设要求，请结合回答与出处复核。"),
+  ).toBeVisible();
+  await expect(dialog.getByText("real-run-id", { exact: true })).toHaveCount(0);
   await dialog.getByLabel("复核意见").fill("检查后仍然不通过");
   await dialog.getByRole("button", { name: "保存复核" }).click();
   await expect(
@@ -158,8 +160,10 @@ test("automatic evaluations retain failures, reviews, exports and cancelled reru
   ).toBeVisible();
   await page.keyboard.press("Escape");
   const download = page.waitForEvent("download");
-  await panel.getByRole("button", { name: "JSON", exact: true }).click();
-  expect((await download).suggestedFilename()).toContain("batch-original.json");
+  await panel
+    .getByRole("button", { name: "下载表格报告", exact: true })
+    .click();
+  expect((await download).suggestedFilename()).toContain("batch-original.csv");
   await page.screenshot({
     path: testInfo.outputPath("agent-evaluation-detail.png"),
     fullPage: true,
@@ -170,11 +174,11 @@ test("automatic evaluations retain failures, reviews, exports and cancelled reru
     panel.getByRole("heading", { name: "已取消", exact: true }),
   ).toBeVisible();
   await panel.getByRole("button", { name: "查看原批次及失败记录" }).click();
-  await panel.getByRole("button", { name: "引用核对 · 查看轨迹" }).click();
+  await panel.getByRole("button", { name: "引用核对 · 查看详情" }).click();
   await expect(dialog.getByText("示例错误回答")).toBeVisible();
   await page.reload();
   await panel.getByRole("button", { name: "查看原批次及失败记录" }).click();
-  await panel.getByRole("button", { name: "引用核对 · 查看轨迹" }).click();
+  await panel.getByRole("button", { name: "引用核对 · 查看详情" }).click();
   await expect(
     dialog.getByText("检查后仍然不通过", { exact: true }),
   ).toBeVisible();

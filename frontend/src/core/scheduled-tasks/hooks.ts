@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { useI18n } from "@/core/i18n/hooks";
+import { publicErrorMessage } from "@/core/ui/presentation";
 
 import {
   createScheduledTask,
@@ -52,7 +53,7 @@ export function useCreateScheduledTask() {
       void queryClient.invalidateQueries({ queryKey: ["scheduled-tasks"] });
     },
     onError: (error: Error) => {
-      toast.error(`${t.scheduledTasks.errors.create}: ${error.message}`);
+      toast.error(publicErrorMessage(error, t.scheduledTasks.errors.create));
     },
   });
 }
@@ -73,7 +74,7 @@ export function useUpdateScheduledTask(taskId: string) {
       });
     },
     onError: (error: Error) => {
-      toast.error(`${t.scheduledTasks.errors.update}: ${error.message}`);
+      toast.error(publicErrorMessage(error, t.scheduledTasks.errors.update));
     },
   });
 }
@@ -90,7 +91,7 @@ export function usePauseScheduledTask() {
       });
     },
     onError: (error: Error) => {
-      toast.error(`${t.scheduledTasks.errors.pause}: ${error.message}`);
+      toast.error(publicErrorMessage(error, t.scheduledTasks.errors.pause));
     },
   });
 }
@@ -107,7 +108,7 @@ export function useResumeScheduledTask() {
       });
     },
     onError: (error: Error) => {
-      toast.error(`${t.scheduledTasks.errors.resume}: ${error.message}`);
+      toast.error(publicErrorMessage(error, t.scheduledTasks.errors.resume));
     },
   });
 }
@@ -127,7 +128,7 @@ export function useTriggerScheduledTask() {
       });
     },
     onError: (error: Error) => {
-      toast.error(`${t.scheduledTasks.errors.trigger}: ${error.message}`);
+      toast.error(publicErrorMessage(error, t.scheduledTasks.errors.trigger));
     },
   });
 }
@@ -144,7 +145,7 @@ export function useDeleteScheduledTask() {
       });
     },
     onError: (error: Error) => {
-      toast.error(`${t.scheduledTasks.errors.delete}: ${error.message}`);
+      toast.error(publicErrorMessage(error, t.scheduledTasks.errors.delete));
     },
   });
 }

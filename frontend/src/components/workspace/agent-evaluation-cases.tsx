@@ -13,6 +13,10 @@ import {
 } from "@/components/ui/sheet";
 import { scenarioLabels } from "@/core/operations/evaluation-dashboard";
 import {
+  evaluationModeLabel,
+  evaluationMethodDescription,
+} from "@/core/operations/evaluation-presentation";
+import {
   createAgentCase,
   deleteAgentCase,
   loadAgentCases,
@@ -20,11 +24,12 @@ import {
   type AgentCase,
   type AgentCaseInput,
 } from "@/core/operations/evaluations";
+import { publicErrorMessage } from "@/core/ui/presentation";
 
 import { evaluationButton } from "./agent-evaluation-ui";
 
 const field =
-  "w-full rounded-md border border-[#cbd8da] bg-white px-3 py-2 text-sm";
+  "w-full rounded-md border border-border bg-card px-3 py-2 text-sm";
 const displayTerms = (
   values: string[] | undefined,
   separator: string,
@@ -66,7 +71,11 @@ export function AgentEvaluationCases({
     queryKey: ["agent-evaluations", "cases"],
     queryFn: ({ signal }) => loadAgentCases(signal),
     enabled: open,
+    retry: false,
   });
+  const readOnly = collection.data?.management_available === false;
+  const canEdit =
+    canManage && !!collection.data && !collection.isError && !readOnly;
   const changed = async () => {
     await Promise.all([
       queryClient.invalidateQueries({
@@ -105,18 +114,18 @@ export function AgentEvaluationCases({
   const filtered = (collection.data?.cases ?? []).filter(
     (item) =>
       (showDeleted || item.active) &&
-      `${item.title} ${item.question} ${item.mode} ${scenarioLabels[item.scenario] ?? item.scenario}`
+      `${item.title} ${item.question} ${evaluationModeLabel(item.mode)} ${scenarioLabels[item.scenario] ?? "其他场景"}`
         .toLowerCase()
         .includes(query.trim().toLowerCase()),
   );
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full gap-0 bg-[#f7fafb] sm:max-w-[900px]">
-        <SheetHeader className="border-b bg-white p-5 pr-12">
+      <SheetContent className="bg-muted/60 w-full gap-0 sm:max-w-[900px]">
+        <SheetHeader className="bg-card border-b p-5 pr-12">
           <SheetTitle>测试问题与方法</SheetTitle>
           <SheetDescription>
-            查看完整题目、测试方法和判定规则。当前使用合成资料与固定模型回放；新增问题沿用所选方法的检索和回答脚本，不会查询真实文献库或调用真实模型。
+            查看完整题目、测试方法和判定规则。流程测试使用预设资料与回答；新增问题沿用所选方法的预设内容，不衡量实际回答质量。
           </SheetDescription>
         </SheetHeader>
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 sm:p-5">
@@ -128,15 +137,17 @@ export function AgentEvaluationCases({
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={showDeleted}
-                onChange={(event) => setShowDeleted(event.target.checked)}
-              />
-              显示已删除问题
-            </label>
-            {canManage && (
+            {!readOnly && (
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={showDeleted}
+                  onChange={(event) => setShowDeleted(event.target.checked)}
+                />
+                显示已删除问题
+              </label>
+            )}
+            {canEdit && (
               <button
                 type="button"
                 className={evaluationButton}
@@ -150,12 +161,31 @@ export function AgentEvaluationCases({
               </button>
             )}
           </div>
+          {readOnly && (
+            <div
+              role="status"
+              className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm leading-6 text-blue-900"
+            >
+              当前可查看启用题目与判定规则。题目管理和单题运行暂不可用，请稍后重试。
+              <button
+                type="button"
+                className="ml-3 underline"
+                disabled={collection.isFetching}
+                onClick={() => void collection.refetch()}
+              >
+                {collection.isFetching ? "正在读取…" : "重试读取"}
+              </button>
+            </div>
+          )}
           {error && (
             <p
               role="alert"
               className="rounded-md bg-rose-50 p-3 text-sm text-rose-800"
             >
-              {error.message}
+              {publicErrorMessage(
+                error,
+                "暂时无法读取或保存测试问题，请重试。",
+              )}
               <button
                 type="button"
                 className="ml-3 underline"
@@ -170,10 +200,10 @@ export function AgentEvaluationCases({
               </button>
             </p>
           )}
-          {adding && canManage && (
+          {adding && canEdit && (
             <form
               aria-label="新增测试问题"
-              className="space-y-4 rounded-xl border bg-white p-4"
+              className="bg-card space-y-4 rounded-xl border p-4"
               onSubmit={(event) => {
                 event.preventDefault();
                 const input: AgentCaseInput = {
@@ -222,7 +252,7 @@ export function AgentEvaluationCases({
                   >
                     {collection.data?.methods.map((item) => (
                       <option key={item.scenario} value={item.scenario}>
-                        {scenarioLabels[item.scenario] ?? item.title}
+                        {scenarioLabels[item.scenario] ?? "其他场景"}
                       </option>
                     ))}
                   </select>
@@ -236,15 +266,15 @@ export function AgentEvaluationCases({
                       setMode(event.target.value as AgentCase["mode"])
                     }
                   >
-                    <option value="flash">flash</option>
-                    <option value="pro">pro</option>
-                    <option value="ultra">ultra</option>
+                    <option value="flash">快速</option>
+                    <option value="pro">标准</option>
+                    <option value="ultra">深入</option>
                   </select>
                 </label>
               </div>
               {method && (
-                <p className="rounded-md bg-[#edf5f5] p-3 text-sm leading-6">
-                  {method.description}
+                <p className="bg-muted/60 rounded-md p-3 text-sm leading-6">
+                  {evaluationMethodDescription(method.scenario)}
                 </p>
               )}
               <div className="grid gap-3 sm:grid-cols-2">
@@ -313,14 +343,19 @@ export function AgentEvaluationCases({
           {filtered.map((item) => (
             <article
               key={item.id}
-              className="space-y-3 rounded-xl border bg-white p-4"
-              aria-label={`测试问题：${item.title} · ${item.mode}`}
+              className="xingxi-panel bg-card space-y-3 rounded-xl border p-4"
+              aria-label={`测试问题：${item.title} · ${evaluationModeLabel(item.mode)}`}
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="font-semibold">{item.title}</h3>
                 <span className="text-xs text-slate-500">
-                  {item.builtin ? "内置" : "自定义"} · {item.mode} ·{" "}
-                  {scenarioLabels[item.scenario] ?? item.scenario} ·{" "}
+                  {item.builtin === null
+                    ? "题目"
+                    : item.builtin
+                      ? "内置"
+                      : "自定义"}{" "}
+                  · {evaluationModeLabel(item.mode)} ·{" "}
+                  {scenarioLabels[item.scenario] ?? "其他场景"} ·{" "}
                   {item.active ? "启用中" : "已删除"}
                 </span>
               </div>
@@ -328,19 +363,14 @@ export function AgentEvaluationCases({
                 {item.question}
               </p>
               <details className="text-sm">
-                <summary className="cursor-pointer text-[#276f79]">
+                <summary className="text-primary cursor-pointer">
                   查看测试方法与判定规则
                 </summary>
-                <div className="mt-2 space-y-2 rounded-md bg-[#f4f8f8] p-3 text-slate-600">
+                <div className="bg-muted/60 mt-2 space-y-2 rounded-md p-3 text-slate-600">
+                  <p>{evaluationMethodDescription(item.scenario)}</p>
                   <p>
-                    {
-                      collection.data?.methods.find(
-                        (candidate) => candidate.scenario === item.scenario,
-                      )?.description
-                    }
-                  </p>
-                  <p>
-                    预期工具：{item.required_tool ?? "无工具要求"}；预期终态：
+                    {item.required_tool ? "需要查阅资料" : "无需查阅资料"}
+                    ；预期结果：
                     {item.expected_run_status === "interrupted"
                       ? "已中断"
                       : "成功完成"}
@@ -355,10 +385,9 @@ export function AgentEvaluationCases({
                     ；禁含词：
                     {displayTerms(item.forbidden_terms, "、", "无")}。
                   </p>
-                  <p>{item.review_rubric}</p>
                 </div>
               </details>
-              {canManage && (
+              {canEdit && (
                 <div className="flex flex-wrap gap-2">
                   {item.active ? (
                     <>
@@ -367,7 +396,7 @@ export function AgentEvaluationCases({
                         className={evaluationButton}
                         disabled={!canRun || busy}
                         onClick={() => onRun(item.id)}
-                        aria-label={`运行题目：${item.title} · ${item.mode}`}
+                        aria-label={`运行题目：${item.title} · ${evaluationModeLabel(item.mode)}`}
                       >
                         <Play className="size-3.5" />
                         运行这题
@@ -380,7 +409,7 @@ export function AgentEvaluationCases({
                           restore.reset();
                           remove.mutate(item.id);
                         }}
-                        aria-label={`删除题目：${item.title} · ${item.mode}`}
+                        aria-label={`删除题目：${item.title} · ${evaluationModeLabel(item.mode)}`}
                       >
                         <Trash2 className="size-3.5" />
                         删除问题
@@ -395,7 +424,7 @@ export function AgentEvaluationCases({
                         remove.reset();
                         restore.mutate(item.id);
                       }}
-                      aria-label={`恢复题目：${item.title} · ${item.mode}`}
+                      aria-label={`恢复题目：${item.title} · ${evaluationModeLabel(item.mode)}`}
                     >
                       <RotateCcw className="size-3.5" />
                       恢复问题
@@ -405,9 +434,11 @@ export function AgentEvaluationCases({
               )}
             </article>
           ))}
-          <p className="text-xs leading-5 text-slate-500">
-            删除只影响后续新批次，可在“显示已删除问题”中恢复。历史批次和历史重跑继续使用原题目快照。
-          </p>
+          {!readOnly && (
+            <p className="text-xs leading-5 text-slate-500">
+              删除只影响后续新批次，可在“显示已删除问题”中恢复。历史批次和历史重跑继续使用原题目快照。
+            </p>
+          )}
         </div>
       </SheetContent>
     </Sheet>

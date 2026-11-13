@@ -1,17 +1,25 @@
 "use client";
 
+import { UploadIcon } from "lucide-react";
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  modelErrorMessage,
+  reconstructionStageLabel,
+} from "@/core/map/model-presentation";
 import {
   cancelReconstruction,
   isReconstructing,
   listReconstructions,
   reconstructionArtifact,
+  reconstructionRGBArtifact,
+  resumeReconstruction,
   reconstructionCapabilities,
   refreshReconstruction,
+  retryReconstructionConnection,
   uploadReconstruction,
   type Reconstruction,
   type ReconstructionCapabilities,
@@ -19,31 +27,14 @@ import {
 
 const PlyViewer = dynamic(() => import("./ply-viewer"), {
   ssr: false,
-  loading: () => <p role="status">正在准备 PLY 预览…</p>,
+  loading: () => <p role="status">正在准备三维预览…</p>,
 });
 const statuses = {
-  transferring: "传送至服务器",
+  transferring: "正在传送素材",
   running: "正在重建",
   completed: "重建完成",
   failed: "重建失败",
   cancelled: "已取消",
-};
-const stages: Record<string, string> = {
-  starting: "启动引擎",
-  preparing_frames: "准备原始图片",
-  original_cameras: "原图相机重建",
-  preprocessing: "FLUX3 图片预处理",
-  extracting: "视频抽帧",
-  frames: "视频抽帧",
-  features: "特征提取",
-  matching: "图像匹配",
-  reconstruction: "相机重建",
-  training: "高斯训练",
-  brush: "高斯训练",
-  completed: "已完成",
-  transferring: "传送素材",
-  cancelled: "已取消",
-  failed: "运行失败",
 };
 
 export function ReconstructionPanel({
@@ -68,11 +59,17 @@ export function ReconstructionPanel({
   const [title, setTitle] = useState(`${pointName}影像重建`);
   const [progress, setProgress] = useState<number | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  const [previewFormat, setPreviewFormat] = useState<"gaussian" | "rgb">(
+    "gaussian",
+  );
+  const [resuming, setResuming] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState<string | null>(null);
   const upload = useRef<AbortController | null>(null);
   const requestId = useRef("");
   const mounted = useRef(true);
   const fileInput = useRef<HTMLInputElement>(null);
+  const fileLabelId = useId();
+  const fileSelectionId = useId();
   const [reload, setReload] = useState(0);
   useEffect(() => {
     mounted.current = true;
@@ -91,7 +88,7 @@ export function ReconstructionPanel({
       .catch((failure: unknown) => {
         if (!controller.signal.aborted)
           setError(
-            failure instanceof Error ? failure.message : "无法读取重建任务",
+            modelErrorMessage(failure, "暂时无法读取重建任务，请重试。"),
           );
       })
       .finally(() => {
@@ -135,7 +132,7 @@ export function ReconstructionPanel({
         .catch((failure: unknown) => {
           if (!controller.signal.aborted) {
             setError(
-              failure instanceof Error ? failure.message : "状态读取失败",
+              modelErrorMessage(failure, "暂时无法读取处理进度，请重试。"),
             );
             setReload((value) => value + 1);
           }
@@ -163,7 +160,7 @@ export function ReconstructionPanel({
       files.length > limits.max_files ||
       files.reduce((sum, file) => sum + file.size, 0) > limits.max_bytes
     ) {
-      setError("素材超出服务器的文件数量或大小限制");
+      setError("素材超出文件数量或大小限制");
       return;
     }
     const form = new FormData();
@@ -195,9 +192,32 @@ export function ReconstructionPanel({
       onCreated?.(job);
     } catch (failure) {
       if (mounted.current)
-        setError(failure instanceof Error ? failure.message : "上传失败");
+        setError(modelErrorMessage(failure, "上传失败，请稍后重试。"));
     } finally {
       if (mounted.current) setProgress(null);
+    }
+  };
+  const retryJob = async (job: Reconstruction) => {
+    setError("");
+    try {
+      const value = await retryReconstructionConnection(job.id);
+      if (mounted.current) replace(value);
+    } catch (failure) {
+      if (mounted.current)
+        setError(modelErrorMessage(failure, "重新连接失败，请稍后重试。"));
+    }
+  };
+  const reconnect = async () => {
+    try {
+      await Promise.all(
+        jobs
+          .filter((job) => job.status === "transferring")
+          .map((job) => retryReconstructionConnection(job.id)),
+      );
+      if (mounted.current) setReload((value) => value + 1);
+    } catch (failure) {
+      if (mounted.current)
+        setError(modelErrorMessage(failure, "重新连接失败，请稍后重试。"));
     }
   };
   const cancel = async (job: Reconstruction) => {
@@ -208,9 +228,22 @@ export function ReconstructionPanel({
       if (mounted.current) replace(value);
     } catch (failure) {
       if (mounted.current)
-        setError(failure instanceof Error ? failure.message : "取消失败");
+        setError(modelErrorMessage(failure, "取消请求未送达，请重试。"));
     } finally {
       if (mounted.current) setCancelling(null);
+    }
+  };
+  const resume = async (job: Reconstruction) => {
+    setResuming(job.id);
+    setError("");
+    try {
+      const value = await resumeReconstruction(job.id);
+      if (mounted.current) replace(value);
+    } catch (failure) {
+      if (mounted.current)
+        setError(modelErrorMessage(failure, "继续处理失败，请稍后重试。"));
+    } finally {
+      if (mounted.current) setResuming(null);
     }
   };
 
@@ -219,11 +252,10 @@ export function ReconstructionPanel({
       <div>
         <h3 className="font-medium">为{pointName}重建三维场景</h3>
         <p className="text-muted-foreground mt-2 text-xs leading-5">
-          上传环绕拍摄的视频或照片，使用远程 OOOSplat
-          重建。结果保存为该点位的待核验素材。
+          上传环绕拍摄的视频或照片，生成三维场景。结果保存为该点位的待核验素材。
         </p>
       </div>
-      {loading && <p role="status">正在读取重建服务…</p>}
+      {loading && <p role="status">正在准备影像重建…</p>}
       {error && (
         <div
           role="alert"
@@ -233,16 +265,14 @@ export function ReconstructionPanel({
           <Button
             variant="ghost"
             className="mt-2 min-h-11"
-            onClick={() => setReload((value) => value + 1)}
+            onClick={() => void reconnect()}
           >
             重新连接
           </Button>
         </div>
       )}
       {limits && !limits.enabled && (
-        <p className="bg-muted rounded p-3">
-          远程连接尚未配置，请在 Gateway 配置 SSH 后重启服务。
-        </p>
+        <p className="bg-muted rounded p-3">影像重建暂不可用，请联系管理员。</p>
       )}
       <form
         className="space-y-3 rounded-md border p-3"
@@ -264,14 +294,18 @@ export function ReconstructionPanel({
             disabled={progress !== null}
           />
         </label>
-        <label className="block space-y-1">
-          <span>视频或多张照片</span>
+        <div className="space-y-2">
+          <span id={fileLabelId} className="block">
+            视频或多张照片
+          </span>
           <input
             ref={fileInput}
             type="file"
             multiple
             accept={limits?.extensions.join(",")}
-            className="block min-h-11 w-full rounded border p-2 text-xs"
+            aria-labelledby={fileLabelId}
+            className="sr-only"
+            tabIndex={-1}
             disabled={!limits?.enabled || progress !== null}
             onChange={(event) => {
               setFiles(Array.from(event.target.files ?? []));
@@ -279,7 +313,31 @@ export function ReconstructionPanel({
               setError("");
             }}
           />
-        </label>
+          <div className="bg-muted/30 flex flex-wrap items-center gap-3 rounded-md border p-3">
+            <Button
+              type="button"
+              variant="outline"
+              className="min-h-11 duration-150 hover:shadow-md motion-safe:hover:-translate-y-0.5 motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98] motion-reduce:transition-none"
+              aria-describedby={fileSelectionId}
+              disabled={!limits?.enabled || progress !== null}
+              onClick={() => fileInput.current?.click()}
+            >
+              <UploadIcon aria-hidden="true" />
+              {files.length ? "重新选择文件" : "选择文件"}
+            </Button>
+            <p
+              id={fileSelectionId}
+              role="status"
+              className="text-muted-foreground min-w-0 flex-1 basis-40 text-xs break-all"
+            >
+              {files.length
+                ? files.length === 1
+                  ? files[0]!.name
+                  : `已选择 ${files.length} 个文件`
+                : "未选择文件"}
+            </p>
+          </div>
+        </div>
         <p className="text-muted-foreground text-xs">
           一个视频，或 2–{limits?.max_files ?? 500} 张照片；总大小不超过{" "}
           {Math.round((limits?.max_bytes ?? 2 * 1024 ** 3) / 1024 ** 3)} GiB。
@@ -312,9 +370,9 @@ export function ReconstructionPanel({
           </select>
         </label>
         <label className="block space-y-1">
-          <span>图片预处理</span>
+          <span>图片整理</span>
           <select
-            aria-label="图片预处理"
+            aria-label="图片整理"
             className="bg-background min-h-11 w-full rounded border px-3"
             value={preprocessing}
             disabled={progress !== null}
@@ -325,15 +383,15 @@ export function ReconstructionPanel({
           >
             <option value="none">原图直接重建</option>
             <option value="flux3" disabled={!limits?.flux3_enabled}>
-              FLUX3 图片编辑{limits?.flux3_enabled ? "" : "（尚未配置）"}
+              主体提取与背景整理{limits?.flux3_enabled ? "" : "（暂不可用）"}
             </option>
           </select>
         </label>
         {preprocessing === "flux3" && (
           <label className="block space-y-1">
-            <span>图片编辑提示词</span>
+            <span>图片处理要求</span>
             <textarea
-              aria-label="图片编辑提示词"
+              aria-label="图片处理要求"
               rows={4}
               maxLength={4000}
               className="bg-background w-full rounded border p-3"
@@ -346,7 +404,7 @@ export function ReconstructionPanel({
               }}
             />
             <span className="text-muted-foreground block text-xs">
-              编辑图用于重建，原图会保留。模型可能补画局部内容；白色背景不等于透明背景。
+              处理后的图片用于重建，原图会保留。自动处理可能补全局部内容；白色背景不等于透明背景。
             </span>
           </label>
         )}
@@ -355,8 +413,8 @@ export function ReconstructionPanel({
             <progress value={progress} max={100} className="w-full" />
             <p>
               {progress < 100
-                ? `正在上传至 Gateway ${progress}%`
-                : "上传完成，正在保存并启动远程任务…"}
+                ? `正在上传素材 ${progress}%`
+                : "上传完成，正在保存并启动重建…"}
             </p>
           </div>
         )}
@@ -396,14 +454,14 @@ export function ReconstructionPanel({
               <p role="status" className="text-xs">
                 {job.cancel_requested
                   ? job.preprocessing === "flux3"
-                    ? "正在取消；当前 FLUX3 图片完成后停止"
+                    ? "正在取消图片处理…"
                     : "正在请求取消…"
-                  : (stages[job.stage.toLowerCase()] ?? job.stage)}
+                  : reconstructionStageLabel(job.stage)}
               </p>
             )}
             {job.preprocessing === "flux3" && (
               <p className="text-muted-foreground text-xs">
-                FLUX3 预处理
+                已启用图片整理
                 {job.preprocess_progress
                   ? ` · ${job.preprocess_progress.completed}/${job.preprocess_progress.total}`
                   : " · 保留原图"}
@@ -411,10 +469,24 @@ export function ReconstructionPanel({
             )}
             {(job.error ?? job.connection_error) && (
               <p role="alert" className="text-destructive text-xs break-all">
-                {job.error ?? job.connection_error}
+                {modelErrorMessage(
+                  job.error ?? job.connection_error,
+                  undefined,
+                  "worker",
+                )}
               </p>
             )}
             <div className="flex flex-wrap gap-2">
+              {job.resumable && (
+                <Button
+                  variant="outline"
+                  className="min-h-11"
+                  disabled={resuming === job.id}
+                  onClick={() => void resume(job)}
+                >
+                  {resuming === job.id ? "正在恢复…" : "继续处理"}
+                </Button>
+              )}
               {isReconstructing(job) && (
                 <Button
                   variant="outline"
@@ -425,37 +497,73 @@ export function ReconstructionPanel({
                   取消重建
                 </Button>
               )}
+              {job.status === "transferring" && job.connection_error && (
+                <Button
+                  variant="outline"
+                  className="min-h-11"
+                  onClick={() => void retryJob(job)}
+                >
+                  重试连接
+                </Button>
+              )}
               {job.status === "completed" && job.artifact && (
                 <>
                   {job.artifact.size <= 256 * 1024 ** 2 && (
                     <Button
                       className="min-h-11"
-                      onClick={() =>
-                        setPreview(preview === job.id ? null : job.id)
-                      }
+                      onClick={() => {
+                        setPreviewFormat("gaussian");
+                        setPreview(
+                          preview === job.id && previewFormat === "gaussian"
+                            ? null
+                            : job.id,
+                        );
+                      }}
                     >
-                      {preview === job.id
+                      {preview === job.id && previewFormat === "gaussian"
                         ? "关闭预览"
                         : job.artifact.kind === "point_cloud"
-                          ? "查看彩色点云"
-                          : "查看高斯模型"}
+                          ? "预览普通点云"
+                          : "预览高斯点"}
                     </Button>
                   )}
                   <a
                     href={reconstructionArtifact(job)}
                     className="text-primary inline-flex min-h-11 items-center px-2 underline"
                   >
-                    下载 PLY
+                    {job.artifact.kind === "point_cloud"
+                      ? "下载普通点云"
+                      : "下载高斯 PLY"}
                   </a>
+                  {job.rgb_artifact_url && (
+                    <>
+                      <Button
+                        variant="outline"
+                        className="min-h-11"
+                        onClick={() => {
+                          setPreviewFormat("rgb");
+                          setPreview(
+                            preview === job.id && previewFormat === "rgb"
+                              ? null
+                              : job.id,
+                          );
+                        }}
+                      >
+                        预览普通点云
+                      </Button>
+                      <a
+                        href={reconstructionRGBArtifact(job)}
+                        className="text-primary inline-flex min-h-11 items-center px-2 underline"
+                      >
+                        下载普通点云
+                      </a>
+                    </>
+                  )}
                 </>
               )}
             </div>
             {job.artifact && (
               <p className="text-muted-foreground text-xs">
-                {(
-                  job.artifact.point_count ?? job.artifact.splat_count
-                )?.toLocaleString() ?? "未知数量"}{" "}
-                {job.artifact.kind === "point_cloud" ? "个彩色点" : "个高斯"} ·{" "}
                 {(job.artifact.size / 1024 ** 2).toFixed(1)} MiB · 待实地核验
                 {job.artifact.size > 256 * 1024 ** 2
                   ? "；模型较大，请下载查看"
@@ -464,19 +572,15 @@ export function ReconstructionPanel({
             )}
             {preview === job.id && (
               <PlyViewer
-                key={job.id}
-                source={reconstructionArtifact(job)}
+                key={`${job.id}:${previewFormat}`}
+                source={
+                  previewFormat === "rgb"
+                    ? reconstructionRGBArtifact(job)
+                    : reconstructionArtifact(job)
+                }
                 title={job.title}
               />
             )}
-            <details>
-              <summary className="text-muted-foreground min-h-11 cursor-pointer py-3 text-xs">
-                运行日志
-              </summary>
-              <pre className="bg-muted max-h-52 overflow-auto rounded p-2 text-[11px] break-all whitespace-pre-wrap">
-                {job.log ?? "暂无日志"}
-              </pre>
-            </details>
           </article>
         ))}
       </section>

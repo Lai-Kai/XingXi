@@ -14,7 +14,7 @@ import { GlbViewerSlot } from "./glb-viewer-slot";
 
 const PlyViewer = dynamic(() => import("./ply-viewer"), {
   ssr: false,
-  loading: () => <p role="status">正在准备 PLY 预览…</p>,
+  loading: () => <p role="status">正在准备三维预览…</p>,
 });
 
 export function PointModelPreview({
@@ -64,7 +64,7 @@ export function PointModelPreview({
             >
               {models.map((item) => (
                 <option key={item.id} value={item.id}>
-                  {item.title} · {item.format.toUpperCase()}
+                  {item.title}
                 </option>
               ))}
               {asset && <option value="original-glb">原有点位模型</option>}
@@ -109,7 +109,7 @@ export function PointModelPreview({
           />
         </label>
         <p className="text-muted-foreground text-xs leading-5">
-          支持彩色 RGB/RGBA 点云与高斯 PLY；本地文件仅在当前预览中打开。
+          支持 PLY 文件；本地文件仅在当前预览中打开。
         </p>
         {error && (
           <p role="alert" className="text-destructive text-xs">

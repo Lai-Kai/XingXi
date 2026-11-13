@@ -39,6 +39,8 @@ import type {
   MemoryFactPatchInput,
   UserMemory,
 } from "@/core/memory/types";
+import { getMemoryCategoryLabel } from "@/core/settings/catalog-labels";
+import { settingsErrorMessage } from "@/core/settings/errors";
 import { SafeStreamdown } from "@/core/streamdown/components";
 import { streamdownPlugins } from "@/core/streamdown/plugins";
 import { pathOfThread } from "@/core/threads/utils";
@@ -270,12 +272,8 @@ function truncateFactPreview(content: string, maxLength = 140) {
   return `${normalized.slice(0, maxLength - ellipsis.length)}${ellipsis}`;
 }
 
-function upperFirst(str: string) {
-  return str.charAt(0).toUpperCase() + str.slice(1);
-}
-
 export function MemorySettingsPage() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { memory, isLoading, error } = useMemory();
   const clearMemory = useClearMemory();
   const createMemoryFact = useCreateMemoryFact();
@@ -303,21 +301,15 @@ export function MemorySettingsPage() {
   const factConfidenceInputId = useId();
   const factConfidenceHintId = useId();
 
-  const clearAllLabel = t.settings.memory.clearAll ?? "Clear all memory";
-  const clearAllConfirmTitle =
-    t.settings.memory.clearAllConfirmTitle ?? "Clear all memory?";
+  const clearAllLabel = t.settings.memory.clearAll;
+  const clearAllConfirmTitle = t.settings.memory.clearAllConfirmTitle;
   const clearAllConfirmDescription =
-    t.settings.memory.clearAllConfirmDescription ??
-    "This will remove all saved summaries and facts. This action cannot be undone.";
-  const clearAllSuccess =
-    t.settings.memory.clearAllSuccess ?? "All memory cleared";
-  const factDeleteConfirmTitle =
-    t.settings.memory.factDeleteConfirmTitle ?? "Delete this fact?";
+    t.settings.memory.clearAllConfirmDescription;
+  const clearAllSuccess = t.settings.memory.clearAllSuccess;
+  const factDeleteConfirmTitle = t.settings.memory.factDeleteConfirmTitle;
   const factDeleteConfirmDescription =
-    t.settings.memory.factDeleteConfirmDescription ??
-    "This fact will be removed from memory immediately. This action cannot be undone.";
-  const factDeleteSuccess =
-    t.settings.memory.factDeleteSuccess ?? "Fact deleted";
+    t.settings.memory.factDeleteConfirmDescription;
+  const factDeleteSuccess = t.settings.memory.factDeleteSuccess;
   const addFactLabel = t.settings.memory.addFact;
   const addFactTitle = t.settings.memory.addFactTitle;
   const editFactTitle = t.settings.memory.editFactTitle;
@@ -332,23 +324,20 @@ export function MemorySettingsPage() {
   const factSave = t.settings.memory.factSave;
   const factValidationContent = t.settings.memory.factValidationContent;
   const factValidationConfidence = t.settings.memory.factValidationConfidence;
-  const noFacts = t.settings.memory.noFacts ?? "No saved facts yet.";
+  const noFacts = t.settings.memory.noFacts;
   const summaryReadOnly = t.settings.memory.summaryReadOnly;
-  const memoryFullyEmpty =
-    t.settings.memory.memoryFullyEmpty ?? "No memory saved yet.";
-  const factPreviewLabel =
-    t.settings.memory.factPreviewLabel ?? "Fact to delete";
-  const searchPlaceholder =
-    t.settings.memory.searchPlaceholder ?? "Search memory";
-  const filterAll = t.settings.memory.filterAll ?? "All";
-  const filterFacts = t.settings.memory.filterFacts ?? "Facts";
-  const filterSummaries = t.settings.memory.filterSummaries ?? "Summaries";
-  const noMatches = t.settings.memory.noMatches ?? "No matching memory found";
+  const memoryFullyEmpty = t.settings.memory.memoryFullyEmpty;
+  const factPreviewLabel = t.settings.memory.factPreviewLabel;
+  const searchPlaceholder = t.settings.memory.searchPlaceholder;
+  const filterAll = t.settings.memory.filterAll;
+  const filterFacts = t.settings.memory.filterFacts;
+  const filterSummaries = t.settings.memory.filterSummaries;
+  const noMatches = t.settings.memory.noMatches;
   const exportButton = t.settings.memory.exportButton ?? t.common.export;
   const exportSuccess =
     t.settings.memory.exportSuccess ?? t.common.exportSuccess;
   const importButton = t.settings.memory.importButton ?? t.common.import;
-  const importSuccess = t.settings.memory.importSuccess ?? "Memory imported";
+  const importSuccess = t.settings.memory.importSuccess;
 
   const sectionGroups = memory ? buildMemorySectionGroups(memory, t) : [];
   const filteredSectionGroups = sectionGroups
@@ -390,7 +379,7 @@ export function MemorySettingsPage() {
     try {
       setIsExporting(true);
       const exportedMemory = await exportMemory();
-      const fileName = `deerflow-memory-${(exportedMemory.lastUpdated || new Date().toISOString()).replace(/[:.]/g, "-")}.json`;
+      const fileName = `xingxi-memory-${(exportedMemory.lastUpdated || new Date().toISOString()).replace(/[:.]/g, "-")}.json`;
       const blob = new Blob([JSON.stringify(exportedMemory, null, 2)], {
         type: "application/json",
       });
@@ -404,7 +393,9 @@ export function MemorySettingsPage() {
       URL.revokeObjectURL(url);
       toast.success(exportSuccess);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
+      toast.error(
+        settingsErrorMessage(err, t.settings.memory.actionError, locale),
+      );
     } finally {
       setIsExporting(false);
     }
@@ -444,7 +435,9 @@ export function MemorySettingsPage() {
       toast.success(importSuccess);
       setPendingImport(null);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
+      toast.error(
+        settingsErrorMessage(err, t.settings.memory.actionError, locale),
+      );
     }
   }
 
@@ -454,7 +447,9 @@ export function MemorySettingsPage() {
       toast.success(clearAllSuccess);
       setClearDialogOpen(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
+      toast.error(
+        settingsErrorMessage(err, t.settings.memory.actionError, locale),
+      );
     }
   }
 
@@ -466,7 +461,9 @@ export function MemorySettingsPage() {
       toast.success(factDeleteSuccess);
       setFactToDelete(null);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
+      toast.error(
+        settingsErrorMessage(err, t.settings.memory.actionError, locale),
+      );
     }
   }
 
@@ -525,7 +522,9 @@ export function MemorySettingsPage() {
       setFactToEdit(null);
       setFactForm(DEFAULT_FACT_FORM_STATE);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
+      toast.error(
+        settingsErrorMessage(err, t.settings.memory.actionError, locale),
+      );
     }
   }
 
@@ -543,7 +542,9 @@ export function MemorySettingsPage() {
             {t.common.loading}
           </div>
         ) : error ? (
-          <div>Error: {error.message}</div>
+          <div role="alert" className="text-destructive text-sm">
+            {t.settings.memory.loadError}
+          </div>
         ) : !memory ? (
           <div className="text-muted-foreground text-sm">
             {t.settings.memory.empty}
@@ -693,7 +694,7 @@ export function MemorySettingsPage() {
                                 <span className="text-muted-foreground">
                                   {t.settings.memory.markdown.table.category}:
                                 </span>{" "}
-                                {upperFirst(fact.category)}
+                                {getMemoryCategoryLabel(fact.category, locale)}
                               </span>
                               <span>
                                 <span className="text-muted-foreground">
@@ -837,7 +838,7 @@ export function MemorySettingsPage() {
                 </label>
                 <Input
                   id={factCategoryInputId}
-                  value={factForm.category}
+                  value={getMemoryCategoryLabel(factForm.category, locale)}
                   onChange={(event) =>
                     setFactForm((current) => ({
                       ...current,
@@ -855,21 +856,29 @@ export function MemorySettingsPage() {
                 >
                   {factConfidenceLabel}
                 </label>
-                <Input
+                <select
                   id={factConfidenceInputId}
                   aria-describedby={factConfidenceHintId}
-                  type="number"
-                  min="0"
-                  max="1"
-                  step="0.01"
-                  value={factForm.confidence}
+                  className="bg-background h-9 w-full rounded-md border px-3 text-sm"
+                  value={confidenceToLevelKey(Number(factForm.confidence)).key}
                   onChange={(event) =>
                     setFactForm((current) => ({
                       ...current,
-                      confidence: event.target.value,
+                      confidence:
+                        event.target.value === "veryHigh"
+                          ? "0.95"
+                          : event.target.value === "high"
+                            ? "0.8"
+                            : "0.5",
                     }))
                   }
-                />
+                >
+                  {(["normal", "high", "veryHigh"] as const).map((level) => (
+                    <option key={level} value={level}>
+                      {t.settings.memory.markdown.table.confidenceLevel[level]}
+                    </option>
+                  ))}
+                </select>
                 <div
                   className="text-muted-foreground text-xs"
                   id={factConfidenceHintId}

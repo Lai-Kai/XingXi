@@ -25,6 +25,7 @@ import { isSidecarThread, SIDECAR_METADATA_KEY } from "../sidecar/thread";
 import { useUpdateSubtask } from "../tasks/context";
 import { taskEventToSubtaskUpdate } from "../tasks/lifecycle";
 import { messageToStep } from "../tasks/steps";
+import { publicErrorMessage } from "../ui/presentation";
 import type { UploadedFileInfo } from "../uploads";
 import { promptInputFilePartToFile, uploadFiles } from "../uploads";
 
@@ -870,29 +871,6 @@ export async function stopThreadAndInvalidateCaches(
   }
 }
 
-function getStreamErrorMessage(error: unknown): string {
-  if (typeof error === "string" && error.trim()) {
-    return error;
-  }
-  if (error instanceof Error && error.message.trim()) {
-    return error.message;
-  }
-  if (typeof error === "object" && error !== null) {
-    const message = Reflect.get(error, "message");
-    if (typeof message === "string" && message.trim()) {
-      return message;
-    }
-    const nestedError = Reflect.get(error, "error");
-    if (nestedError instanceof Error && nestedError.message.trim()) {
-      return nestedError.message;
-    }
-    if (typeof nestedError === "string" && nestedError.trim()) {
-      return nestedError;
-    }
-  }
-  return "Request failed.";
-}
-
 async function readResponseErrorMessage(
   response: Response,
   fallback = "Request failed.",
@@ -1199,12 +1177,8 @@ export function useThreadStream({
         return;
       }
 
-      if (eventType === "llm_retry") {
-        const e = event as { type: "llm_retry"; message?: unknown };
-        if (typeof e.message === "string" && e.message.trim()) {
-          toast(e.message);
-        }
-      }
+      // Connection retries are internal; the conversation keeps its progress status.
+      if (eventType === "llm_retry") return;
     },
     onError(error) {
       setOptimisticMessages([]);
@@ -1212,7 +1186,7 @@ export function useThreadStream({
       setLiveMessagesThreadId(null);
       setPendingSupersededRunIds(new Set());
       setPendingSupersededMessageIds(new Set());
-      toast.error(getStreamErrorMessage(error));
+      toast.error(publicErrorMessage(error, t.sidecar.sendFailed));
       pendingUsageBaselineMessageIdsRef.current = new Set(
         messagesRef.current
           .map(messageIdentity)
@@ -1487,11 +1461,7 @@ export function useThreadStream({
               });
             }
           } catch (error) {
-            const errorMessage =
-              error instanceof Error
-                ? error.message
-                : "Failed to upload files.";
-            toast.error(errorMessage);
+            toast.error(publicErrorMessage(error, t.uploads.uploadFailed));
             setOptimisticMessages([]);
             setOptimisticThreadId(null);
             setLiveMessagesThreadId(null);
@@ -1563,6 +1533,7 @@ export function useThreadStream({
     [
       thread,
       t.uploads.uploadingFiles,
+      t.uploads.uploadFailed,
       context,
       queryClient,
       humanMessageCount,
@@ -1669,12 +1640,19 @@ export function useThreadStream({
             removeSetItems(current, preparedSupersededMessageIds),
           );
         }
-        toast.error(getStreamErrorMessage(error));
+        toast.error(publicErrorMessage(error, t.sidecar.sendFailed));
       } finally {
         sendInFlightRef.current = false;
       }
     },
-    [context, humanMessageCount, persistedMessages, queryClient, thread],
+    [
+      context,
+      humanMessageCount,
+      persistedMessages,
+      queryClient,
+      thread,
+      t.sidecar.sendFailed,
+    ],
   );
 
   // Cache the latest thread messages in a ref to compare against incoming history messages for deduplication,

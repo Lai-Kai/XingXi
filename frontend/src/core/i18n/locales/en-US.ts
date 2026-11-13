@@ -47,8 +47,8 @@ export const enUS: Translations = {
     create: "Create",
     import: "Import",
     export: "Export",
-    exportAsMarkdown: "Export as Markdown",
-    exportAsJSON: "Export as JSON",
+    exportAsMarkdown: "Export reading copy",
+    exportAsJSON: "Export conversation backup",
     exportSuccess: "Conversation exported",
     regenerate: "Regenerate",
     branch: "Branch conversation",
@@ -65,11 +65,11 @@ export const enUS: Translations = {
   welcome: {
     greeting: "Xingxi",
     description:
-      "A traceable research agent for Wu culture and Mudu regional history.",
+      "A traceable research assistant for Wu culture and Mudu regional history.",
 
-    createYourOwnSkill: "Create Your Own Skill",
+    createYourOwnSkill: "Create your own workflow",
     createYourOwnSkillDescription:
-      "Create your own skill to release the power of DeerFlow. With customized skills,\nDeerFlow can help you search on the web, analyze data, and generate\n artifacts like slides, web pages and do almost anything.",
+      "Create a custom workflow to help with research, source organization and content preparation.",
   },
 
   // Clipboard
@@ -102,11 +102,11 @@ export const enUS: Translations = {
     openFile: "Open file",
     loading: "Loading workspace changes...",
     noChanges: "No workspace changes recorded.",
-    diffUnavailable: "Diff unavailable",
-    binaryUnavailable: "Binary file. Diff unavailable.",
-    largeUnavailable: "Large file. Diff omitted.",
+    diffUnavailable: "Modification details unavailable",
+    binaryUnavailable: "Binary file. Modification details unavailable.",
+    largeUnavailable: "This file is too large to show modification details.",
     sensitiveUnavailable: "Sensitive path. Content hidden.",
-    truncatedUnavailable: "Diff omitted because the change set is too large.",
+    truncatedUnavailable: "There are too many changes to display.",
     truncatedSummary: "Some changes were truncated.",
   },
 
@@ -115,7 +115,7 @@ export const enUS: Translations = {
     placeholder:
       "Ask about Mudu sites, people, gazetteers, or historical change",
     createSkillPrompt:
-      "We're going to build a new skill step by step with `skill-creator`. To start, what do you want this skill to do?",
+      "Help me design a custom research workflow through conversation. Start by asking what task I want to complete.",
     addAttachments: "Add attachments",
     inputPolish: "Polish input",
     inputPolishing: "Polishing input...",
@@ -126,7 +126,7 @@ export const enUS: Translations = {
     voiceInputStartLabel: "Dictate with voice",
     voiceInputStopLabel: "Stop voice input",
     voiceInputStart:
-      "Dictate with voice. DeerFlow receives only transcribed text; audio is handled by your browser or system speech service.",
+      "Dictate with voice. Xingxi receives only transcribed text; audio is handled by your browser or system speech service.",
     voiceInputStop: "Stop voice input",
     voiceInputListening: "Listening... Click to stop voice input.",
     voiceInputUnsupported:
@@ -142,31 +142,32 @@ export const enUS: Translations = {
     voiceInputNoSpeech: "No speech was detected. Please try again.",
     voiceInputFailed: "Voice input failed. Please try again.",
     mode: "Mode",
-    flashMode: "Flash",
+    flashMode: "Quick answer",
     flashModeDescription: "Fast and efficient, but may not be accurate",
     reasoningMode: "Reasoning",
     reasoningModeDescription:
       "Reasoning before action, balance between time and accuracy",
-    proMode: "Pro",
+    proMode: "In-depth research",
     proModeDescription:
       "Reasoning, planning and executing, get more accurate results, may take more time",
-    ultraMode: "Ultra",
+    ultraMode: "Comprehensive research",
     ultraModeDescription:
-      "Pro mode with subagents to divide work; best for complex multi-step tasks",
-    reasoningEffort: "Reasoning Effort",
+      "Combine several research directions for complex tasks; may take more time",
+    reasoningEffort: "Research depth",
     reasoningEffortMinimal: "Minimal",
-    reasoningEffortMinimalDescription: "Retrieval + Direct Output",
+    reasoningEffortMinimalDescription: "Find sources and answer directly",
     reasoningEffortLow: "Low",
-    reasoningEffortLowDescription: "Simple Logic Check + Shallow Deduction",
+    reasoningEffortLowDescription:
+      "Check key points and prepare a brief answer",
     reasoningEffortMedium: "Medium",
-    reasoningEffortMediumDescription:
-      "Multi-layer Logic Analysis + Basic Verification",
+    reasoningEffortMediumDescription: "Compare sources and verify the evidence",
     reasoningEffortHigh: "High",
     reasoningEffortHighDescription:
-      "Full-dimensional Logic Deduction + Multi-path Verification + Backward Check",
-    searchModels: "Search models...",
-    modelUnavailable: "No chat model is configured",
-    modelUnavailableShort: "No model",
+      "Compare findings in depth and explain uncertainties",
+    searchModels: "Search response styles...",
+    modelUnavailable:
+      "Chat is temporarily unavailable. Please contact an administrator.",
+    modelUnavailableShort: "Unavailable",
     surpriseMe: "Surprise",
     surpriseMePrompt: "Surprise me",
     followupLoading: "Generating follow-up questions...",
@@ -179,7 +180,7 @@ export const enUS: Translations = {
       "Replace the suggestion placeholder before sending.",
     goalCommandDescription: "Set, show, or clear an active goal",
     compactCommandDescription:
-      "Compact earlier context while keeping the full chat visible",
+      "Organize earlier conversation while keeping the full chat visible",
     goalLabel: "Goal",
     goalContinuing: "Continuing {count}/{max}",
     goalContinuationTooltip:
@@ -190,9 +191,9 @@ export const enUS: Translations = {
     goalActive: "Active goal: {goal}",
     goalFailed: "Goal command failed.",
     compactSuccess:
-      "Earlier context compacted. The full chat remains visible; future model calls will use the summary and recent messages.",
-    compactSkipped: "The current context does not need compaction yet.",
-    compactFailed: "Context compaction failed.",
+      "Earlier conversation organized. The full chat remains visible and you can continue.",
+    compactSkipped: "This conversation does not need organizing yet.",
+    compactFailed: "Conversation organization failed. Please try again.",
     suggestions: [
       {
         suggestion: "Write",
@@ -236,9 +237,9 @@ export const enUS: Translations = {
         type: "separator",
       },
       {
-        suggestion: "Skill",
+        suggestion: "Workflow",
         prompt:
-          "We're going to build a new skill step by step with `skill-creator`. To start, what do you want this skill to do?",
+          "Help me design a custom research workflow through conversation. Start by asking what task I want to complete.",
         icon: SparklesIcon,
       },
     ],
@@ -269,14 +270,14 @@ export const enUS: Translations = {
       daily: "Daily",
       weekly: "Weekly",
       monthly: "Monthly",
-      custom: "Custom cron",
+      custom: "Custom schedule",
     },
     fields: {
       minute: "Minute",
       time: "Time",
       weekday: "On",
       dayOfMonth: "Day of month",
-      cron: "Cron expression",
+      cron: "Repeat schedule",
       cronPlaceholder: "0 9 * * *",
       runAt: "Run at",
       timezone: "Timezone",
@@ -291,18 +292,18 @@ export const enUS: Translations = {
       sun: "Sun",
     },
     preview: "Preview",
-    cronHelp: "Open crontab.guru",
+    cronHelp: "View schedule help",
     create: {
       title: "Create scheduled task",
       taskTitle: "Task title",
-      prompt: "Prompt",
+      prompt: "Task instructions",
       submit: "Create",
       fillRequired: "Fill all required fields",
     },
     context: {
-      fresh: "Fresh thread",
-      reuse: "Reuse thread",
-      threadIdPlaceholder: "Thread ID",
+      fresh: "New conversation",
+      reuse: "Continue conversation",
+      threadIdPlaceholder: "Conversation number",
     },
     filters: {
       allStatuses: "All statuses",
@@ -311,23 +312,23 @@ export const enUS: Translations = {
       completed: "Completed",
       failed: "Failed",
       allTypes: "All types",
-      cron: "Cron",
+      cron: "Recurring",
       once: "Once",
     },
     detail: {
-      contextMode: "Context mode",
-      thread: "Thread",
-      lastThread: "Last thread",
+      contextMode: "Conversation style",
+      thread: "Conversation",
+      lastThread: "Last conversation",
       schedule: "Schedule",
       nextRun: "Next run",
       lastRun: "Last run",
-      lastRunId: "Last run id",
+      lastRunId: "Last execution record",
       lastError: "Last error",
       runsCount: "{count} runs",
       runsCountOne: "{count} run",
       noRuns: "No runs yet",
       noSelection: "No scheduled task selected",
-      filteredByThread: "Filtered by thread: {id}",
+      filteredByThread: "Tasks for the selected conversation",
       loadFailed: "Failed to load scheduled tasks",
     },
     actions: {
@@ -372,21 +373,29 @@ export const enUS: Translations = {
     },
     recipes: {
       label: "Quick create",
-      trending: {
-        title: "GitHub Trending daily",
-        desc: "Summarize today's top 10 trending repos",
+      mapSources: {
+        title: "Daily map source notes",
+        desc: "Review Mudu map sources and citations daily at 09:00",
+        prompt:
+          "Review gazetteers, inscriptions and archives you are authorized to access for the Mudu historical map. Summarize source leads about place names, waterways, bridges, historic buildings, people and events. Include excerpts, document titles, volume/page locators and available evidence IDs. Separate existing records from unverified leads; do not describe material as new without a verified update date. Produce a reading report only; do not modify or publish map data.",
       },
-      news: {
-        title: "Daily tech news digest",
-        desc: "Collect and summarize the day's top tech news",
+      mapPoints: {
+        title: "Map point evidence review",
+        desc: "Check citations, dates and open questions daily at 09:00",
+        prompt:
+          "Search authorized sources for Mudu historical map point research. If the map point list or review states cannot be accessed, say so explicitly; do not present source candidates as existing map points. For records you can verify, List pending, disputed, undated and uncertain-location records, their existing evidence, missing information and next verification steps. Include document titles, volume/page locators and available evidence IDs. Distinguish exact coordinates from inferred areas; mark unknown locations explicitly and never invent or derive coordinates. Produce a review checklist only; do not modify points, review status or published data.",
       },
-      issues: {
-        title: "GitHub Issue triage",
-        desc: "Triage a repo's open issues (fill in {{repo}})",
+      placeNames: {
+        title: "Historical place-name review",
+        desc: "Review aliases and period-specific evidence daily at 09:00",
+        prompt:
+          "Review historical aliases, dynasties and present-day correspondences for place names in Mudu and its surrounding map. Use only authorized sources, listing candidate names, historical context, document titles, volume/page locators and available evidence IDs. Do not merge names from different contexts. Retain every candidate and mark uncertainty when evidence is ambiguous or insufficient. Produce a comparison and verification report only; do not merge entities, rename map points or publish knowledge.",
       },
-      weekly: {
-        title: "Weekly report",
-        desc: "Compile a weekly summary, every Monday",
+      mapWeekly: {
+        title: "Weekly historical map brief",
+        desc: "Summarize map research every Monday at 09:00",
+        prompt:
+          "Prepare a weekly Mudu historical map research brief from authorized map points, dated events, relationships and source material. Classify an item as a change this week only when its update date can be verified; otherwise label it material reviewed this time. Summarize findings, citations, disputes and missing information, then identify three verification priorities for next week. Include real document titles, volume/page locators and available evidence IDs. Do not invent change counts, coordinates or historical conclusions. Produce a brief only; do not modify or publish map data.",
       },
     },
   },
@@ -421,23 +430,23 @@ export const enUS: Translations = {
       "Invalid name — use only letters, digits, and hyphens",
     nameStepAlreadyExistsError: "An agent with this name already exists",
     nameStepNetworkError:
-      "Network request failed — check your network or backend connection",
+      "Connection failed. Please check your network and try again.",
     nameStepCheckError: "Could not verify name availability — please try again",
     nameStepCheckErrorWithDetail: "Name check failed: {detail}",
     nameStepApiDisabledError:
-      "Custom agent management is not enabled on this server. Please contact your administrator.",
+      "Custom assistant management is not enabled. Please contact your administrator.",
     nameStepBootstrapMessage:
-      "The new custom agent name is {name}. Help me design its purpose, behavior, and SOUL.md before saving it.",
+      "The new assistant is called {name}. Help me design its purpose, work style and instructions before saving it.",
     save: "Save agent",
     saving: "Saving agent...",
     saveRequested:
-      "Save requested. DeerFlow is generating and saving an initial version now.",
+      "Save requested. Xingxi is generating and saving an initial version now.",
     saveHint:
       "You can save this agent at any time from the top-right menu, even if this is only a first draft.",
     saveCommandMessage:
-      "Please save this custom agent now based on everything we have discussed so far. Treat this as my explicit confirmation to save. If some details are still missing, make reasonable assumptions, generate a concise first SOUL.md in English, and call setup_agent immediately without asking me for more confirmation.",
+      "Please save this custom assistant using what we have discussed. Fill in any small missing details reasonably and save without asking for confirmation again.",
     agentCreatedPendingRefresh:
-      "The agent was created, but DeerFlow could not load it yet. Please refresh this page in a moment.",
+      "The agent was created, but Xingxi could not load it yet. Please refresh this page in a moment.",
     more: "More actions",
     agentCreated: "Agent created!",
     startChatting: "Start chatting",
@@ -452,13 +461,13 @@ export const enUS: Translations = {
 
   // Workspace
   workspace: {
-    officialWebsite: "DeerFlow's official website",
-    githubTooltip: "DeerFlow on GitHub",
+    officialWebsite: "Xingxi's official website",
+    githubTooltip: "Xingxi on GitHub",
     settingsAndMore: "Settings and more",
-    visitGithub: "DeerFlow on GitHub",
+    visitGithub: "Xingxi on GitHub",
     reportIssue: "Report an issue",
     contactUs: "Contact us",
-    about: "About DeerFlow",
+    about: "About Xingxi",
     logout: "Log out",
     gatewayUnavailable: "Gateway is temporarily unavailable.",
     gatewayUnavailableRetrying: "Retrying in the background…",
@@ -501,7 +510,7 @@ export const enUS: Translations = {
     placeholder: "Ask a deeper follow-up...",
     send: "Send",
     sendFailed: "Failed to send side chat message.",
-    noContext: "No context selected",
+    noContext: "No related content selected",
     continuing: "Continue in this side chat",
     selectionCrossesMessages:
       "Selection spans multiple messages. Select text within a single reply to quote it.",
@@ -524,18 +533,20 @@ export const enUS: Translations = {
     unavailableShort: "Unavailable",
     setupTitle: (name: string) => `Connect ${name}`,
     setupEditTitle: (name: string) => `Modify ${name}`,
+    bindingInstruction: (name: string, code: string) =>
+      `Send /connect ${code} to the Xingxi ${name} bot to connect your account.`,
     setupDescription:
-      "Enter the values needed by this server process. They are not written to config.yaml.",
+      "Enter the connection details provided by your administrator.",
     saveAndConnect: "Save and connect",
     saveChanges: "Save changes",
     descriptions: {
-      telegram: "Telegram direct messages through your DeerFlow bot.",
+      telegram: "Telegram direct messages through your Xingxi bot.",
       slack: "Slack workspace messages and mentions.",
-      discord: "Discord server messages through your DeerFlow bot.",
-      feishu: "Feishu and Lark messages through your DeerFlow app.",
-      dingtalk: "DingTalk Stream Push messages through your DeerFlow bot.",
-      wechat: "WeChat iLink messages through your DeerFlow bot.",
-      wecom: "WeCom messages through your DeerFlow AI bot.",
+      discord: "Discord server messages through your Xingxi bot.",
+      feishu: "Feishu and Lark messages through your Xingxi app.",
+      dingtalk: "DingTalk Stream Push messages through your Xingxi bot.",
+      wechat: "WeChat iLink messages through your Xingxi bot.",
+      wecom: "WeCom messages through your Xingxi AI bot.",
     },
     connectedAs: (name: string) => `Connected as ${name}.`,
   },
@@ -555,7 +566,7 @@ export const enUS: Translations = {
     executeCommand: "Execute command",
     presentFiles: "Present files",
     needYourHelp: "Need your help",
-    useTool: (toolName: string) => `Use "${toolName}" tool`,
+    useTool: (_toolName: string) => "Preparing research",
     searchFor: (query: string) => `Search for "${query}"`,
     searchForRelatedInfo: "Search for related information",
     searchForRelatedImages: "Search for related images",
@@ -568,12 +579,12 @@ export const enUS: Translations = {
     writeFile: "Write file",
     clickToViewContent: "Click to view file content",
     writeTodos: "Update to-do list",
-    skillInstallTooltip: "Install skill and make it available to DeerFlow",
+    skillInstallTooltip: "Add a research capability to Xingxi",
   },
 
   researchTrace: {
     title: "Research process",
-    running: "In progress",
+    running: "Preparing research…",
     complete: "Complete",
     consolidating: "Verify evidence and organize the conclusion",
     phases: {
@@ -604,6 +615,7 @@ export const enUS: Translations = {
   uploads: {
     uploading: "Uploading...",
     uploadingFiles: "Uploading files, please wait...",
+    uploadFailed: "Unable to upload the attachment. Please try again.",
     limitsHint: (maxFiles: number, maxFileSize: string, maxTotalSize: string) =>
       `Add attachments (up to ${maxFiles} files, ${maxFileSize} each, ${maxTotalSize} total). Most regular file types are supported; compress macOS .app bundles first.`,
     filesTooLarge: (files: string, maxFileSize: string) =>
@@ -623,36 +635,34 @@ export const enUS: Translations = {
     failed: "Subtask failed",
   },
 
-  // Token Usage
+  // Usage statistics
   tokenUsage: {
-    title: "Token Usage",
-    label: "Tokens",
+    title: "Usage statistics",
+    label: "Usage",
     input: "Input",
     output: "Output",
     total: "Total",
     view: "Display",
-    unavailable:
-      "No token usage yet. Usage appears only after a successful model response when the provider returns usage_metadata.",
+    unavailable: "No usage statistics available.",
     unavailableShort: "No usage returned",
-    collecting: "Collecting tokens",
-    note: "Header totals use persisted thread usage, plus visible in-flight usage while a run is still streaming. Per-turn and debug usage come from currently visible messages only. Totals may differ from provider billing pages.",
+    collecting: "Collecting usage",
+    note: "Usage statistics are for reference.",
     presets: {
       off: "Off",
       summary: "Summary",
       perTurn: "Per turn",
-      debug: "Debug",
+      debug: "Details",
     },
     presetDescriptions: {
-      off: "Hide token usage in the header and conversation.",
+      off: "Hide usage statistics.",
       summary: "Show only the current conversation total in the header.",
-      perTurn:
-        "Show the header total and one token summary per assistant turn.",
-      debug: "Show the header total and step-level token debugging details.",
+      perTurn: "Show usage statistics for each reply.",
+      debug: "Show usage statistics for each step.",
     },
     finalAnswer: "Final answer",
     stepTotal: "Step total",
     sharedAttribution: "Shared across multiple actions in this step",
-    subagent: (description: string) => `Subagent: ${description}`,
+    subagent: (description: string) => `Task: ${description}`,
     startTodo: (content: string) => `Start To-do: ${content}`,
     completeTodo: (content: string) => `Complete To-do: ${content}`,
     updateTodo: (content: string) => `Update To-do: ${content}`,
@@ -666,7 +676,7 @@ export const enUS: Translations = {
     actions: "Actions",
     keyboardShortcuts: "Keyboard Shortcuts",
     keyboardShortcutsDescription:
-      "Navigate DeerFlow faster with keyboard shortcuts.",
+      "Navigate Xingxi faster with keyboard shortcuts.",
     openCommandPalette: "Open Command Palette",
     toggleSidebar: "Toggle Sidebar",
   },
@@ -674,38 +684,41 @@ export const enUS: Translations = {
   // Settings
   settings: {
     title: "Settings",
-    description: "Adjust how DeerFlow looks and behaves for you.",
+    description: "Adjust how Xingxi looks and behaves for you.",
     sections: {
       account: "Account",
       appearance: "Appearance",
       channels: "Channels",
       memory: "Memory",
-      tools: "Tools",
-      skills: "Skills",
+      tools: "Helpful features",
+      skills: "Research capabilities",
       notification: "Notification",
       about: "About",
     },
     memory: {
       title: "Memory",
+      loadError: "Memory could not be loaded. Please try again later.",
+      actionError:
+        "The memory operation could not be completed. Please try again later.",
       description:
-        "DeerFlow automatically learns from your conversations in the background. These memories help DeerFlow understand you better and deliver a more personalized experience.",
+        "Xingxi automatically learns from your conversations in the background. These memories help Xingxi understand you better and deliver a more personalized experience.",
       empty: "No memory data to display.",
       accountDisabledTitle:
         "Long-term memory is disabled for this test account",
       accountDisabledDescription:
-        "Conversations on this account do not read or write long-term memory, so tests are not influenced by earlier preferences. Operational and error logs remain available.",
+        "Conversations on this account do not use long-term memory, allowing independent research without earlier preferences.",
       globallyDisabledDescription:
         "Long-term memory is currently disabled for the whole system. Conversations do not read or write cross-session memory.",
-      rawJson: "Raw JSON",
+      rawJson: "Memory backup",
       exportButton: "Export memory",
       exportSuccess: "Memory exported",
       importButton: "Import memory",
       importConfirmTitle: "Import memory?",
       importConfirmDescription:
-        "This will overwrite your current memory with the selected JSON backup.",
+        "This will overwrite your current memory with the selected backup.",
       importFileLabel: "Selected file",
       importInvalidFile:
-        "Failed to read the selected memory file. Please choose a valid JSON export.",
+        "The memory file could not be read. Please choose a previously exported memory backup.",
       importSuccess: "Memory imported",
       manualFactSource: "Manual",
       addFact: "Add fact",
@@ -724,13 +737,13 @@ export const enUS: Translations = {
       factDeleteSuccess: "Fact deleted",
       factContentLabel: "Content",
       factCategoryLabel: "Category",
-      factConfidenceLabel: "Confidence",
+      factConfidenceLabel: "Certainty",
       factContentPlaceholder: "Describe the memory fact you want to save",
-      factCategoryPlaceholder: "context",
-      factConfidenceHint: "Use a number between 0 and 1.",
+      factCategoryPlaceholder: "For example: background or research preference",
+      factConfidenceHint: "Choose how certain you are about this memory.",
       factSave: "Save fact",
       factValidationContent: "Fact content cannot be empty.",
-      factValidationConfidence: "Confidence must be a number between 0 and 1.",
+      factValidationConfidence: "Please choose a valid certainty level.",
       noFacts: "No saved facts yet.",
       summaryReadOnly:
         "Summary sections are read-only for now. You can currently add, edit, or delete individual facts, or clear all memory.",
@@ -743,20 +756,20 @@ export const enUS: Translations = {
       noMatches: "No matching memory found.",
       markdown: {
         overview: "Overview",
-        userContext: "User context",
+        userContext: "Personal background",
         work: "Work",
         personal: "Personal",
         topOfMind: "Top of mind",
         historyBackground: "History",
         recentMonths: "Recent months",
-        earlierContext: "Earlier context",
+        earlierContext: "Earlier background",
         longTermBackground: "Long-term background",
         updatedAt: "Updated at",
         facts: "Facts",
         empty: "(empty)",
         table: {
           category: "Category",
-          confidence: "Confidence",
+          confidence: "Certainty",
           confidenceLevel: {
             veryHigh: "Very high",
             high: "High",
@@ -784,40 +797,49 @@ export const enUS: Translations = {
       languageDescription: "Switch between languages.",
     },
     tools: {
-      title: "Tools",
-      description: "Manage the configuration and enabled status of MCP tools.",
-      adminRequired: "Admin privileges are required to manage MCP tools.",
-      empty: "No MCP tools configured.",
+      title: "Helpful features",
+      loadError:
+        "Additional features could not be loaded. Please try again later.",
+      description:
+        "Enable helpful features for finding sources, managing files and related tasks.",
+      adminRequired:
+        "Administrator access is required to manage these features.",
+      empty: "No additional features available.",
     },
     channels: {
       title: "Channels",
       description:
-        "Connect IM accounts that can send messages to DeerFlow from outside the browser.",
+        "Connect IM accounts that can send messages to Xingxi from outside the browser.",
       disabled:
-        "Channel connections are not enabled on this server. Ask an administrator to enable channel_connections.",
+        "Message connections are not enabled. Please contact an administrator.",
     },
     skills: {
-      title: "Agent Skills",
-      description:
-        "Manage the configuration and enabled status of the agent skills.",
-      createSkill: "Create skill",
-      emptyTitle: "No agent skill yet",
+      retryLoad: "Reload",
+      title: "Research capabilities",
+      loadError:
+        "Research capabilities could not be loaded. Please try again later.",
+      description: "Manage built-in and custom workflows for your research.",
+      createSkill: "Create workflow",
+      emptyTitle: "No research capabilities yet",
       emptyDescription:
-        "Put your agent skill folders under the `/skills/custom` folder under the root folder of DeerFlow.",
-      emptyButton: "Create Your First Skill",
-      adminRequired: "Admin privileges are required to manage agent skills.",
+        "Create a custom research workflow or ask an administrator to add capabilities for your task.",
+      emptyButton: "Create your first workflow",
+      adminRequired:
+        "Administrator access is required to manage research capabilities.",
       installAdminRequired:
-        "Admin privileges are required to install agent skills.",
+        "Administrator access is required to add research capabilities.",
+      installSuccess: "Research capability added.",
+      installFailed: "Unable to add the research capability. Please try again.",
     },
     notification: {
       title: "Notification",
       description:
-        "DeerFlow only sends a completion notification when the window is not active. This is especially useful for long-running tasks so you can switch to other work and get notified when done.",
+        "Xingxi only sends a completion notification when the window is not active. This is especially useful for long-running tasks so you can switch to other work and get notified when done.",
       requestPermission: "Request notification permission",
       deniedHint:
         "Notification permission was denied. You can enable it in your browser's site settings to receive completion alerts.",
       testButton: "Send test notification",
-      testTitle: "DeerFlow",
+      testTitle: "Xingxi",
       testBody: "This is a test notification.",
       notSupported: "Your browser does not support notifications.",
       disableNotification: "Disable notification",
@@ -826,18 +848,21 @@ export const enUS: Translations = {
       profileTitle: "Profile",
       email: "Email",
       role: "Role",
-      ssoProvider: "SSO",
+      ssoProvider: "Sign-in method",
       changePasswordTitle: "Change Password",
       changePasswordDescription: "Update your account password.",
-      ssoPasswordDescription: "Password is managed by your SSO provider.",
+      ssoPasswordDescription:
+        "Your password is managed by your sign-in account.",
       ssoPasswordMessage:
-        "This account signs in with {provider}, so DeerFlow cannot manage or change its password here. Use your SSO provider's account settings instead.",
+        "This account uses unified sign-in. Please change its password with the account provider.",
       currentPassword: "Current password",
       newPassword: "New password",
       confirmNewPassword: "Confirm new password",
       passwordMismatch: "New passwords do not match",
       passwordTooShort: "Password must be at least 8 characters",
       passwordChangedSuccess: "Password changed successfully",
+      passwordChangeError:
+        "The password could not be changed. Please check your current password and try again.",
       networkError: "Network error. Please try again.",
       updating: "Updating...",
       updatePassword: "Update Password",
@@ -861,7 +886,7 @@ export const enUS: Translations = {
     createAdminAccount: "Create admin account",
     adminSetupRequiredTitle: "Administrator setup is required",
     adminSetupRequiredDescription:
-      "DeerFlow needs an administrator account before new regular accounts can be created.",
+      "Xingxi needs an administrator account before new regular accounts can be created.",
     orContinueWith: "Or continue with",
     ssoHint:
       "If your account uses single sign-on, sign in with the option below instead.",
@@ -872,12 +897,13 @@ export const enUS: Translations = {
     networkError: "Network error. Please try again.",
     authFailed: "Authentication failed.",
     errors: {
-      sso_failed: "SSO login failed. Please try again or use email login.",
-      sso_cancelled: "SSO login was cancelled.",
+      sso_failed:
+        "Unified sign-in failed. Please try again or use email login.",
+      sso_cancelled: "Unified sign-in was cancelled.",
       sso_account_exists:
         "An account with this email already exists. Please sign in with your password or contact your administrator.",
       sso_not_allowed:
-        "SSO login is not allowed for your account. Contact your administrator.",
+        "Unified sign-in is not available for your account. Contact your administrator.",
     },
   },
 };

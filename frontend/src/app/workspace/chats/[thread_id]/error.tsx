@@ -8,19 +8,19 @@ export default function ChatError({ reset }: { reset: () => void }) {
 
   return (
     <main
-      className="flex size-full min-h-0 items-center justify-center bg-[#edf4f5] px-5 text-[#202b2e]"
+      className="xingxi-chat flex size-full min-h-0 items-center justify-center px-5"
       role="alert"
     >
-      <div className="w-full max-w-md text-center">
+      <div className="xingxi-panel bg-card/80 w-full max-w-md rounded-2xl border border-white/80 p-6 text-center shadow-sm">
         <h1 className="text-xl font-semibold">对话页面暂时无法加载</h1>
-        <p className="mt-3 text-sm leading-6 text-[#61757a]">
+        <p className="mt-3 text-sm leading-6 text-slate-500">
           当前页面发生异常。可以重试加载，或返回星羲智能体重新进入对话。
         </p>
         <div className="mt-6 flex flex-wrap justify-center gap-3">
           <button
             type="button"
             onClick={reset}
-            className="flex h-10 items-center gap-2 rounded-md bg-[#202b2e] px-4 text-sm font-medium text-white hover:bg-[#344145]"
+            className="home-primary flex h-10 items-center gap-2 rounded-xl px-4 text-sm font-medium text-white"
           >
             <RotateCcw className="size-4" />
             重新加载
@@ -28,7 +28,7 @@ export default function ChatError({ reset }: { reset: () => void }) {
           <button
             type="button"
             onClick={() => router.push("/workspace/agent")}
-            className="flex h-10 items-center gap-2 rounded-md border border-[#c7d7da] bg-white px-4 text-sm font-medium text-[#285f68] hover:bg-[#f7fbfb]"
+            className="bg-card flex h-10 items-center gap-2 rounded-xl border border-blue-100 px-4 text-sm font-medium text-blue-700 hover:bg-blue-50"
           >
             <ArrowLeft className="size-4" />
             返回星羲智能体

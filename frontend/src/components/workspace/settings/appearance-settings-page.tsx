@@ -135,7 +135,7 @@ function ThemePreviewCard({
       type="button"
       onClick={() => onSelect(mode)}
       className={cn(
-        "group flex h-full flex-col gap-3 rounded-lg border p-4 text-left transition-all",
+        "group flex h-full flex-col gap-3 rounded-xl border p-4 text-left transition-all",
         active
           ? "border-primary ring-primary/30 shadow-sm ring-2"
           : "hover:border-border hover:shadow-sm",
@@ -156,15 +156,15 @@ function ThemePreviewCard({
         className={cn(
           "relative overflow-hidden rounded-md border text-xs transition-colors",
           previewMode === "dark"
-            ? "border-neutral-800 bg-neutral-900 text-neutral-200"
-            : "border-slate-200 bg-white text-slate-900",
+            ? "border-slate-700 bg-slate-900 text-slate-200"
+            : "border-blue-100 bg-[#f5f8fc] text-slate-900",
         )}
       >
         <div className="border-border/50 flex items-center gap-2 border-b px-3 py-2">
           <div
             className={cn(
               "h-2 w-2 rounded-full",
-              previewMode === "dark" ? "bg-emerald-400" : "bg-emerald-500",
+              previewMode === "dark" ? "bg-blue-400" : "bg-blue-600",
             )}
           />
           <div className="h-2 w-10 rounded-full bg-current/20" />

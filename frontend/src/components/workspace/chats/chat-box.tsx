@@ -166,13 +166,13 @@ const ChatBox: React.FC<{ children: React.ReactNode; threadId: string }> = ({
           {artifacts.length === 0 ? (
             <ConversationEmptyState
               icon={<FilesIcon />}
-              title="No artifact selected"
-              description="Select an artifact to view its details"
+              title="暂无研究附件"
+              description="生成或选择附件后，可在这里查看内容"
             />
           ) : (
             <div className="flex size-full max-w-(--container-width-sm) flex-col justify-center p-4 pt-8">
               <header className="shrink-0">
-                <h2 className="text-lg font-medium">Artifacts</h2>
+                <h2 className="text-lg font-medium">研究附件</h2>
               </header>
               <main className="min-h-0 grow">
                 <ArtifactFileList
@@ -214,15 +214,15 @@ const ChatBox: React.FC<{ children: React.ReactNode; threadId: string }> = ({
           }}
         >
           <SheetContent
-            className="w-[calc(100vw-1rem)] max-w-none gap-0 p-0 sm:max-w-md [&>button]:hidden"
+            className="xingxi-chat xingxi-chat-portal w-[calc(100vw-1rem)] max-w-none gap-0 p-0 sm:max-w-md [&>button]:hidden"
             side="right"
           >
             <SheetHeader className="sr-only">
               <SheetTitle>
-                {renderedRightPanel === "sidecar" ? "Sidecar" : "Artifacts"}
+                {renderedRightPanel === "sidecar" ? "辅助对话" : "研究附件"}
               </SheetTitle>
               <SheetDescription>
-                Browse the side panel for this conversation.
+                查看当前会话的辅助对话与研究附件。
               </SheetDescription>
             </SheetHeader>
             <div className="min-h-0 flex-1 p-3 pt-10">{rightPanelContent}</div>

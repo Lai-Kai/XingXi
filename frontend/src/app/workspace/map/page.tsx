@@ -41,6 +41,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   BusinessErrorState,
   BusinessLoadingState,
+  BusinessMobileHeader,
 } from "@/components/workspace/business-page";
 import { CreateModelDialog } from "@/components/workspace/map/create-model-dialog";
 import {
@@ -58,6 +59,11 @@ import {
 import { useAuth } from "@/core/auth/AuthProvider";
 import { planMapRoute } from "@/core/map/api";
 import {
+  readMapPerformance,
+  saveMapPerformance,
+  type MapPerformanceMode,
+} from "@/core/map/display-performance";
+import {
   defaultMapLayerOpacity,
   getRenderableMapLayers,
 } from "@/core/map/layers";
@@ -66,6 +72,7 @@ import {
   getPointModelAsset,
   type GlbAssetDescriptor,
 } from "@/core/map/model-assets";
+import { mapDataNotice } from "@/core/map/model-presentation";
 import {
   listMapModels,
   modelsForPoint,
@@ -76,7 +83,6 @@ import {
   type TimelineEventGroup,
 } from "@/core/map/timeline";
 import {
-  buildStudyRoute,
   filterMapPoints,
   nextTimelineEventIndex,
   type DynastyLayer,
@@ -90,8 +96,10 @@ import {
   type UserMapLocation,
 } from "@/core/map/types";
 import { useMapCatalog } from "@/core/map/use-map-catalog";
+import { useStudyRoutes } from "@/core/map/use-study-routes";
 import { recordOperationEvent } from "@/core/operations/api";
 import { xingxiChatHref } from "@/core/threads/xingxi-entry";
+import { publicErrorMessage } from "@/core/ui/presentation";
 import { cn } from "@/lib/utils";
 
 const dynastyLabels: Record<DynastyLayer, string> = {
@@ -660,7 +668,7 @@ function PointDetails({
             </p>
             <dl className="grid grid-cols-[76px_1fr] gap-y-2 text-sm">
               <dt className="text-muted-foreground">类型</dt>
-              <dd>{entityTypeLabels[point.entityType] ?? point.entityType}</dd>
+              <dd>{entityTypeLabels[point.entityType] ?? "其他"}</dd>
               <dt className="text-muted-foreground">遗存状态</dt>
               <dd>{point.heritageStatus === "extant" ? "现存" : "待核验"}</dd>
               <dt className="text-muted-foreground">参访提示</dt>
@@ -671,7 +679,7 @@ function PointDetails({
                 {point.geometryType === "point" ? "坐标" : "估计中心"}
               </dt>
               <dd className="font-mono text-xs">
-                {point.lon.toFixed(6)}, {point.lat.toFixed(6)} · WGS84
+                {point.lon.toFixed(6)}, {point.lat.toFixed(6)}
               </dd>
               <dt className="text-muted-foreground">空间表达</dt>
               <dd>{spatialRepresentationLabel(point)}</dd>
@@ -679,14 +687,6 @@ function PointDetails({
                 <>
                   <dt className="text-muted-foreground">范围来源</dt>
                   <dd>{extentSourceLabels[point.extentSource]}</dd>
-                </>
-              )}
-              {point.releaseId && (
-                <>
-                  <dt className="text-muted-foreground">知识版本</dt>
-                  <dd className="font-mono text-xs break-all">
-                    {point.releaseId}
-                  </dd>
                 </>
               )}
             </dl>
@@ -867,14 +867,6 @@ function PointDetails({
   );
 }
 
-function moveItem(items: string[], index: number, direction: -1 | 1) {
-  const nextIndex = index + direction;
-  if (nextIndex < 0 || nextIndex >= items.length) return items;
-  const next = [...items];
-  [next[index], next[nextIndex]] = [next[nextIndex]!, next[index]!];
-  return next;
-}
-
 function downloadRoute(name: string, stops: MapPoint[], disclaimer: string) {
   const body = [
     `# ${name}`,
@@ -918,17 +910,35 @@ export default function MapPage() {
   const [resumeModelAfterPoint, setResumeModelAfterPoint] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
-    void listMapModels(controller.signal)
-      .then((models) => {
+    let pending = false;
+    const load = async () => {
+      if (pending || document.hidden) return;
+      pending = true;
+      try {
+        const models = await listMapModels(controller.signal);
         if (!controller.signal.aborted) {
-          setRegisteredModels(models);
+          setRegisteredModels((current) =>
+            JSON.stringify(current) === JSON.stringify(models)
+              ? current
+              : models,
+          );
           setModelError("");
         }
-      })
-      .catch(() => {
+      } catch {
         if (!controller.signal.aborted) setModelError("已接入模型暂时不可用");
-      });
-    return () => controller.abort();
+      } finally {
+        pending = false;
+      }
+    };
+    void load();
+    const timer = setInterval(() => void load(), 15_000);
+    const onVisibility = () => void load();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+      controller.abort();
+    };
   }, [modelsReload]);
   const {
     baseCatalog,
@@ -980,13 +990,40 @@ export default function MapPage() {
   const [pointDetailTab, setPointDetailTab] = useState("overview");
   const [visibleLayerIds, setVisibleLayerIds] = useState<string[] | null>(null);
   const [layerOpacity, setLayerOpacity] = useState<Record<string, number>>({});
-  const [activeRouteId, setActiveRouteId] = useState<string | null>(null);
-  const [routeStopIds, setRouteStopIds] = useState<string[]>([]);
+  const [performanceMode, setPerformanceMode] =
+    useState<MapPerformanceMode>("balanced");
+  useEffect(() => {
+    try {
+      setPerformanceMode(readMapPerformance(window.localStorage));
+    } catch {
+      // Keep the default when the browser denies access to localStorage itself.
+    }
+  }, []);
+  const {
+    routes,
+    activeRoute,
+    isExample,
+    routeStops,
+    availableStops,
+    selectRoute,
+    resetRoute,
+    addStop,
+    removeStop,
+    moveStop,
+  } = useStudyRoutes(catalog);
+  const [stopToAdd, setStopToAdd] = useState("");
   const [showTrajectory, setShowTrajectory] = useState(false);
   const [selectedTrajectoryId, setSelectedTrajectoryId] = useState<
     string | null
   >(null);
   const [playing, setPlaying] = useState(false);
+  useEffect(() => {
+    const pause = () => {
+      if (document.hidden) setPlaying(false);
+    };
+    document.addEventListener("visibilitychange", pause);
+    return () => document.removeEventListener("visibilitychange", pause);
+  }, []);
   const [activeEventId, setActiveEventId] = useState<string | null>(null);
   const [detailView, setDetailView] = useState<"event" | "point" | "year">(
     "point",
@@ -1010,6 +1047,15 @@ export default function MapPage() {
   const [locating, setLocating] = useState(false);
   const [routePlanning, setRoutePlanning] = useState(false);
   const [routeError, setRouteError] = useState<string | null>(null);
+  const routePlanGenerationRef = useRef(0);
+
+  const editRoute = (edit: () => void) => {
+    edit();
+    routePlanGenerationRef.current += 1;
+    setPlannedRoute(null);
+    setRoutePlanning(false);
+    setRouteError(null);
+  };
 
   const startCreatePoint = (resumeModel = false) => {
     setResumeModelAfterPoint(resumeModel);
@@ -1146,11 +1192,6 @@ export default function MapPage() {
   useEffect(() => {
     if (!baseCatalog) return;
     const nextCatalog = baseCatalog;
-    const firstRoute = nextCatalog.routes[0];
-    setActiveRouteId((current) => current ?? firstRoute?.id ?? null);
-    setRouteStopIds((current) =>
-      current.length ? current : (firstRoute?.stopIds ?? []),
-    );
     setSelectedTrajectoryId(
       (current) => current ?? nextCatalog.trajectories[0]?.id ?? null,
     );
@@ -1210,12 +1251,6 @@ export default function MapPage() {
   );
   const selected =
     catalog?.points.find((point) => point.id === selectedId) ?? null;
-  const activeRoute =
-    catalog?.routes.find((route) => route.id === activeRouteId) ?? null;
-  const routeStops = useMemo(
-    () => buildStudyRoute(catalog?.points ?? [], { stopIds: routeStopIds }),
-    [catalog, routeStopIds],
-  );
   const trajectory =
     catalog?.trajectories.find((item) => item.id === selectedTrajectoryId) ??
     catalog?.trajectories[0] ??
@@ -1368,16 +1403,6 @@ export default function MapPage() {
     [catalog],
   );
 
-  const selectRoute = useCallback(
-    (routeId: string) => {
-      setActiveRouteId(routeId || null);
-      const route = catalog?.routes.find((item) => item.id === routeId);
-      setRouteStopIds(route?.stopIds ?? []);
-      setPlannedRoute(null);
-    },
-    [catalog],
-  );
-
   const selectMapMode = (mode: MapMode) => {
     setMapMode(mode);
     setDetailSheetOpen(false);
@@ -1461,7 +1486,9 @@ export default function MapPage() {
       return;
     }
     if (!window.isSecureContext) {
-      setLocationError("实时定位需要通过 HTTPS 或 localhost 安全连接访问");
+      setLocationError(
+        "当前访问方式无法使用实时定位，请通过受保护的网页连接访问",
+      );
       return;
     }
     setLocating(true);
@@ -1509,32 +1536,43 @@ export default function MapPage() {
     }
     setRoutePlanning(true);
     setRouteError(null);
+    const generation = ++routePlanGenerationRef.current;
     try {
       const route = await planMapRoute(coordinates);
+      if (generation !== routePlanGenerationRef.current) return;
       setPlannedRoute(route);
       if (route.routingStatus === "unavailable") {
         setRouteError("道路服务暂不可用，当前红色虚线仅表示站点顺序");
       }
     } catch (reason) {
-      setRouteError(reason instanceof Error ? reason.message : "无法规划路线");
+      if (generation === routePlanGenerationRef.current) {
+        setRouteError(publicErrorMessage(reason, "无法规划路线，请稍后重试。"));
+      }
     } finally {
-      setRoutePlanning(false);
+      if (generation === routePlanGenerationRef.current)
+        setRoutePlanning(false);
     }
   };
 
-  if (!catalog && !error) {
-    return <BusinessLoadingState label="正在读取古舆地图资料…" />;
-  }
-  if (!catalog && error) {
+  if (!catalog) {
     return (
-      <BusinessErrorState
-        title="地图资料暂时无法加载"
-        description={error}
-        onRetry={reload}
-      />
+      <main className="xingxi-module bg-muted/60 size-full overflow-y-auto">
+        <BusinessMobileHeader title="古舆地图" />
+        {error ? (
+          <BusinessErrorState
+            title="地图资料暂时无法加载"
+            description={publicErrorMessage(
+              error,
+              "地图资料暂时无法读取，请重试。",
+            )}
+            onRetry={reload}
+          />
+        ) : (
+          <BusinessLoadingState label="正在读取古舆地图资料…" />
+        )}
+      </main>
     );
   }
-  if (!catalog) return null;
 
   const filtersPanel = (
     <>
@@ -1623,7 +1661,7 @@ export default function MapPage() {
                 <option value="all">全部</option>
                 {entityTypes.map((item) => (
                   <option key={item} value={item}>
-                    {entityTypeLabels[item] ?? item}
+                    {entityTypeLabels[item] ?? "其他"}
                   </option>
                 ))}
               </select>
@@ -1687,7 +1725,7 @@ export default function MapPage() {
                   >
                     <span className="truncate">{point.name}</span>
                     <span className="text-muted-foreground shrink-0 text-xs">
-                      {entityTypeLabels[point.entityType] ?? point.entityType}
+                      {entityTypeLabels[point.entityType] ?? "其他"}
                     </span>
                   </button>
                 </li>
@@ -1706,6 +1744,28 @@ export default function MapPage() {
       </SheetHeader>
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
         <section aria-label="地图图层">
+          <label className="bg-muted mb-5 flex min-h-12 items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm">
+            <span>
+              <span className="block font-medium">地图流畅模式</span>
+              <span className="text-muted-foreground block text-xs">
+                让地图拖动与缩放更顺畅，适合画面卡顿时使用
+              </span>
+            </span>
+            <input
+              type="checkbox"
+              aria-label="地图流畅模式"
+              checked={performanceMode === "light"}
+              onChange={(event) => {
+                const mode = event.target.checked ? "light" : "balanced";
+                setPerformanceMode(mode);
+                try {
+                  saveMapPerformance(window.localStorage, mode);
+                } catch {
+                  // The in-memory preference still applies in restricted browsers.
+                }
+              }}
+            />
+          </label>
           <h3 className="text-foreground text-sm font-medium">底图模式</h3>
           <div
             role="group"
@@ -1750,7 +1810,7 @@ export default function MapPage() {
           </p>
 
           <h3 className="text-foreground mt-5 text-sm font-medium">范围图层</h3>
-          <div className="bg-card mt-2 divide-y rounded-md border">
+          <div className="xingxi-panel bg-card mt-2 divide-y rounded-2xl border">
             <label className="flex min-h-12 items-center justify-between gap-3 px-3 text-sm">
               <span>
                 <span className="block font-medium">历史范围</span>
@@ -1852,7 +1912,9 @@ export default function MapPage() {
                   </label>
                 )}
               <p className="text-muted-foreground mt-1">
-                {layer.calibrationNote}
+                {layer.kind === "base"
+                  ? "现代底图，仅用于现状位置参照。"
+                  : layer.calibrationNote}
               </p>
               <a
                 href={layer.sourceUrl}
@@ -1925,7 +1987,7 @@ export default function MapPage() {
         </section>
 
         <p className="text-muted-foreground mt-5 border-t pt-4 text-xs leading-5">
-          {catalog.dataNotice}
+          {mapDataNotice(catalog.dataNotice)}
         </p>
       </div>
     </>
@@ -1943,10 +2005,13 @@ export default function MapPage() {
         <select
           aria-label="选择研学路线"
           className="border-input h-10 w-full rounded-md border px-3 text-sm"
-          value={activeRouteId ?? ""}
-          onChange={(event) => selectRoute(event.target.value)}
+          value={activeRoute?.id ?? ""}
+          onChange={(event) => {
+            editRoute(() => selectRoute(event.target.value));
+            setStopToAdd("");
+          }}
         >
-          {catalog.routes.map((route) => (
+          {routes.map((route) => (
             <option key={route.id} value={route.id}>
               {route.name}
             </option>
@@ -1965,7 +2030,22 @@ export default function MapPage() {
             <p className="text-muted-foreground mt-3 text-xs leading-5">
               {activeRoute.summary}
             </p>
-            <ol className="mt-3 space-y-1">
+            <div className="mt-3 flex items-center justify-between gap-2">
+              <p className="text-muted-foreground text-xs">
+                当前 {routeStops.length} 站 · 可自由编辑
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  editRoute(resetRoute);
+                  setStopToAdd("");
+                }}
+                className="text-primary hover:bg-accent min-h-9 rounded-md px-2 text-xs"
+              >
+                {isExample ? "恢复示例" : "恢复原路线"}
+              </button>
+            </div>
+            <ol aria-label="路线站点" className="mt-2 space-y-1">
               {routeStops.map((stop, index) => (
                 <li
                   key={stop.id}
@@ -1986,12 +2066,7 @@ export default function MapPage() {
                     aria-label={`上移${stop.name}`}
                     title="上移站点"
                     disabled={index === 0}
-                    onClick={() =>
-                      setRouteStopIds((items) => {
-                        setPlannedRoute(null);
-                        return moveItem(items, index, -1);
-                      })
-                    }
+                    onClick={() => editRoute(() => moveStop(stop.id, -1))}
                     className="hover:bg-accent grid size-9 shrink-0 place-items-center rounded-md disabled:opacity-30"
                   >
                     <ArrowUp className="size-4" />
@@ -2001,12 +2076,7 @@ export default function MapPage() {
                     aria-label={`下移${stop.name}`}
                     title="下移站点"
                     disabled={index === routeStops.length - 1}
-                    onClick={() =>
-                      setRouteStopIds((items) => {
-                        setPlannedRoute(null);
-                        return moveItem(items, index, 1);
-                      })
-                    }
+                    onClick={() => editRoute(() => moveStop(stop.id, 1))}
                     className="hover:bg-accent grid size-9 shrink-0 place-items-center rounded-md disabled:opacity-30"
                   >
                     <ArrowDown className="size-4" />
@@ -2015,12 +2085,7 @@ export default function MapPage() {
                     type="button"
                     aria-label={`移除${stop.name}`}
                     title="移除站点"
-                    onClick={() => {
-                      setRouteStopIds((items) =>
-                        items.filter((id) => id !== stop.id),
-                      );
-                      setPlannedRoute(null);
-                    }}
+                    onClick={() => editRoute(() => removeStop(stop.id))}
                     className="hover:bg-accent grid size-9 shrink-0 place-items-center rounded-md"
                   >
                     <X className="size-4" />
@@ -2028,6 +2093,64 @@ export default function MapPage() {
                 </li>
               ))}
             </ol>
+            {routeStops.length === 0 && (
+              <p className="text-muted-foreground mt-3 rounded-md border border-dashed p-3 text-xs leading-5">
+                路线还没有站点。请从下方添加地点，或恢复原有站点。
+              </p>
+            )}
+            <form
+              aria-label="添加路线站点"
+              className="mt-3 flex items-center gap-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (!availableStops.some((point) => point.id === stopToAdd))
+                  return;
+                editRoute(() => addStop(stopToAdd));
+                setStopToAdd("");
+              }}
+            >
+              <select
+                aria-label="选择添加站点"
+                value={
+                  availableStops.some((point) => point.id === stopToAdd)
+                    ? stopToAdd
+                    : ""
+                }
+                onChange={(event) => setStopToAdd(event.target.value)}
+                disabled={availableStops.length === 0}
+                className="border-input h-10 min-w-0 flex-1 rounded-md border px-2 text-xs"
+              >
+                <option value="">
+                  {availableStops.length
+                    ? "选择地点加入路线"
+                    : catalog.points.length
+                      ? "地图上所有地点均已加入"
+                      : "暂无可用点位，请先加载地图点位"}
+                </option>
+                {availableStops.map((point) => (
+                  <option key={point.id} value={point.id}>
+                    {point.name}
+                    {point.recordKind === "custom"
+                      ? "（自建点位）"
+                      : mapRecordScope(point) === "draft"
+                        ? "（语料草稿）"
+                        : ""}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="submit"
+                disabled={
+                  !availableStops.some((point) => point.id === stopToAdd)
+                }
+                className="hover:bg-accent inline-flex min-h-10 shrink-0 items-center gap-1 rounded-md border px-3 text-xs disabled:opacity-40"
+              >
+                <Plus className="size-3.5" /> 添加站点
+              </button>
+            </form>
+            <p className="text-muted-foreground mt-2 text-xs leading-5">
+              修改保留在本页，导出提纲可保存当前站点和顺序。
+            </p>
 
             <div className="mt-4 grid grid-cols-2 gap-2">
               <button
@@ -2042,7 +2165,7 @@ export default function MapPage() {
               <button
                 type="button"
                 onClick={() => void calculateRoadRoute()}
-                disabled={routePlanning}
+                disabled={routePlanning || routeStops.length === 0}
                 className="bg-primary text-primary-foreground inline-flex min-h-10 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs disabled:opacity-40"
               >
                 <RouteIcon className="size-4" />
@@ -2050,6 +2173,7 @@ export default function MapPage() {
               </button>
               <button
                 type="button"
+                disabled={routeStops.length === 0}
                 onClick={() =>
                   downloadRoute(
                     activeRoute.name,
@@ -2057,7 +2181,7 @@ export default function MapPage() {
                     activeRoute.disclaimer,
                   )
                 }
-                className="hover:bg-accent col-span-2 inline-flex min-h-10 items-center justify-center gap-1.5 rounded-md border px-2.5 text-xs"
+                className="hover:bg-accent col-span-2 inline-flex min-h-10 items-center justify-center gap-1.5 rounded-md border px-2.5 text-xs disabled:opacity-40"
               >
                 <Download className="size-4" /> 导出研学提纲
               </button>
@@ -2087,7 +2211,10 @@ export default function MapPage() {
   );
 
   return (
-    <div className="research-map bg-background text-foreground relative isolate flex h-full min-h-0 flex-col">
+    <div
+      className="research-map bg-background text-foreground relative isolate flex h-full min-h-0 flex-col"
+      data-map-performance-mode={performanceMode}
+    >
       <header className="research-map-header bg-card/95 absolute top-3 right-3 left-3 z-20 flex min-h-12 items-center gap-1 rounded-xl border px-2 shadow-sm backdrop-blur md:gap-3 md:px-4 md:py-2">
         <SidebarTrigger className="md:hidden" />
         <MapIcon className="text-primary hidden size-4 shrink-0 sm:block" />
@@ -2099,7 +2226,7 @@ export default function MapPage() {
             木渎历史空间 · 现状定位 · 更新于 {catalog.updatedAt}
           </p>
         </div>
-        <span className="border-border ml-auto hidden shrink-0 rounded border bg-emerald-50 px-2 py-1 text-xs whitespace-nowrap text-emerald-800 sm:inline-flex dark:bg-emerald-950 dark:text-emerald-200">
+        <span className="border-primary/15 bg-accent text-primary ml-auto hidden shrink-0 rounded-full border px-2.5 py-1 text-xs whitespace-nowrap sm:inline-flex">
           {catalog.points.length}
           <span className="hidden sm:inline"> 个</span>点位
         </span>
@@ -2138,6 +2265,7 @@ export default function MapPage() {
           <section className="relative min-h-0 flex-1">
             <MapLibreCanvas
               key={reloadKey}
+              performanceMode={performanceMode}
               cameraPadding={cameraPadding}
               points={points}
               modelPointIds={modelPointIds}
@@ -2165,7 +2293,7 @@ export default function MapPage() {
             {creatingPoint && !pickedLocation && (
               <div
                 role="status"
-                className="bg-card absolute top-36 left-3 z-30 flex max-w-[calc(100%-1.5rem)] items-center gap-3 rounded-lg border px-3 py-2 text-sm shadow-lg"
+                className="xingxi-panel bg-card absolute top-36 left-3 z-30 flex max-w-[calc(100%-1.5rem)] items-center gap-3 rounded-2xl border px-3 py-2 text-sm shadow-lg"
               >
                 <span>请点击地图选择新点位，可拖动或缩放地图。</span>
                 <button
@@ -2177,7 +2305,7 @@ export default function MapPage() {
                 </button>
               </div>
             )}
-            <div className="research-map-hud bg-card/95 absolute top-20 left-3 z-10 flex max-w-[calc(100%-5rem)] flex-wrap items-center gap-1 rounded-xl border p-1.5 shadow-lg backdrop-blur">
+            <div className="xingxi-panel research-map-hud bg-card/95 absolute top-20 left-3 z-10 flex max-w-[calc(100%-5rem)] flex-wrap items-center gap-1 rounded-xl border p-1.5 shadow-lg backdrop-blur">
               <div
                 role="tablist"
                 aria-label="地图模式"
@@ -2268,7 +2396,7 @@ export default function MapPage() {
             </div>
 
             {(locationTracking || locationError) && (
-              <div className="research-map-location bg-card/95 absolute top-36 left-3 z-10 flex max-w-[min(80vw,360px)] items-center gap-2 rounded-lg border px-2.5 py-2 text-xs shadow-sm">
+              <div className="xingxi-panel research-map-location bg-card/95 absolute top-36 left-3 z-10 flex max-w-[min(80vw,360px)] items-center gap-2 rounded-2xl border px-2.5 py-2 text-xs shadow-sm">
                 {locationTracking ? (
                   <>
                     <span className="relative flex size-2.5 shrink-0">
@@ -2307,7 +2435,7 @@ export default function MapPage() {
 
             <div
               data-map-legend="true"
-              className="research-map-legend bg-card/95 pointer-events-none absolute bottom-6 left-3 flex max-w-[calc(100%-5rem)] flex-wrap gap-x-2 gap-y-0.5 rounded-lg border px-2 py-1 text-[10px] shadow-sm sm:text-[11px]"
+              className="xingxi-panel research-map-legend bg-card/95 pointer-events-none absolute bottom-6 left-3 flex max-w-[calc(100%-5rem)] flex-wrap gap-x-2 gap-y-0.5 rounded-2xl border px-2 py-1 text-[10px] shadow-sm sm:text-[11px]"
             >
               <span className="text-muted-foreground font-medium">
                 {mapDisplayMode === "comparison"
@@ -2320,7 +2448,7 @@ export default function MapPage() {
                   <span className="text-primary-foreground grid size-5 place-items-center rounded-full border-2 border-teal-800 bg-teal-600 text-[8px] font-bold">
                     3D
                   </span>
-                  可预览模型 · 标点大小固定
+                  可查看三维场景
                 </span>
               )}
               {showHistoricalRanges && (
@@ -2347,7 +2475,7 @@ export default function MapPage() {
           </section>
 
           <section
-            className="research-map-timeline bg-card/95 absolute right-3 bottom-24 left-3 z-10 flex max-h-[min(176px,28dvh)] shrink-0 flex-col overflow-hidden rounded-xl border shadow-lg backdrop-blur sm:max-h-[min(200px,28dvh)] md:bottom-20"
+            className="xingxi-panel research-map-timeline bg-card/95 absolute right-3 bottom-24 left-3 z-10 flex max-h-[min(176px,28dvh)] shrink-0 flex-col overflow-hidden rounded-xl border shadow-lg backdrop-blur sm:max-h-[min(200px,28dvh)] md:bottom-20"
             aria-label="历史时间轴"
           >
             <div className="flex min-h-10 shrink-0 items-center gap-2 px-3 sm:px-4">
@@ -2407,24 +2535,24 @@ export default function MapPage() {
                       minHeight: timelineLayout.heightPx,
                     }}
                   >
-                    <div className="absolute top-5 right-0 left-0 h-px bg-[#9bb7b6]" />
+                    <div className="bg-accent absolute top-5 right-0 left-0 h-px" />
                     {timelineLayout.ticks.map((tick) => (
                       <span
                         key={tick.year}
-                        className="absolute top-0 bottom-0 -translate-x-1/2 text-[10px] text-[#718286]"
+                        className="text-muted-foreground absolute top-0 bottom-0 -translate-x-1/2 text-[10px]"
                         style={{ left: tick.leftPx }}
                       >
                         <span className="block -translate-x-0.5 text-center">
                           {tick.year}
                         </span>
-                        <span className="absolute top-5 bottom-0 left-1/2 w-px bg-[#e2eae8]" />
+                        <span className="bg-accent absolute top-5 bottom-0 left-1/2 w-px" />
                       </span>
                     ))}
                     {timelineLayout.dynastyBands.map((band) => (
                       <div
                         key={band.id}
                         data-dynasty-band={band.id}
-                        className="absolute h-4 border-x border-[#c8d8d4] bg-[#eef4f1] text-center text-[10px] leading-4 font-medium text-[#58716d]"
+                        className="border-border bg-accent text-muted-foreground absolute h-4 border-x text-center text-[10px] leading-4 font-medium"
                         style={{
                           top: 32 + band.track * 18,
                           left: band.leftPx,
@@ -2470,8 +2598,8 @@ export default function MapPage() {
                           className={cn(
                             "absolute z-[1] flex w-[136px] -translate-x-1/2 flex-col items-center gap-0.5 px-1 text-center text-xs",
                             active
-                              ? "font-medium text-[#174f53]"
-                              : "text-[#5b6d70] hover:text-[#174f53]",
+                              ? "text-primary font-medium"
+                              : "text-muted-foreground hover:text-primary",
                           )}
                           style={{
                             top:
@@ -2482,15 +2610,15 @@ export default function MapPage() {
                         >
                           <span
                             className={cn(
-                              "grid size-3 place-items-center rounded-full border-2 bg-white shadow-sm",
+                              "bg-card grid size-3 place-items-center rounded-full border-2 shadow-sm",
                               active
-                                ? "border-[#1d6267] ring-4 ring-[#d6e9e5]"
+                                ? "border-primary ring-ring ring-4"
                                 : event.importance === "landmark"
-                                  ? "border-[#4d8588]"
-                                  : "border-[#9bb7b6]",
+                                  ? "border-primary"
+                                  : "border-primary",
                             )}
                           />
-                          <span className="max-w-full truncate text-[10px] leading-3.5 text-[#276b75]">
+                          <span className="text-primary max-w-full truncate text-[10px] leading-3.5">
                             {eventDynastyLabel(event, point)} ·{" "}
                             {group.events.length > 1
                               ? `${group.year}年`
@@ -2537,7 +2665,7 @@ export default function MapPage() {
                             "max-w-48 rounded border px-2 py-1 text-left text-[11px] leading-4",
                             event.id === activeEventId
                               ? "border-[#b67a5e] bg-[#f8eee8] text-[#5e3526]"
-                              : "border-[#d8e2e0] text-[#5b6d70] hover:bg-[#eef5f4]",
+                              : "border-border text-muted-foreground hover:bg-muted/60",
                           )}
                         >
                           {event.title}
@@ -2604,18 +2732,18 @@ export default function MapPage() {
         </main>
 
         {detailView === "event" && activeEvent ? (
-          <aside className="research-map-details bg-card absolute top-3 right-3 bottom-3 z-20 hidden w-[380px] shrink-0 overflow-hidden rounded-xl border shadow-lg xl:flex xl:min-h-0">
+          <aside className="xingxi-panel research-map-details bg-card absolute top-3 right-3 bottom-3 z-20 hidden w-[380px] shrink-0 overflow-hidden rounded-xl border shadow-lg xl:flex xl:min-h-0">
             <HistoricalEventDetails
               event={activeEvent}
               point={activePoint}
-              dataNotice={catalog.dataNotice}
+              dataNotice={mapDataNotice(catalog.dataNotice)}
               onViewPlace={() => {
                 if (activePoint) selectPoint(activePoint.id);
               }}
             />
           </aside>
         ) : detailView === "year" && activeTimelineYear !== null ? (
-          <aside className="research-map-details bg-card absolute top-3 right-3 bottom-3 z-20 hidden w-[380px] shrink-0 overflow-hidden rounded-xl border shadow-lg xl:flex xl:min-h-0">
+          <aside className="xingxi-panel research-map-details bg-card absolute top-3 right-3 bottom-3 z-20 hidden w-[380px] shrink-0 overflow-hidden rounded-xl border shadow-lg xl:flex xl:min-h-0">
             <HistoricalYearDetails
               year={activeTimelineYear}
               events={activeYearEvents}
@@ -2624,7 +2752,7 @@ export default function MapPage() {
             />
           </aside>
         ) : selected && !compactLayout ? (
-          <aside className="research-map-details bg-card absolute top-3 right-3 bottom-3 z-20 hidden w-[380px] shrink-0 overflow-hidden rounded-xl border shadow-lg xl:flex xl:min-h-0">
+          <aside className="xingxi-panel research-map-details bg-card absolute top-3 right-3 bottom-3 z-20 hidden w-[380px] shrink-0 overflow-hidden rounded-xl border shadow-lg xl:flex xl:min-h-0">
             <PointDetails
               key={`${selected.id}:${modelsReload}`}
               asset={getPointModelAsset(selected)}
@@ -2636,7 +2764,7 @@ export default function MapPage() {
               point={selected}
               events={catalog.events}
               relations={catalog.relations}
-              dataNotice={catalog.dataNotice}
+              dataNotice={mapDataNotice(catalog.dataNotice)}
               onClose={() => setSelectedId(null)}
             />
           </aside>
@@ -2679,7 +2807,7 @@ export default function MapPage() {
             <HistoricalEventDetails
               event={activeEvent}
               point={activePoint}
-              dataNotice={catalog.dataNotice}
+              dataNotice={mapDataNotice(catalog.dataNotice)}
               onViewPlace={() => {
                 if (activePoint) selectPoint(activePoint.id);
               }}
@@ -2727,16 +2855,19 @@ export default function MapPage() {
               point={selected}
               events={catalog.events}
               relations={catalog.relations}
-              dataNotice={catalog.dataNotice}
+              dataNotice={mapDataNotice(catalog.dataNotice)}
             />
           </SheetContent>
         )}
       </Sheet>
       {(customPointsError !== null || modelError !== "") && (
-        <div className="bg-card absolute bottom-3 left-3 z-30 flex max-w-[calc(100%-1.5rem)] flex-col gap-1 rounded border px-3 py-2 text-xs">
+        <div className="xingxi-panel bg-card absolute bottom-3 left-3 z-30 flex max-w-[calc(100%-1.5rem)] flex-col gap-1 rounded-2xl border px-3 py-2 text-xs">
           {customPointsError && (
             <div role="status">
-              {customPointsError}
+              {publicErrorMessage(
+                customPointsError,
+                "暂时无法读取自建点位，请重试。",
+              )}
               <button
                 className="text-primary ml-2 min-h-11 underline"
                 type="button"

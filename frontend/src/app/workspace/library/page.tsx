@@ -56,6 +56,7 @@ import {
   type SourceUploadResult,
 } from "@/core/source-files/api";
 import { createLatestRequestTracker } from "@/core/source-files/latest-request";
+import { publicErrorMessage } from "@/core/ui/presentation";
 
 type LibraryDocument = {
   id: string;
@@ -179,7 +180,7 @@ export default function LibraryPage() {
       ) {
         return;
       }
-      setLoadError(error instanceof Error ? error.message : "无法读取文献库");
+      setLoadError(publicErrorMessage(error, "无法读取文献库"));
     } finally {
       if (loadTracker.current.isCurrent(request.sequence)) {
         setLoading(false);
@@ -210,9 +211,7 @@ export default function LibraryPage() {
         setProjectOptions(items.filter((item) => !item.archived)),
       )
       .catch((error: unknown) => {
-        setActionError(
-          error instanceof Error ? error.message : "无法读取研究项目",
-        );
+        setActionError(publicErrorMessage(error, "无法读取研究项目"));
       });
   }, [mayManageSources]);
 
@@ -265,9 +264,7 @@ export default function LibraryPage() {
         const failure = results.find((result) => result.status === "rejected");
         if (failure?.status === "rejected")
           setActionError(
-            failure.reason instanceof Error
-              ? failure.reason.message
-              : "无法读取图谱生成进度",
+            publicErrorMessage(failure.reason, "无法读取图谱生成进度"),
           );
       })();
     }, 2000);
@@ -299,12 +296,10 @@ export default function LibraryPage() {
         ),
       );
       setGraphNotice(
-        "已提交自动解析与图谱生成任务。处理完成后，关系网会自动更新并保留待复核标记。",
+        "已提交文献整理与图谱生成任务。完成后可查看待复核的关系图谱。",
       );
     } catch (error) {
-      setActionError(
-        error instanceof Error ? error.message : "无法启动图谱生成",
-      );
+      setActionError(publicErrorMessage(error, "无法启动图谱生成"));
     } finally {
       setGraphBusy(null);
     }
@@ -367,17 +362,29 @@ export default function LibraryPage() {
       );
       setSelected([]);
     } catch (error) {
-      setActionError(
-        error instanceof Error ? error.message : "无法将文献加入研究项目",
-      );
+      setActionError(publicErrorMessage(error, "无法将文献加入研究项目"));
     } finally {
       setTransferring(false);
     }
   }
 
+  const evidenceDetail = evidenceId ? (
+    <EvidenceDetailPanel
+      evidenceId={evidenceId}
+      onClose={() => {
+        const params = new URLSearchParams(searchParams.toString());
+        params.delete("evidence_id");
+        const query = params.toString();
+        router.replace(
+          query ? `/workspace/library?${query}` : "/workspace/library",
+        );
+      }}
+    />
+  ) : null;
+
   if (!mayManageSources) {
     return (
-      <main className="size-full overflow-y-auto bg-[#f7fafb] text-[#202b2e]">
+      <main className="xingxi-module bg-muted/60 text-foreground size-full overflow-y-auto">
         <BusinessMobileHeader title="文献库" />
         <div className="mx-auto min-h-full max-w-7xl px-4 py-7 sm:px-8 lg:px-10 lg:py-10">
           <BusinessPageHeader
@@ -389,15 +396,16 @@ export default function LibraryPage() {
             icon={ShieldAlert}
             title="仅管理员可管理文献"
             description="当前账号是普通用户，不能登记来源、上传文件、复核或发布知识版本。请使用管理员账号登录；已发布资料仍可通过文史检索查看。"
-            className="mt-6 min-h-[440px] border-t border-[#dbe4e5]"
+            className="border-border mt-6 min-h-[440px] border-t"
           />
         </div>
+        {evidenceDetail}
       </main>
     );
   }
 
   return (
-    <main className="size-full overflow-y-auto bg-[#f7fafb] text-[#202b2e]">
+    <main className="xingxi-module bg-muted/60 text-foreground size-full overflow-y-auto">
       <BusinessMobileHeader title="文献库" />
 
       <div className="mx-auto min-h-full max-w-7xl px-4 py-7 sm:px-8 lg:px-10 lg:py-10">
@@ -410,7 +418,7 @@ export default function LibraryPage() {
               <button
                 type="button"
                 onClick={() => setCorpusImportsOpen(true)}
-                className="flex h-10 items-center gap-2 rounded-md border border-[#80adb4] bg-white px-4 text-sm text-[#245e67] hover:bg-[#edf4f5]"
+                className="border-primary bg-card text-primary hover:bg-muted/60 flex h-10 items-center gap-2 rounded-md border px-4 text-sm"
               >
                 <Import className="size-4" />
                 导入批次
@@ -418,7 +426,7 @@ export default function LibraryPage() {
               <button
                 type="button"
                 onClick={() => setReleaseOpen(true)}
-                className="flex h-10 items-center gap-2 rounded-md border border-[#80adb4] bg-white px-4 text-sm text-[#245e67] hover:bg-[#edf4f5]"
+                className="border-primary bg-card text-primary hover:bg-muted/60 flex h-10 items-center gap-2 rounded-md border px-4 text-sm"
               >
                 <PackageCheck className="size-4" />
                 知识版本{selected.length > 0 ? ` (${selected.length})` : ""}
@@ -439,7 +447,7 @@ export default function LibraryPage() {
               <button
                 type="button"
                 onClick={() => setUploadOpen(true)}
-                className="flex h-10 items-center gap-2 rounded-md bg-[#202b2e] px-4 text-sm text-white hover:bg-[#354347]"
+                className="bg-primary text-primary-foreground hover:bg-primary/90 flex h-10 items-center gap-2 rounded-md px-4 text-sm"
               >
                 <FileUp className="size-4" />
                 上传文献
@@ -448,7 +456,7 @@ export default function LibraryPage() {
                 type="button"
                 aria-pressed={showNotes}
                 onClick={() => setShowNotes((current) => !current)}
-                className="flex h-10 items-center gap-2 rounded-md border border-[#cedadd] bg-white px-4 text-sm hover:bg-[#edf4f5]"
+                className="border-border bg-card hover:bg-muted/60 flex h-10 items-center gap-2 rounded-md border px-4 text-sm"
               >
                 <Plus className="size-4" />
                 {showNotes ? "移除备注字段" : "添加备注字段"}
@@ -459,7 +467,7 @@ export default function LibraryPage() {
                   selected.length === 0 || !selectedProjectId || transferring
                 }
                 onClick={() => void transferSelected()}
-                className="flex h-10 items-center gap-2 rounded-md border border-[#80adb4] bg-[#e2eff0] px-4 text-sm text-[#245e67] hover:bg-[#d6e9eb] disabled:cursor-not-allowed disabled:opacity-40"
+                className="border-primary bg-accent text-primary hover:bg-accent flex h-10 items-center gap-2 rounded-md border px-4 text-sm disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <ArrowRightLeft className="size-4" />
                 {transferring ? "正在转入…" : "转入项目"}
@@ -481,8 +489,10 @@ export default function LibraryPage() {
         )}
 
         <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-[#66777c]">共 {documents.length} 份文献</p>
-          <label className="flex h-10 w-full max-w-sm items-center gap-2 rounded-md border border-[#d2dddf] bg-white px-3 text-[#67787c] focus-within:border-[#6ea7af]">
+          <p className="text-muted-foreground text-sm">
+            共 {documents.length} 份文献
+          </p>
+          <label className="border-border bg-card text-muted-foreground focus-within:border-primary flex h-10 w-full max-w-sm items-center gap-2 rounded-md border px-3">
             <Search className="size-4 shrink-0" />
             <input
               value={query}
@@ -491,7 +501,7 @@ export default function LibraryPage() {
                 setPage(1);
               }}
               placeholder="搜索标题或文件名"
-              className="min-w-0 flex-1 bg-transparent text-sm text-[#243236] outline-none placeholder:text-[#95a1a4]"
+              className="text-foreground placeholder:text-muted-foreground min-w-0 flex-1 bg-transparent text-sm outline-none"
             />
           </label>
           <select
@@ -503,7 +513,7 @@ export default function LibraryPage() {
               setPage(1);
             }}
             aria-label="资料状态"
-            className="h-10 rounded-md border border-[#d2dddf] bg-white px-3 text-sm"
+            className="border-border bg-card h-10 rounded-md border px-3 text-sm"
           >
             <option value="all">全部资料状态</option>
             <option value="registered">已登记</option>
@@ -511,12 +521,12 @@ export default function LibraryPage() {
           </select>
         </div>
 
-        <p className="mt-4 text-xs text-[#68797e]">
+        <p className="text-muted-foreground mt-4 text-xs">
           文本复核检查文献页与片段；知识图谱中的关系复核单独记录。
         </p>
-        <div className="mt-2 overflow-x-auto rounded-md border border-[#d7e1e2] bg-white">
+        <div className="xingxi-panel border-border bg-card mt-2 overflow-x-auto rounded-2xl border">
           <div
-            className="grid min-w-[1180px] grid-cols-[48px_minmax(240px,1fr)_70px_70px_100px_170px_100px_270px] items-center border-b border-[#dce5e6] bg-[#f1f6f7] px-3 py-3 text-xs font-medium text-[#607176]"
+            className="border-border bg-muted/60 text-muted-foreground grid min-w-[1180px] grid-cols-[48px_minmax(240px,1fr)_70px_70px_100px_170px_100px_270px] items-center border-b px-3 py-3 text-xs font-medium"
             style={
               showNotes
                 ? {
@@ -567,7 +577,7 @@ export default function LibraryPage() {
                     <button
                       type="button"
                       onClick={() => setUploadOpen(true)}
-                      className="mt-5 flex h-9 items-center gap-2 rounded-md border border-[#87afb5] px-4 text-sm text-[#286873] hover:bg-[#edf5f5]"
+                      className="border-primary text-primary hover:bg-muted/60 mt-5 flex h-9 items-center gap-2 rounded-md border px-4 text-sm"
                     >
                       <FileUp className="size-4" />
                       选择文件
@@ -579,7 +589,7 @@ export default function LibraryPage() {
               visibleDocuments.map((document) => (
                 <div
                   key={document.id}
-                  className="grid min-w-[1180px] grid-cols-[48px_minmax(240px,1fr)_70px_70px_100px_170px_100px_270px] items-center border-b border-[#edf1f2] px-3 py-3 text-sm last:border-b-0"
+                  className="border-border grid min-w-[1180px] grid-cols-[48px_minmax(240px,1fr)_70px_70px_100px_170px_100px_270px] items-center border-b px-3 py-3 text-sm last:border-b-0"
                   style={
                     showNotes
                       ? {
@@ -594,10 +604,10 @@ export default function LibraryPage() {
                     checked={selected.includes(document.id)}
                     onChange={() => toggleSelected(document.id)}
                     aria-label={`选择 ${document.title}`}
-                    className="size-4 accent-[#247f8c]"
+                    className="accent-primary size-4"
                   />
                   <span className="flex min-w-0 items-center gap-2">
-                    <FileText className="size-4 shrink-0 text-[#568087]" />
+                    <FileText className="text-muted-foreground size-4 shrink-0" />
                     <span className="min-w-0">
                       <span
                         className="block truncate font-medium"
@@ -606,7 +616,7 @@ export default function LibraryPage() {
                         {document.title}
                       </span>
                       <span
-                        className="block truncate text-xs text-[#78878b]"
+                        className="text-muted-foreground block truncate text-xs"
                         title={`${document.source.title} · ${document.source.edition ?? "版本未详"}`}
                       >
                         {document.source.title} ·{" "}
@@ -614,8 +624,8 @@ export default function LibraryPage() {
                       </span>
                     </span>
                   </span>
-                  <span className="text-[#68797e]">{document.type}</span>
-                  <span className="text-[#68797e]">{document.size}</span>
+                  <span className="text-muted-foreground">{document.type}</span>
+                  <span className="text-muted-foreground">{document.size}</span>
                   <SourceTextReviewStatus status={document.reviewStatus} />
                   <SourceProcessingStatus job={document.ingestionJob} />
                   {showNotes && (
@@ -631,10 +641,10 @@ export default function LibraryPage() {
                         )
                       }
                       placeholder="添加备注"
-                      className="mr-4 min-w-0 rounded border border-[#d8e2e3] px-2 py-1.5 text-xs outline-none focus:border-[#74aab1]"
+                      className="border-border focus:border-primary mr-4 min-w-0 rounded border px-2 py-1.5 text-xs outline-none"
                     />
                   )}
-                  <span className="text-xs text-[#78878b]">
+                  <span className="text-muted-foreground text-xs">
                     {document.addedAt}
                   </span>
                   <div className="flex items-center gap-1">
@@ -645,9 +655,9 @@ export default function LibraryPage() {
                         document.status === "pending" ||
                         document.status === "running"
                       }
-                      title="允许内部解析文献、抽取主体与关系，生成待复核图谱"
+                      title="允许用于内部研究，并生成待复核关系图谱"
                       onClick={() => void generateGraph(document)}
-                      className="flex h-8 shrink-0 items-center gap-1 rounded-md border border-[#8aafb4] px-2 text-xs text-[#275f68] hover:bg-[#edf5f5] disabled:opacity-40"
+                      className="border-primary text-primary hover:bg-muted/60 flex h-8 shrink-0 items-center gap-1 rounded-md border px-2 text-xs disabled:opacity-40"
                     >
                       <Network className="size-3.5" />
                       {graphBusy === document.id
@@ -662,7 +672,7 @@ export default function LibraryPage() {
                       title="编辑资料信息"
                       aria-label="编辑资料信息"
                       onClick={() => setEditSource(document.source)}
-                      className="flex size-8 items-center justify-center rounded-md text-[#526b70] hover:bg-[#edf5f5]"
+                      className="text-muted-foreground hover:bg-muted/60 flex size-8 items-center justify-center rounded-md"
                     >
                       <Pencil className="size-3.5" />
                     </button>
@@ -670,14 +680,14 @@ export default function LibraryPage() {
                       type="button"
                       title="上传新版本"
                       onClick={() => setVersionDocument(document)}
-                      className="flex size-8 items-center justify-center rounded-md text-[#526b70] hover:bg-[#edf5f5]"
+                      className="text-muted-foreground hover:bg-muted/60 flex size-8 items-center justify-center rounded-md"
                     >
                       <GitBranch className="size-3.5" />
                     </button>
                     <button
                       type="button"
                       onClick={() => setReviewDocument(document)}
-                      className="flex h-8 w-fit items-center gap-1.5 rounded-md border border-[#8aafb4] px-2.5 text-xs text-[#275f68] hover:bg-[#edf5f5]"
+                      className="border-primary text-primary hover:bg-muted/60 flex h-8 w-fit items-center gap-1.5 rounded-md border px-2.5 text-xs"
                     >
                       <ClipboardCheck className="size-3.5" />
                       复核
@@ -770,19 +780,7 @@ export default function LibraryPage() {
             fileId: document.sourceFileId,
           }))}
       />
-      {evidenceId && (
-        <EvidenceDetailPanel
-          evidenceId={evidenceId}
-          onClose={() => {
-            const params = new URLSearchParams(searchParams.toString());
-            params.delete("evidence_id");
-            const query = params.toString();
-            router.replace(
-              query ? `/workspace/library?${query}` : "/workspace/library",
-            );
-          }}
-        />
-      )}
+      {evidenceDetail}
       {reviewDocument && (
         <SourceReviewDialog
           open

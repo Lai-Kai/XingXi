@@ -48,7 +48,6 @@ import { SafeStreamdown } from "@/core/streamdown/components";
 import {
   canBrowserPreviewFile,
   checkCodeFile,
-  getFileExtensionDisplayName,
   getFileIcon,
   getFileName,
 } from "@/core/utils/files";
@@ -193,16 +192,16 @@ export function ArtifactFileDetail({
         path: filepath,
       });
       if (result.success) {
-        toast.success(result.message);
+        toast.success(t.settings.skills.installSuccess);
       } else {
-        toast.error(result.message ?? "Failed to install skill");
+        toast.error(t.settings.skills.installFailed);
       }
     } catch (error) {
       console.error("Failed to install skill:", error);
       if (error instanceof SkillRequestError && error.isAdminRequired) {
         toast.error(t.settings.skills.installAdminRequired);
       } else {
-        toast.error("Failed to install skill");
+        toast.error(t.settings.skills.installFailed);
       }
     } finally {
       setIsInstalling(false);
@@ -218,7 +217,7 @@ export function ArtifactFileDetail({
             ) : (
               <Select value={filepath} onValueChange={select}>
                 <SelectTrigger className="border-none bg-transparent! shadow-none select-none focus:outline-0 active:outline-0">
-                  <SelectValue placeholder="Select a file" />
+                  <SelectValue placeholder="选择附件" />
                 </SelectTrigger>
                 <SelectContent className="select-none">
                   <SelectGroup>
@@ -247,10 +246,10 @@ export function ArtifactFileDetail({
                 }
               }}
             >
-              <ToggleGroupItem value="code">
+              <ToggleGroupItem value="code" aria-label="原始内容">
                 <Code2Icon />
               </ToggleGroupItem>
-              <ToggleGroupItem value="preview">
+              <ToggleGroupItem value="preview" aria-label="阅读预览">
                 <EyeIcon />
               </ToggleGroupItem>
             </ToggleGroup>
@@ -385,7 +384,6 @@ function ArtifactDownloadFallback({
   isMock?: boolean;
 }) {
   const filename = getFileName(filepath);
-  const fileType = getFileExtensionDisplayName(filepath);
 
   return (
     <div className="flex size-full items-center justify-center p-6">
@@ -395,10 +393,9 @@ function ArtifactDownloadFallback({
         </div>
         <div className="space-y-1">
           <div className="font-medium break-all">{filename}</div>
-          <div className="text-muted-foreground text-sm">{fileType} file</div>
         </div>
         <p className="text-muted-foreground text-sm">
-          This file type cannot be previewed in the browser.
+          此附件暂不支持在线预览，请下载后查看。
         </p>
         <Button asChild>
           <a
@@ -412,7 +409,7 @@ function ArtifactDownloadFallback({
             rel="noopener noreferrer"
           >
             <DownloadIcon className="size-4" />
-            Download
+            下载附件
           </a>
         </Button>
       </div>

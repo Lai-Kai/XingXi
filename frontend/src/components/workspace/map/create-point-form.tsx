@@ -13,6 +13,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { createMapPoint } from "@/core/map/api";
 import { type MapPoint } from "@/core/map/types";
+import { publicErrorMessage } from "@/core/ui/presentation";
 
 export type PickedLocation = { lon: number; lat: number };
 
@@ -50,9 +51,7 @@ export function CreatePointForm({
       if (!request.signal.aborted) onCreated(point);
     } catch (failure) {
       if (!request.signal.aborted)
-        setError(
-          failure instanceof Error ? failure.message : "点位保存失败，请重试",
-        );
+        setError(publicErrorMessage(failure, "点位保存失败，请重试。"));
     } finally {
       if (!request.signal.aborted) setSaving(false);
     }

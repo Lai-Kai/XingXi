@@ -39,14 +39,11 @@ export function SourceProcessingStatus({
       </span>
     );
   }
-  const failure = job.error_message?.includes("too many SQL variables")
-    ? "索引构建失败，请重试处理"
-    : "处理未完成，请重试处理";
   return (
     <div className="grid justify-items-start gap-1">
       <BusinessStatusBadge status={job.status} />
       {job.status === "failed" && (
-        <span className="text-xs text-red-700">{failure}</span>
+        <span className="text-xs text-red-700">处理未完成，请重试处理</span>
       )}
     </div>
   );

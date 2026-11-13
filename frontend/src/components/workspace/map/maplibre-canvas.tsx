@@ -4,6 +4,10 @@ import maplibregl, { type Map, type Marker } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useRef, useState } from "react";
 
+import {
+  mapPixelRatio,
+  type MapPerformanceMode,
+} from "@/core/map/display-performance";
 import { buildUncertaintyFeatureCollection } from "@/core/map/geometry";
 import {
   buildMapStyle,
@@ -297,6 +301,7 @@ export function MapLibreCanvas({
   onPickLocation,
   onReload,
   cameraPadding,
+  performanceMode = "balanced",
   className,
 }: {
   points: MapPoint[];
@@ -321,6 +326,7 @@ export function MapLibreCanvas({
   onPickLocation?: (location: { lon: number; lat: number }) => void;
   onReload?: () => void;
   cameraPadding?: { top: number; right: number; bottom: number; left: number };
+  performanceMode?: MapPerformanceMode;
   className?: string;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -340,6 +346,8 @@ export function MapLibreCanvas({
   onPickLocationRef.current = onPickLocation;
   const selectedIdRef = useRef(selectedId);
   const cameraPaddingRef = useRef(cameraPadding);
+  const performanceModeRef = useRef(performanceMode);
+  performanceModeRef.current = performanceMode;
   const [status, setStatus] = useState<"loading" | "ready" | "error">(
     "loading",
   );
@@ -357,6 +365,10 @@ export function MapLibreCanvas({
       center: [120.5019, 31.2589],
       zoom: 14.5,
       attributionControl: { compact: true },
+      pixelRatio: mapPixelRatio(
+        performanceModeRef.current,
+        window.devicePixelRatio,
+      ),
     });
     map.addControl(
       new maplibregl.NavigationControl({ showCompass: false }),
@@ -381,8 +393,10 @@ export function MapLibreCanvas({
         .getBearing()
         .toFixed(0);
     };
+    let resizeFrame = 0;
     const resizeObserver = new ResizeObserver(() => {
-      requestAnimationFrame(() => {
+      cancelAnimationFrame(resizeFrame);
+      resizeFrame = requestAnimationFrame(() => {
         map.resize();
         const currentSelectedId = selectedIdRef.current;
         const selectedPoint = pointsRef.current.find(
@@ -392,6 +406,15 @@ export function MapLibreCanvas({
       });
     });
     resizeObserver.observe(container);
+    const stage = container.closest<HTMLElement>(".research-map");
+    const moving = () => {
+      if (stage) stage.dataset.mapMoving = "true";
+    };
+    const idle = () => {
+      if (stage) stage.dataset.mapMoving = "false";
+    };
+    map.on("movestart", moving);
+    map.on("moveend", idle);
     const pick = (event: maplibregl.MapMouseEvent) => {
       if (!pickLocationRef.current) return;
       const lon = ((((event.lngLat.lng + 180) % 360) + 360) % 360) - 180;
@@ -425,6 +448,10 @@ export function MapLibreCanvas({
       markerViewsRef.current = [];
       userMarkerRef.current?.remove();
       resizeObserver.disconnect();
+      cancelAnimationFrame(resizeFrame);
+      map.off("movestart", moving);
+      map.off("moveend", idle);
+      idle();
       map.off("click", pick);
       map.off("zoom", syncMarkerLabels);
       map.off("move", syncCameraState);
@@ -435,6 +462,23 @@ export function MapLibreCanvas({
       focusedEventIdRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const update = () => {
+      const ratio = mapPixelRatio(
+        performanceModeRef.current,
+        window.devicePixelRatio,
+      );
+      map.setPixelRatio(ratio);
+      if (containerRef.current)
+        containerRef.current.dataset.mapPixelRatio = String(ratio);
+    };
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, [performanceMode]);
 
   useEffect(() => {
     // Keep camera targets in the exposed map area while the raster canvas
@@ -843,6 +887,7 @@ export function MapLibreCanvas({
         ref={containerRef}
         className="h-full w-full"
         data-map-engine="maplibre-gl"
+        data-map-performance-mode={performanceMode}
         data-map-picking={String(pickLocation)}
         data-map-status={status}
         data-map-base-opacity="1"
@@ -852,14 +897,14 @@ export function MapLibreCanvas({
         aria-label="古舆地图画布"
       />
       {status === "loading" && (
-        <div className="pointer-events-none absolute top-3 left-1/2 z-10 -translate-x-1/2 rounded-md border border-[#cfdddc] bg-white px-3 py-2 text-sm text-[#52686c] shadow-sm">
+        <div className="border-border bg-card text-muted-foreground pointer-events-none absolute top-3 left-1/2 z-10 -translate-x-1/2 rounded-xl border px-3 py-2 text-sm shadow-sm">
           正在加载地图…
         </div>
       )}
       {status === "error" && (
         <div
           data-map-error="true"
-          className="absolute inset-x-4 top-20 z-10 flex max-w-[min(92vw,30rem)] items-center gap-3 rounded-md border border-amber-200 bg-white px-3 py-2 text-sm leading-5 text-[#5e4b43] shadow-sm"
+          className="bg-card absolute inset-x-4 top-20 z-10 flex max-w-[min(92vw,30rem)] items-center gap-3 rounded-xl border border-amber-200 px-3 py-2 text-sm leading-5 text-amber-900 shadow-sm"
         >
           <span className="min-w-0 flex-1">
             现代底图暂时无法加载。点位与来源列表仍可使用，请检查网络后重试。
@@ -867,7 +912,7 @@ export function MapLibreCanvas({
           <button
             type="button"
             onClick={onReload}
-            className="shrink-0 rounded border border-[#b8d1cd] px-2.5 py-1.5 text-xs font-medium text-[#276b75] hover:bg-[#eef5f4]"
+            className="border-border text-primary hover:bg-accent shrink-0 rounded-lg border px-2.5 py-1.5 text-xs font-medium"
           >
             重新加载地图
           </button>

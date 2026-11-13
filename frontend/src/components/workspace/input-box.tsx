@@ -73,6 +73,7 @@ import { polishInputDraft } from "@/core/input-polish/api";
 import { hasOpenHumanInputRequest } from "@/core/messages/human-input";
 import { isHiddenFromUIMessage } from "@/core/messages/utils";
 import { useModels } from "@/core/models/hooks";
+import { getSkillLabel } from "@/core/settings/catalog-labels";
 import {
   buildReferenceMessageMetadata,
   type SidecarContext,
@@ -83,6 +84,7 @@ import type { AgentThreadContext, GoalState } from "@/core/threads";
 import { compactThreadContext } from "@/core/threads/api";
 import { threadTokenUsageQueryKey } from "@/core/threads/token-usage";
 import { textOfMessage } from "@/core/threads/utils";
+import { publicErrorMessage } from "@/core/ui/presentation";
 import {
   formatUploadSize,
   splitUnsupportedUploadFiles,
@@ -104,15 +106,6 @@ import {
 import { isIMEComposing } from "@/lib/ime";
 import { cn } from "@/lib/utils";
 
-import {
-  ModelSelector,
-  ModelSelectorContent,
-  ModelSelectorInput,
-  ModelSelectorItem,
-  ModelSelectorList,
-  ModelSelectorName,
-  ModelSelectorTrigger,
-} from "../ai-elements/model-selector";
 import { Suggestion, Suggestions } from "../ai-elements/suggestion";
 import {
   DropdownMenu,
@@ -320,7 +313,6 @@ export function InputBox({
   const { locale, t } = useI18n();
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
-  const [modelDialogOpen, setModelDialogOpen] = useState(false);
   const { models } = useModels();
   const { thread, isMock } = useThread();
   const { attachments, textInput } = usePromptInputController();
@@ -545,11 +537,6 @@ export function InputBox({
     [selectedModel],
   );
 
-  const supportReasoningEffort = useMemo(
-    () => selectedModel?.supports_reasoning_effort ?? false,
-    [selectedModel],
-  );
-
   const promptHistory = useMemo(() => {
     const history: string[] = [];
     for (const message of thread.messages) {
@@ -610,26 +597,6 @@ export function InputBox({
     }
   }, [promptHistory.length]);
 
-  const handleModelSelect = useCallback(
-    (model_name: string) => {
-      if (disabled || polishingInput) {
-        return;
-      }
-      const model = models.find((m) => m.name === model_name);
-      if (!model) {
-        return;
-      }
-      onContextChange?.({
-        ...context,
-        model_name,
-        mode: getResolvedMode(context.mode, model.supports_thinking ?? false),
-        reasoning_effort: context.reasoning_effort,
-      });
-      setModelDialogOpen(false);
-    },
-    [disabled, onContextChange, context, models, polishingInput],
-  );
-
   const handleModeSelect = useCallback(
     (mode: InputMode) => {
       if (disabled || polishingInput) {
@@ -649,19 +616,6 @@ export function InputBox({
       });
     },
     [disabled, onContextChange, context, polishingInput, supportThinking],
-  );
-
-  const handleReasoningEffortSelect = useCallback(
-    (effort: "minimal" | "low" | "medium" | "high") => {
-      if (disabled || polishingInput) {
-        return;
-      }
-      onContextChange?.({
-        ...context,
-        reasoning_effort: effort,
-      });
-    },
-    [disabled, onContextChange, context, polishingInput],
   );
 
   const handleGoalCommand = useCallback(
@@ -761,9 +715,7 @@ export function InputBox({
         ) {
           return false;
         }
-        toast.error(
-          error instanceof Error ? error.message : t.inputBox.goalFailed,
-        );
+        toast.error(publicErrorMessage(error, t.inputBox.goalFailed));
         return false;
       } finally {
         finishGoalRequest(goalRequestStateRef.current, request);
@@ -824,9 +776,7 @@ export function InputBox({
       ) {
         return;
       }
-      toast.error(
-        error instanceof Error ? error.message : t.inputBox.compactFailed,
-      );
+      toast.error(publicErrorMessage(error, t.inputBox.compactFailed));
     } finally {
       finishGoalRequest(compactRequestStateRef.current, request);
     }
@@ -1424,9 +1374,7 @@ export function InputBox({
       if (isAbortError(error) || !isCurrentRequest) {
         return;
       }
-      toast.error(
-        error instanceof Error ? error.message : t.inputBox.inputPolishFailed,
-      );
+      toast.error(publicErrorMessage(error, t.inputBox.inputPolishFailed));
     } finally {
       if (
         inputPolishRequestRef.current.controller === controller &&
@@ -1825,7 +1773,7 @@ export function InputBox({
       {showSkillSuggestions && (
         <div className="absolute right-0 bottom-full left-0 z-40 mb-2 px-1">
           <div
-            aria-label="Skill suggestions"
+            aria-label={t.settings.skills.title}
             className="bg-popover/95 text-popover-foreground border-border max-h-72 overflow-y-auto rounded-xl border p-1 shadow-lg backdrop-blur-sm"
             role="listbox"
           >
@@ -1854,11 +1802,37 @@ export function InputBox({
                   )}
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium">
-                      /{suggestion.name}
+                      {suggestion.kind === "builtin"
+                        ? suggestion.name === "goal"
+                          ? t.inputBox.goalLabel
+                          : t.inputBox.compactCommandDescription
+                        : getSkillLabel(
+                            skills.find(
+                              (skill) => skill.name === suggestion.name,
+                            ) ?? {
+                              name: suggestion.name,
+                              description: "",
+                              category: "public",
+                            },
+                            locale,
+                            index,
+                          ).name}
                     </span>
                     {suggestion.description && (
                       <span className="text-muted-foreground block truncate text-xs">
-                        {suggestion.description}
+                        {suggestion.kind === "builtin"
+                          ? suggestion.description
+                          : getSkillLabel(
+                              skills.find(
+                                (skill) => skill.name === suggestion.name,
+                              ) ?? {
+                                name: suggestion.name,
+                                description: "",
+                                category: "public",
+                              },
+                              locale,
+                              index,
+                            ).description}
                       </span>
                     )}
                   </span>
@@ -1870,7 +1844,7 @@ export function InputBox({
       )}
       <PromptInput
         className={cn(
-          "bg-background/85 relative z-10 rounded-2xl backdrop-blur-sm transition-all duration-300 ease-out *:data-[slot='input-group']:rounded-2xl",
+          "xingxi-chat-composer bg-background/85 relative z-10 rounded-2xl backdrop-blur-sm transition-all duration-300 ease-out *:data-[slot='input-group']:rounded-2xl",
           polishingInput &&
             "shadow-primary/10 ring-primary/25 shadow-lg ring-1",
           className,
@@ -1995,7 +1969,7 @@ export function InputBox({
             {/* TODO: Add more connectors here
           <PromptInputActionMenu>
             <PromptInputActionMenuTrigger className="px-2!" />
-            <PromptInputActionMenuContent>
+            <PromptInputActionMenuContent className="xingxi-chat-portal">
               <PromptInputActionAddAttachments
                 label={t.inputBox.addAttachments}
               />
@@ -2086,7 +2060,7 @@ export function InputBox({
                   </div>
                 </PromptInputActionMenuTrigger>
               </ModeHoverGuide>
-              <PromptInputActionMenuContent className="w-80">
+              <PromptInputActionMenuContent className="xingxi-chat-portal w-80">
                 <DropdownMenuGroup>
                   <DropdownMenuLabel className="text-muted-foreground text-xs">
                     {t.inputBox.mode}
@@ -2219,171 +2193,10 @@ export function InputBox({
                 </DropdownMenuGroup>
               </PromptInputActionMenuContent>
             </PromptInputActionMenu>
-            {supportReasoningEffort && context.mode !== "flash" && (
-              <PromptInputActionMenu>
-                <PromptInputActionMenuTrigger
-                  className="hidden gap-1! px-2! sm:inline-flex"
-                  disabled={composerLocked}
-                >
-                  <div className="text-xs font-normal">
-                    {t.inputBox.reasoningEffort}:
-                    {context.reasoning_effort === "minimal" &&
-                      " " + t.inputBox.reasoningEffortMinimal}
-                    {context.reasoning_effort === "low" &&
-                      " " + t.inputBox.reasoningEffortLow}
-                    {context.reasoning_effort === "medium" &&
-                      " " + t.inputBox.reasoningEffortMedium}
-                    {context.reasoning_effort === "high" &&
-                      " " + t.inputBox.reasoningEffortHigh}
-                  </div>
-                </PromptInputActionMenuTrigger>
-                <PromptInputActionMenuContent className="w-70">
-                  <DropdownMenuGroup>
-                    <DropdownMenuLabel className="text-muted-foreground text-xs">
-                      {t.inputBox.reasoningEffort}
-                    </DropdownMenuLabel>
-                    <PromptInputActionMenu>
-                      <PromptInputActionMenuItem
-                        className={cn(
-                          context.reasoning_effort === "minimal"
-                            ? "text-accent-foreground"
-                            : "text-muted-foreground/65",
-                        )}
-                        onSelect={() => handleReasoningEffortSelect("minimal")}
-                      >
-                        <div className="flex flex-col gap-2">
-                          <div className="flex items-center gap-1 font-bold">
-                            {t.inputBox.reasoningEffortMinimal}
-                          </div>
-                          <div className="pl-2 text-xs">
-                            {t.inputBox.reasoningEffortMinimalDescription}
-                          </div>
-                        </div>
-                        {context.reasoning_effort === "minimal" ? (
-                          <CheckIcon className="ml-auto size-4" />
-                        ) : (
-                          <div className="ml-auto size-4" />
-                        )}
-                      </PromptInputActionMenuItem>
-                      <PromptInputActionMenuItem
-                        className={cn(
-                          context.reasoning_effort === "low"
-                            ? "text-accent-foreground"
-                            : "text-muted-foreground/65",
-                        )}
-                        onSelect={() => handleReasoningEffortSelect("low")}
-                      >
-                        <div className="flex flex-col gap-2">
-                          <div className="flex items-center gap-1 font-bold">
-                            {t.inputBox.reasoningEffortLow}
-                          </div>
-                          <div className="pl-2 text-xs">
-                            {t.inputBox.reasoningEffortLowDescription}
-                          </div>
-                        </div>
-                        {context.reasoning_effort === "low" ? (
-                          <CheckIcon className="ml-auto size-4" />
-                        ) : (
-                          <div className="ml-auto size-4" />
-                        )}
-                      </PromptInputActionMenuItem>
-                      <PromptInputActionMenuItem
-                        className={cn(
-                          context.reasoning_effort === "medium" ||
-                            !context.reasoning_effort
-                            ? "text-accent-foreground"
-                            : "text-muted-foreground/65",
-                        )}
-                        onSelect={() => handleReasoningEffortSelect("medium")}
-                      >
-                        <div className="flex flex-col gap-2">
-                          <div className="flex items-center gap-1 font-bold">
-                            {t.inputBox.reasoningEffortMedium}
-                          </div>
-                          <div className="pl-2 text-xs">
-                            {t.inputBox.reasoningEffortMediumDescription}
-                          </div>
-                        </div>
-                        {context.reasoning_effort === "medium" ||
-                        !context.reasoning_effort ? (
-                          <CheckIcon className="ml-auto size-4" />
-                        ) : (
-                          <div className="ml-auto size-4" />
-                        )}
-                      </PromptInputActionMenuItem>
-                      <PromptInputActionMenuItem
-                        className={cn(
-                          context.reasoning_effort === "high"
-                            ? "text-accent-foreground"
-                            : "text-muted-foreground/65",
-                        )}
-                        onSelect={() => handleReasoningEffortSelect("high")}
-                      >
-                        <div className="flex flex-col gap-2">
-                          <div className="flex items-center gap-1 font-bold">
-                            {t.inputBox.reasoningEffortHigh}
-                          </div>
-                          <div className="pl-2 text-xs">
-                            {t.inputBox.reasoningEffortHighDescription}
-                          </div>
-                        </div>
-                        {context.reasoning_effort === "high" ? (
-                          <CheckIcon className="ml-auto size-4" />
-                        ) : (
-                          <div className="ml-auto size-4" />
-                        )}
-                      </PromptInputActionMenuItem>
-                    </PromptInputActionMenu>
-                  </DropdownMenuGroup>
-                </PromptInputActionMenuContent>
-              </PromptInputActionMenu>
-            )}
           </PromptInputTools>
           <PromptInputTools className="min-w-0 justify-end">
-            <ModelSelector
-              open={modelDialogOpen}
-              onOpenChange={setModelDialogOpen}
-            >
-              <ModelSelectorTrigger asChild>
-                <PromptInputButton
-                  className="max-w-40 min-w-0 sm:max-w-56"
-                  disabled={composerLocked}
-                >
-                  <div className="flex min-w-0 flex-col items-start text-left">
-                    <ModelSelectorName className="text-xs font-normal">
-                      {selectedModel?.display_name ??
-                        t.inputBox.modelUnavailableShort}
-                    </ModelSelectorName>
-                  </div>
-                </PromptInputButton>
-              </ModelSelectorTrigger>
-              <ModelSelectorContent>
-                <ModelSelectorInput placeholder={t.inputBox.searchModels} />
-                <ModelSelectorList>
-                  {models.map((m) => (
-                    <ModelSelectorItem
-                      key={m.name}
-                      value={m.name}
-                      onSelect={() => handleModelSelect(m.name)}
-                    >
-                      <div className="flex min-w-0 flex-1 flex-col">
-                        <ModelSelectorName>{m.display_name}</ModelSelectorName>
-                        <span className="text-muted-foreground truncate text-[10px]">
-                          {m.model}
-                        </span>
-                      </div>
-                      {m.name === context.model_name ? (
-                        <CheckIcon className="ml-auto size-4" />
-                      ) : (
-                        <div className="ml-auto size-4" />
-                      )}
-                    </ModelSelectorItem>
-                  ))}
-                </ModelSelectorList>
-              </ModelSelectorContent>
-            </ModelSelector>
             <PromptInputSubmit
-              className="rounded-full"
+              className="xingxi-chat-send rounded-xl"
               disabled={composerLocked}
               variant="outline"
               status={status}
@@ -2398,7 +2211,10 @@ export function InputBox({
         </PromptInputFooter>
       </PromptInput>
       {!isWelcomeMode && (
-        <div className="bg-background absolute right-0 -bottom-[17px] left-0 z-0 h-4"></div>
+        <div
+          aria-hidden="true"
+          className="xingxi-chat-input-mask bg-background absolute right-0 -bottom-[17px] left-0 z-0 h-4"
+        ></div>
       )}
 
       {isWelcomeMode &&
@@ -2411,7 +2227,7 @@ export function InputBox({
         )}
 
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <DialogContent>
+        <DialogContent className="xingxi-chat-portal">
           <DialogHeader>
             <DialogTitle>{t.inputBox.followupConfirmTitle}</DialogTitle>
             <DialogDescription>

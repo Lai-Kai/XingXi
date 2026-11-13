@@ -21,6 +21,12 @@ class ReconstructionConfig:
     executable: str = field(default_factory=lambda: os.getenv("XINGXI_OOOSPLAT_EXECUTABLE", "/data/yuyuan/ooosplat/bin/splatstudio"))
     flux3_root: str = field(default_factory=lambda: os.getenv("XINGXI_FLUX3_DEPLOY_ROOT", ""))
     flux3_url: str = field(default_factory=lambda: os.getenv("XINGXI_FLUX3_BASE_URL", "http://127.0.0.1:18188"))
+    parallel_runner_root: str = field(default_factory=lambda: os.getenv("XINGXI_PARALLEL_RUNNER_ROOT", ""))
+
+    def parallel_snapshot(self):
+        if not self.parallel_runner_root.startswith("/"):
+            raise ValueError("并发 runner 必须为已部署的服务端绝对路径")
+        return {"root": self.parallel_runner_root, "python": os.getenv("XINGXI_PARALLEL_PYTHON", self.flux3_snapshot()["python"])}
 
     @property
     def flux3_enabled(self) -> bool:

@@ -70,8 +70,12 @@ export function extractCitationSources(markdown: string): CitationSource[] {
       continue;
     }
 
-    const domain = evidenceId ? "evidence" : extractDomain(url);
-    const title = normalizeTitle(rawTitle, domain);
+    const domain = evidenceId ? "文献资料" : extractDomain(url);
+    const title =
+      evidenceId &&
+      (rawTitle === evidenceId || parseEvidenceHref(rawTitle) !== null)
+        ? "资料出处"
+        : normalizeTitle(rawTitle, domain);
     const index = match.index ?? 0;
     const existing = sourcesByUrl.get(url);
 
@@ -102,7 +106,8 @@ export function extractCitationSources(markdown: string): CitationSource[] {
 export function formatCitationMarkdownReference(
   source: CitationSource,
 ): string {
-  return `[${source.title}](${source.url})`;
+  const evidenceId = source.evidenceId ?? parseEvidenceHref(source.url);
+  return `[${source.title}](${evidenceId ? evidenceDetailPath(evidenceId) : source.url})`;
 }
 
 function normalizeTitle(title: string, domain: string): string {

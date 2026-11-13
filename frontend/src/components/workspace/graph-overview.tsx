@@ -22,6 +22,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { GraphReviewControls } from "@/components/workspace/graph-review-controls";
+import { evidenceDetailPath } from "@/core/citations/sources";
 import {
   invalidateGraphCatalogCache,
   reviewRelation,
@@ -37,6 +38,7 @@ import {
 } from "@/core/knowledge-graph/overview";
 import { reviewLabels } from "@/core/knowledge-graph/review";
 import type { GraphRelation, ReviewStatus } from "@/core/knowledge-graph/types";
+import { publicErrorMessage } from "@/core/ui/presentation";
 
 const types = {
   person: "人物",
@@ -70,7 +72,7 @@ const relations: Record<GraphRelation["relation_type"], string> = {
   mentioned_in_poetry: "诗文提及",
   documented_in: "出自文献",
 };
-const control = "rounded border bg-white px-3 py-2 text-sm disabled:opacity-50";
+const control = "rounded border bg-card px-3 py-2 text-sm disabled:opacity-50";
 
 export function GraphOverview({ isAdmin }: { isAdmin: boolean }) {
   const [view, setView] = useState<"working" | "published">(
@@ -183,7 +185,7 @@ export function GraphOverview({ isAdmin }: { isAdmin: boolean }) {
       }
     } catch (reason) {
       if (!abort.signal.aborted && sequence === requests.current.sequence)
-        setError(reason instanceof Error ? reason.message : "加载失败");
+        setError(publicErrorMessage(reason, "加载失败"));
     } finally {
       if (sequence === requests.current.sequence) setBusy(false);
     }
@@ -244,9 +246,7 @@ export function GraphOverview({ isAdmin }: { isAdmin: boolean }) {
         setDirectory(more && directory ? mergeOverview(directory, next) : next);
     } catch (reason) {
       if (!abort.signal.aborted)
-        setDirectoryError(
-          reason instanceof Error ? reason.message : "主体目录加载失败",
-        );
+        setDirectoryError(publicErrorMessage(reason, "主体目录加载失败"));
     } finally {
       if (sequence === directoryRequest.current.sequence)
         setDirectoryBusy(false);
@@ -340,7 +340,7 @@ export function GraphOverview({ isAdmin }: { isAdmin: boolean }) {
         data: {
           label: `${group.label}（${group.total_nodes} 主体 / ${group.total_edges} 关系）`,
         },
-        style: { width: 220, minHeight: 70, background: "#edf7f4" },
+        style: { width: 220, minHeight: 70, background: "var(--accent)" },
       }))
     : graphNodes.map((node) => ({
         id: node.id,
@@ -350,10 +350,13 @@ export function GraphOverview({ isAdmin }: { isAdmin: boolean }) {
         style: {
           width: 170,
           minHeight: 55,
-          background: node.entity_type === "person" ? "#fff8ed" : "#edf7f4",
+          background:
+            node.entity_type === "person" ? "#fff8ed" : "var(--accent)",
+          color:
+            node.entity_type === "person" ? "#0f172a" : "var(--foreground)",
           border: highlighted.has(node.id)
-            ? "2px solid #24676c"
-            : "1px solid #9baca8",
+            ? "2px solid var(--primary)"
+            : "1px solid var(--border)",
         },
       }));
   const edges = large
@@ -369,8 +372,8 @@ export function GraphOverview({ isAdmin }: { isAdmin: boolean }) {
           stroke:
             selected?.id &&
             [edge.subject_id, edge.object_id].includes(selected.id)
-              ? "#24676c"
-              : "#9baca8",
+              ? "var(--primary)"
+              : "var(--muted-foreground)",
           strokeWidth: edge.id === selectedEdge ? 3 : 1.5,
         },
       }));
@@ -391,7 +394,7 @@ export function GraphOverview({ isAdmin }: { isAdmin: boolean }) {
       <article
         key={edge.id}
         data-testid={`overview-relation-${edge.id}`}
-        className="space-y-2 rounded border bg-white p-3 text-sm"
+        className="xingxi-panel bg-card space-y-2 rounded-2xl border p-3 text-sm"
       >
         <p>
           {byId.get(edge.subject_id)?.canonical_name} →{" "}
@@ -409,14 +412,14 @@ export function GraphOverview({ isAdmin }: { isAdmin: boolean }) {
         {edge.evidence_ids.map((id) => (
           <a
             key={id}
-            className="block text-teal-800 underline"
-            href={`/api/knowledge-search/evidence/${encodeURIComponent(id)}`}
+            className="text-primary block underline"
+            href={evidenceDetailPath(id)}
             target="_blank"
             rel="noreferrer"
           >
             资料出处：
             {data?.evidence.find((e) => e.evidence_id === id)?.document_title ??
-              id}
+              "查看原文"}
           </a>
         ))}
         {isAdmin && (
@@ -469,15 +472,15 @@ export function GraphOverview({ isAdmin }: { isAdmin: boolean }) {
               以此为中心探索
             </button>
           )}
-          {selected.evidence_ids.map((id) => (
+          {selected.evidence_ids.map((id, index) => (
             <a
               key={id}
-              className="block text-sm text-teal-800 underline"
-              href={`/api/knowledge-search/evidence/${encodeURIComponent(id)}`}
+              className="text-primary block text-sm underline"
+              href={evidenceDetailPath(id)}
               target="_blank"
               rel="noreferrer"
             >
-              主体资料出处 {id}
+              主体资料出处 {index + 1}
             </a>
           ))}
           {relevant.length ? (
@@ -502,7 +505,7 @@ export function GraphOverview({ isAdmin }: { isAdmin: boolean }) {
   return (
     <section className="mt-4 space-y-4" aria-label="知识图谱浏览">
       {isAdmin && (
-        <div className="space-y-2 rounded border bg-teal-50 p-3 text-sm">
+        <div className="bg-accent space-y-2 rounded border p-3 text-sm">
           <div className="flex flex-wrap items-center gap-2">
             <select
               className={control}
@@ -532,8 +535,8 @@ export function GraphOverview({ isAdmin }: { isAdmin: boolean }) {
           </div>
           <p>
             {effectiveView === "working"
-              ? "文献解析抽取后自动进入工作图谱；关系复核通过后，群组和计数随即更新。选择“已通过”可查看已复核关系。"
-              : "此范围展示当前知识版本中的关系；新抽取及新复核的关系可在工作图谱中查看。"}
+              ? "工作图谱包含待复核及已复核的资料关系，可按复核状态筛选。"
+              : "此范围展示当前已发布资料中的关系。"}
           </p>
           {!!data?.authorization_pending_sources && (
             <p>
@@ -703,7 +706,7 @@ export function GraphOverview({ isAdmin }: { isAdmin: boolean }) {
       <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
         <div className="min-w-0">
           <div
-            className={`${listView ? "hidden lg:block" : ""} h-[55vh] min-h-80 overflow-hidden rounded border bg-white`}
+            className={`${listView ? "hidden lg:block" : ""} bg-card h-[55vh] min-h-80 overflow-hidden rounded border`}
             data-testid="global-graph"
             data-mode={mode}
           >
@@ -783,7 +786,7 @@ export function GraphOverview({ isAdmin }: { isAdmin: boolean }) {
           </div>
         </div>
         <aside
-          className="hidden max-h-[65vh] overflow-y-auto rounded border bg-white p-4 lg:block"
+          className="xingxi-panel bg-card hidden max-h-[65vh] overflow-y-auto rounded-2xl border p-4 lg:block"
           aria-label="选中详情"
         >
           {details}
@@ -806,7 +809,7 @@ export function GraphOverview({ isAdmin }: { isAdmin: boolean }) {
       </Sheet>
       <section
         aria-label="主体目录"
-        className="space-y-3 rounded border bg-white p-4"
+        className="xingxi-panel bg-card space-y-3 rounded-2xl border p-4"
       >
         <h3 className="font-semibold">主体目录</h3>
         <div className="flex flex-wrap gap-2">

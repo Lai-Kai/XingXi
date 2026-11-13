@@ -220,7 +220,9 @@ test("uploaded documents enable automatic draft graphs and existing files can ge
 }) => {
   await mockReviewAPI(page);
   await page.goto("/workspace/library?upload=1");
-  await expect(page.getByRole("dialog", { name: "上传文献文件" })).toBeVisible();
+  await expect(
+    page.getByRole("dialog", { name: "上传文献文件" }),
+  ).toBeVisible();
   await expect(
     page.getByRole("checkbox", {
       name: "允许内部解析文献并自动生成待复核关系图谱",
@@ -264,7 +266,7 @@ test("uploaded documents enable automatic draft graphs and existing files can ge
   await page.getByRole("button", { name: "生成图谱", exact: true }).click();
   await generationRequest;
   await expect(
-    page.getByText("已提交自动解析与图谱生成任务。", { exact: false }),
+    page.getByText("已提交文献整理与图谱生成任务。", { exact: false }),
   ).toBeVisible();
   await expect(
     page.getByRole("link", { name: "查看关系图谱", exact: true }),
@@ -283,7 +285,7 @@ test("review workspace shows traceable raw and clean text", async ({
   const dialog = page.getByRole("dialog", { name: "文本人工复核" });
   await expect(dialog.getByText("後臺沿河。", { exact: false })).toBeVisible();
   await expect(dialog.getByText("后台沿河。", { exact: false })).toBeVisible();
-  await expect(dialog.getByText("OCR 96%")).toBeVisible();
+  await expect(dialog).not.toContainText("OCR");
   await expect(dialog.getByText("叶码 一")).toBeVisible();
   await expect(dialog.getByRole("link", { name: "打开原件" })).toHaveAttribute(
     "href",
@@ -309,7 +311,7 @@ test("review workspace remains usable on a narrow viewport", async ({
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole("button", { name: "按页复核" })).toBeVisible();
   await expect(dialog.getByText("原始文本")).toBeVisible();
-  await expect(dialog.getByText("清洗文本")).toBeVisible();
+  await expect(dialog.getByText("整理后文本")).toBeVisible();
   await page.screenshot({
     path: testInfo.outputPath("stage17-review-mobile.png"),
     fullPage: true,

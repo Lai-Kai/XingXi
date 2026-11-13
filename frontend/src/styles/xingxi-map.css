@@ -1,4 +1,13 @@
 /* Map presentation from feat/ui-redesign, scoped to the existing workspace. */
+.research-map[data-map-performance-mode="light"] .research-map-header,
+.research-map[data-map-performance-mode="light"] .research-map-hud,
+.research-map[data-map-performance-mode="light"] .research-map-timeline,
+.research-map[data-map-moving="true"] .research-map-header,
+.research-map[data-map-moving="true"] .research-map-hud,
+.research-map[data-map-moving="true"] .research-map-timeline {
+  backdrop-filter: none;
+  background-color: var(--card);
+}
 .research-map button:focus-visible,
 .research-year-range:focus-visible {
   outline: 2px solid var(--ring);
@@ -10,6 +19,13 @@
 }
 .research-map .research-map-hud {
   align-content: start;
+}
+.research-map-header,
+.research-map-hud,
+.research-map-timeline,
+.research-map-details {
+  border-color: color-mix(in srgb, var(--border) 85%, transparent);
+  box-shadow: 0 8px 30px rgb(15 23 42 / 6%);
 }
 .research-map [data-map-error="true"] {
   top: calc(var(--map-hud-bottom, 8rem) + 12px);

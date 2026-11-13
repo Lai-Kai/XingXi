@@ -1,7 +1,7 @@
 import { formatDistanceToNow } from "date-fns";
 import { enUS as dateFnsEnUS, zhCN as dateFnsZhCN } from "date-fns/locale";
 
-import { detectLocale, type Locale } from "@/core/i18n";
+import { normalizeLocale, type Locale } from "@/core/i18n";
 import { getLocaleFromCookie } from "@/core/i18n/cookies";
 
 function getDateFnsLocale(locale: Locale) {
@@ -15,11 +15,7 @@ function getDateFnsLocale(locale: Locale) {
 }
 
 export function formatTimeAgo(date: Date | string | number, locale?: Locale) {
-  const effectiveLocale =
-    locale ??
-    (getLocaleFromCookie() as Locale | null) ??
-    // Fallback when cookie is missing (or on first render)
-    detectLocale();
+  const effectiveLocale = locale ?? normalizeLocale(getLocaleFromCookie());
   // Guard against invalid/empty timestamps (e.g. a backend returning "" for
   // lastUpdated when there are no memories) -- date-fns would throw
   // "Invalid time value" on `new Date("")`. Return a neutral placeholder.

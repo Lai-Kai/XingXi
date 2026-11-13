@@ -17,6 +17,7 @@ import {
   type SourceLevel,
   type SourceType,
 } from "@/core/source-files/api";
+import { publicErrorMessage } from "@/core/ui/presentation";
 
 export function SourceEditDialog({
   source,
@@ -37,7 +38,7 @@ export function SourceEditDialog({
   useEffect(() => setDraft(source), [source]);
 
   const fieldClass =
-    "h-10 rounded-md border border-[#d2dddf] bg-white px-3 text-sm outline-none focus:border-[#6ea7af]";
+    "h-10 rounded-md border border-border bg-card px-3 text-sm outline-none focus:border-primary";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -45,7 +46,7 @@ export function SourceEditDialog({
         <DialogHeader>
           <DialogTitle>编辑资料信息</DialogTitle>
           <DialogDescription>
-            修改来源元数据不会覆盖已上传的原始文件。
+            修改资料信息后，仍会保留已上传的原件。
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 sm:grid-cols-2">
@@ -207,16 +208,12 @@ export function SourceEditDialog({
                 onSaved(updated);
                 onOpenChange(false);
               } catch (saveError) {
-                setError(
-                  saveError instanceof Error
-                    ? saveError.message
-                    : "无法保存资料信息",
-                );
+                setError(publicErrorMessage(saveError, "无法保存资料信息"));
               } finally {
                 setSaving(false);
               }
             }}
-            className="h-9 rounded-md bg-[#276f79] px-4 text-sm text-white disabled:opacity-40"
+            className="bg-primary text-primary-foreground h-9 rounded-md px-4 text-sm disabled:opacity-40"
           >
             {saving ? "保存中…" : "保存修改"}
           </button>

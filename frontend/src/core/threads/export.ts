@@ -41,6 +41,13 @@ function visibleMessages(
     if (!options.includeToolMessages && message.type === "tool") {
       return false;
     }
+    if (
+      !options.includeToolCalls &&
+      message.type === "ai" &&
+      hasToolCalls(message)
+    ) {
+      return false;
+    }
     return true;
   });
 }

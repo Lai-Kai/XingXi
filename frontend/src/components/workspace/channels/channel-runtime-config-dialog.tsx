@@ -19,6 +19,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { channelFieldLabel, channelName } from "@/core/channels/presentation";
 import type {
   ChannelProvider,
   ChannelRuntimeConfigValues,
@@ -51,7 +52,7 @@ export function ChannelRuntimeConfigDialog({
   onOpenChange,
   onSubmit,
 }: ChannelRuntimeConfigDialogProps) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [values, setValues] = useState<ChannelRuntimeConfigValues>({});
   const fields = useMemo(
     () => provider?.credential_fields ?? [],
@@ -79,6 +80,11 @@ export function ChannelRuntimeConfigDialog({
   }
 
   const isEditing = provider.configured;
+  const displayName = channelName(
+    provider.provider,
+    provider.display_name,
+    locale,
+  );
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -92,8 +98,8 @@ export function ChannelRuntimeConfigDialog({
           <DialogHeader>
             <DialogTitle>
               {isEditing
-                ? t.channels.setupEditTitle(provider.display_name)
-                : t.channels.setupTitle(provider.display_name)}
+                ? t.channels.setupEditTitle(displayName)
+                : t.channels.setupTitle(displayName)}
             </DialogTitle>
             <DialogDescription>{t.channels.setupDescription}</DialogDescription>
           </DialogHeader>
@@ -108,7 +114,7 @@ export function ChannelRuntimeConfigDialog({
                     htmlFor={inputId}
                     className="text-sm leading-none font-medium"
                   >
-                    {field.label}
+                    {channelFieldLabel(field.name, field.label, locale)}
                   </label>
                   <Input
                     id={inputId}

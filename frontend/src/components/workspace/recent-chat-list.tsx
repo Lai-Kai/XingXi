@@ -41,6 +41,7 @@ import {
   SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import { resetThreadChatAfterDelete } from "@/components/workspace/chats/use-thread-chat";
 import { getAPIClient } from "@/core/api";
@@ -69,6 +70,7 @@ export function RecentChatList() {
   const { t } = useI18n();
   const router = useRouter();
   const pathname = usePathname();
+  const { setOpenMobile } = useSidebar();
   const { thread_id: threadIdFromPath, agent_name: agentNameFromPath } =
     useParams<{
       thread_id: string;
@@ -169,14 +171,7 @@ export function RecentChatList() {
 
   const handleShare = useCallback(
     async (thread: AgentThread) => {
-      // Always use Vercel URL for sharing so others can access
-      const VERCEL_URL = "https://deer-flow-v2.vercel.app";
-      const isLocalhost =
-        window.location.hostname === "localhost" ||
-        window.location.hostname === "127.0.0.1";
-      // On localhost: use Vercel URL; On production: use current origin
-      const baseUrl = isLocalhost ? VERCEL_URL : window.location.origin;
-      const shareUrl = `${baseUrl}${pathOfThread(thread)}`;
+      const shareUrl = `${window.location.origin}${pathOfThread(thread)}`;
       try {
         const didCopy = await writeTextToClipboard(shareUrl);
         if (!didCopy) {
@@ -239,6 +234,7 @@ export function RecentChatList() {
                       <Link
                         className="text-muted-foreground min-w-0 whitespace-nowrap group-hover/side-menu-item:overflow-hidden"
                         href={pathOfThread(thread)}
+                        onClick={() => setOpenMobile(false)}
                       >
                         <ThreadChannelIcon source={channelSource} />
                         <span className="min-w-0 truncate">

@@ -40,15 +40,8 @@ export function normalizeLocale(locale: string | null | undefined): Locale {
   return DEFAULT_LOCALE;
 }
 
-// Helper function to detect browser locale
+// Xingxi starts in Chinese. Other languages require an explicit product choice,
+// rather than the browser's language or an inherited application preference.
 export function detectLocale(): Locale {
-  if (typeof window === "undefined") {
-    return DEFAULT_LOCALE;
-  }
-
-  const browserLang =
-    navigator.language ||
-    (navigator as unknown as { userLanguage: string }).userLanguage;
-
-  return normalizeLocale(browserLang);
+  return DEFAULT_LOCALE;
 }

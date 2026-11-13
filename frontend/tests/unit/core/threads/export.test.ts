@@ -104,6 +104,34 @@ describe("formatThreadAsMarkdown", () => {
   });
 });
 
+describe("product export presentation", () => {
+  it("keeps final answers while excluding hidden service commentary in both formats", () => {
+    const messages = [
+      human("介绍木渎"),
+      ai("internal-model retry https://private.invalid", {
+        tool_calls: [
+          {
+            id: "private-call",
+            name: "search_sources",
+            args: { query: "private-parameter" },
+          },
+        ],
+      }),
+      ai("木渎是吴地古镇。"),
+    ];
+    for (const output of [
+      formatThreadAsMarkdown(makeThread(), messages),
+      formatThreadAsJSON(makeThread(), messages),
+    ]) {
+      expect(output).toContain("介绍木渎");
+      expect(output).toContain("木渎是吴地古镇。");
+      expect(output).not.toMatch(
+        /internal-model|private\.invalid|private-call|search_sources|private-parameter/,
+      );
+    }
+  });
+});
+
 describe("formatThreadAsMarkdown opt-in flags", () => {
   it("emits reasoning when includeReasoning is true", () => {
     const message = ai("final answer", {
@@ -171,13 +199,14 @@ describe("formatThreadAsJSON", () => {
       human("secret reminder", {
         additional_kwargs: { hide_from_ui: true },
       } as Partial<Message>),
-      ai("answer", {
+      ai("internal service commentary", {
         additional_kwargs: {
           reasoning_content: "secret reasoning",
         },
         tool_calls: [{ id: "1", name: "task", args: {} }],
       } as Partial<Message>),
       toolMsg("internal trace"),
+      ai("answer"),
     ];
     const raw = formatThreadAsJSON(makeThread(), messages);
     const parsed = JSON.parse(raw) as {

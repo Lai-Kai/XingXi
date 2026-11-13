@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -40,6 +41,9 @@ import type {
   ScheduledTask,
   ScheduledTaskRun,
 } from "@/core/scheduled-tasks/types";
+import { useThreads } from "@/core/threads/hooks";
+import { pathOfThread, titleOfThread } from "@/core/threads/utils";
+import { publicErrorMessage } from "@/core/ui/presentation";
 import { cn } from "@/lib/utils";
 
 const NONE = "—";
@@ -50,7 +54,7 @@ function formatTimestamp(value: string | null, locale: string): string {
   }
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
-    return value;
+    return NONE;
   }
   // Use a locale-aware short format like "2026-07-03 09:00". Future timestamps
   // (next_run_at) render as an absolute time, not a relative "ago" string.
@@ -69,6 +73,9 @@ export default function ScheduledTasksPage() {
   const st = t.scheduledTasks;
   const searchParams = useSearchParams();
   const threadId = searchParams.get("thread_id");
+  const threads = useThreads();
+  const isChinese = locale.startsWith("zh");
+  const unknownLabel = isChinese ? "其他" : "Other";
   const allTasksQuery = useScheduledTasks();
   const threadTasksQuery = useThreadScheduledTasks(threadId);
   const data = threadId ? threadTasksQuery.data : allTasksQuery.data;
@@ -120,19 +127,19 @@ export default function ScheduledTasksPage() {
       ? st.scheduleType.cron
       : v === "once"
         ? st.scheduleType.once
-        : v;
+        : unknownLabel;
   const statusLabel = (v: string) =>
-    (st.status as Record<string, string>)[v] ?? v;
+    (st.status as Record<string, string>)[v] ?? unknownLabel;
   const contextModeLabel = (v: string) =>
     v === "fresh_thread_per_run"
       ? st.context.fresh
       : v === "reuse_thread"
         ? st.context.reuse
-        : v;
+        : unknownLabel;
   const runTriggerLabel = (v: string) =>
-    (st.runTrigger as Record<string, string>)[v] ?? v;
+    (st.runTrigger as Record<string, string>)[v] ?? unknownLabel;
   const runStatusLabel = (v: string) =>
-    (st.runStatus as Record<string, string>)[v] ?? v;
+    (st.runStatus as Record<string, string>)[v] ?? unknownLabel;
   const taskSummary = (task: ScheduledTask) =>
     `${scheduleTypeLabel(task.schedule_type)} · ${statusLabel(task.status)}`;
   const runSummary = (run: ScheduledTaskRun) =>
@@ -140,7 +147,7 @@ export default function ScheduledTasksPage() {
   const applyRecipe = (recipe: Recipe) => {
     const labels = st.recipes[recipe.titleKey];
     setTitle(labels.title);
-    setPrompt(recipe.prompt);
+    setPrompt(labels.prompt);
     setCreateSchedule(recipe.schedule);
     setContextMode("fresh_thread_per_run");
     setCreateNonce((n) => n + 1);
@@ -211,6 +218,7 @@ export default function ScheduledTasksPage() {
                   variant="outline"
                   size="sm"
                   onClick={() => applyRecipe(recipe)}
+                  title={st.recipes[recipe.titleKey].desc}
                 >
                   <span aria-hidden>{recipe.icon}</span>
                   {st.recipes[recipe.titleKey].title}
@@ -236,11 +244,31 @@ export default function ScheduledTasksPage() {
               </Button>
             </div>
             {contextMode === "reuse_thread" && (
-              <Input
+              <select
+                className="bg-background h-10 rounded-md border px-3 text-sm"
                 value={targetThreadId}
                 onChange={(event) => setTargetThreadId(event.target.value)}
-                placeholder={st.context.threadIdPlaceholder}
-              />
+                aria-label={isChinese ? "选择对话" : "Choose a conversation"}
+              >
+                <option value="">
+                  {isChinese
+                    ? "选择要继续的对话"
+                    : "Choose a conversation to continue"}
+                </option>
+                {threadId &&
+                  !(threads.data ?? []).some(
+                    (thread) => thread.thread_id === threadId,
+                  ) && (
+                    <option value={threadId}>
+                      {isChinese ? "当前对话" : "Current conversation"}
+                    </option>
+                  )}
+                {(threads.data ?? []).map((thread) => (
+                  <option key={thread.thread_id} value={thread.thread_id}>
+                    {titleOfThread(thread)}
+                  </option>
+                ))}
+              </select>
             )}
             <Input
               value={title}
@@ -318,7 +346,9 @@ export default function ScheduledTasksPage() {
           </div>
           {threadId && (
             <div className="text-muted-foreground text-sm">
-              {st.detail.filteredByThread.replace("{id}", threadId)}
+              {isChinese
+                ? "正在查看当前对话的定时任务"
+                : "Showing tasks for this conversation"}
             </div>
           )}
           {queryError ? (
@@ -326,7 +356,7 @@ export default function ScheduledTasksPage() {
               className="text-destructive text-sm"
               data-testid="scheduled-task-load-error"
             >
-              {st.detail.loadFailed}: {queryError.message}
+              {publicErrorMessage(queryError, st.detail.loadFailed)}
             </div>
           ) : null}
           <div className="flex flex-wrap gap-2">
@@ -435,11 +465,20 @@ export default function ScheduledTasksPage() {
                     {st.detail.contextMode}:{" "}
                     {contextModeLabel(selectedTask.context_mode)}
                   </div>
-                  <div className="text-muted-foreground text-sm">
-                    {selectedTask.context_mode === "reuse_thread"
-                      ? `${st.detail.thread}: ${selectedTask.thread_id ?? NONE}`
-                      : `${st.detail.lastThread}: ${selectedTask.last_thread_id ?? NONE}`}
-                  </div>
+                  {(selectedTask.context_mode === "reuse_thread"
+                    ? selectedTask.thread_id
+                    : selectedTask.last_thread_id) && (
+                    <Link
+                      className="text-primary text-sm underline"
+                      href={pathOfThread({
+                        thread_id: (selectedTask.context_mode === "reuse_thread"
+                          ? selectedTask.thread_id
+                          : selectedTask.last_thread_id)!,
+                      })}
+                    >
+                      {isChinese ? "查看关联对话" : "View conversation"}
+                    </Link>
+                  )}
                   <div className="text-muted-foreground text-sm">
                     {st.detail.schedule}:{" "}
                     {scheduleTypeLabel(selectedTask.schedule_type)}
@@ -452,12 +491,16 @@ export default function ScheduledTasksPage() {
                     {st.detail.lastRun}:{" "}
                     {formatTimestamp(selectedTask.last_run_at, locale)}
                   </div>
-                  <div className="text-muted-foreground text-sm">
-                    {st.detail.lastRunId}: {selectedTask.last_run_id ?? NONE}
-                  </div>
-                  <div className="text-muted-foreground text-sm">
-                    {st.detail.lastError}: {selectedTask.last_error ?? NONE}
-                  </div>
+                  {selectedTask.last_error && (
+                    <div className="text-destructive text-sm">
+                      {publicErrorMessage(
+                        selectedTask.last_error,
+                        isChinese
+                          ? "上次任务未能完成，请稍后重试。"
+                          : "The last task could not finish. Please try again.",
+                      )}
+                    </div>
+                  )}
                   {editing ? (
                     <div className="flex flex-col gap-2 rounded-lg border p-3">
                       <Input
@@ -547,14 +590,16 @@ export default function ScheduledTasksPage() {
                         >
                           <div className="font-medium">{runSummary(run)}</div>
                           <div className="text-muted-foreground text-xs">
-                            {run.run_id ?? NONE}
-                          </div>
-                          <div className="text-muted-foreground text-xs">
                             {formatTimestamp(run.scheduled_for, locale)}
                           </div>
                           {run.error && (
                             <div className="text-destructive text-xs">
-                              {run.error}
+                              {publicErrorMessage(
+                                run.error,
+                                isChinese
+                                  ? "本次任务未能完成，请重试。"
+                                  : "This task could not finish. Please try again.",
+                              )}
                             </div>
                           )}
                         </div>

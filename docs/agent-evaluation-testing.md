@@ -39,7 +39,7 @@
 
 内置核心集为前 6 类的 pro 模式；初始全部集合为 **10 类 × 3 种模式 = 30 项**，页面按启用状态及自定义题目调整。这不是方案中全部 30 类领域问题的覆盖证明。真实史料质量、矛盾史料的解释、跨 Release 切换、检索召回质量和更广泛的故障注入仍需后续独立用例。
 
-题库 API 的前缀为 `/api/operations/evaluations`。`GET /cases` 返回包括已删除题目的完整列表及方法；`POST /cases` 新增；`DELETE /cases/{case_id}` 停用；`POST /cases/{case_id}/restore` 恢复。读取需要 `governance:read`，写入仅限管理员。`GET /catalog` 返回启用题目和核心数量；`POST /executions` 的 `case_ids` 可指定启用题目，明确选择时优先于 `smoke`。未选择题目时按核心/全部集合执行。方法和工具必须来自服务端白名单，不能提交代码、真实模型配置或 Release 覆盖。
+题库 API 的前缀为 `/api/operations/evaluations`。`GET /questions` 返回包括已删除题目的完整列表及方法；`POST /questions` 新增；`DELETE /questions/{case_id}` 停用；`POST /questions/{case_id}/restore` 恢复。人工评测的 `/cases` 返回数组，不能与自动题库复用相同路由。读取需要 `governance:read`，写入仅限管理员。`GET /catalog` 返回启用题目和核心数量；`POST /executions` 的 `case_ids` 可指定启用题目，明确选择时优先于 `smoke`。未选择题目时按核心/全部集合执行。方法和工具必须来自服务端白名单，不能提交代码、真实模型配置或 Release 覆盖。
 
 回放模型的行为已固定，因此这些结果不能证明真实模型会选择正确工具、抵御提示注入或作出正确的历史判断。报告中的规则检查也不是语义评分。真实模型批量评测、重复采样、A/B 比较、性能/费用基线属于后续范围；当前没有 `eval-agent-live` 命令，Token/费用未采集时保留空值。
 

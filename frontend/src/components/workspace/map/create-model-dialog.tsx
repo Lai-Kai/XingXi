@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { ReconstructionPanel } from "@/components/workspace/map/reconstruction-panel";
+import { modelErrorMessage } from "@/core/map/model-presentation";
 import { uploadMapModel } from "@/core/map/registered-models";
 import { type MapPoint } from "@/core/map/types";
 
@@ -70,7 +71,7 @@ export function CreateModelDialog({
       }
     } catch (failure) {
       if (!request.signal.aborted)
-        setError(failure instanceof Error ? failure.message : "模型接入失败");
+        setError(modelErrorMessage(failure, "模型接入失败，请稍后重试。"));
     } finally {
       setProgress(null);
     }
@@ -202,7 +203,7 @@ export function CreateModelDialog({
                 />
               </label>
               <p className="text-muted-foreground text-xs leading-5">
-                支持彩色点云、高斯 PLY 和内嵌贴图的 GLB，最多 256
+                支持 PLY 和 GLB 三维模型文件，最多 256
                 MiB。接入后保存到该点位，刷新页面仍可查看。
               </p>
               {error && (

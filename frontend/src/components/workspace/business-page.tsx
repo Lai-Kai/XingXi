@@ -22,8 +22,8 @@ import {
 import { cn } from "@/lib/utils";
 
 const toneClasses: Record<BusinessStatusTone, string> = {
-  neutral: "border-[#d5dfe1] bg-[#f2f5f5] text-[#5f7075]",
-  info: "border-[#b9d3d7] bg-[#e5f0f1] text-[#276b75]",
+  neutral: "border-border bg-muted/60 text-muted-foreground",
+  info: "border-border bg-accent text-primary",
   success: "border-[#b9d9ca] bg-[#e7f3ec] text-[#276947]",
   warning: "border-[#e4cf9d] bg-[#fbf4df] text-[#825f17]",
   danger: "border-[#e3bdbd] bg-[#f9eaea] text-[#934747]",
@@ -77,7 +77,7 @@ export function BusinessStatusBadge({
 
 export function BusinessMobileHeader({ title }: { title: string }) {
   return (
-    <div className="sticky top-0 z-20 flex h-12 items-center border-b border-[#dce5e6] bg-[#f7fafb]/95 px-4 backdrop-blur md:hidden">
+    <div className="border-border bg-muted/95 sticky top-0 z-20 flex h-12 items-center border-b px-4 backdrop-blur md:hidden">
       <SidebarTrigger />
       <span className="ml-2 truncate text-sm font-medium">{title}</span>
     </div>
@@ -96,14 +96,16 @@ export function BusinessPageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <header className="flex flex-col gap-5 border-b border-[#dbe4e5] pb-6 lg:flex-row lg:items-end lg:justify-between">
+    <header className="border-border flex flex-col gap-5 border-b pb-6 lg:flex-row lg:items-end lg:justify-between">
       <div className="flex min-w-0 items-center gap-3">
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-[#e0edef] text-[#276f79]">
+        <span className="border-primary/10 bg-accent text-primary flex size-11 shrink-0 items-center justify-center rounded-xl border">
           <Icon className="size-5" aria-hidden="true" />
         </span>
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold">{title}</h1>
-          <p className="mt-1 text-sm leading-5 text-[#68797e]">{description}</p>
+          <p className="text-muted-foreground mt-1 text-sm leading-5">
+            {description}
+          </p>
         </div>
       </div>
       {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
@@ -127,7 +129,7 @@ export function BusinessLoadingState({
       aria-busy="true"
       aria-label={label}
     >
-      <div className="flex items-center gap-2 text-sm text-[#68797e]">
+      <div className="text-muted-foreground flex items-center gap-2 text-sm">
         <RotateCcw className="size-4 animate-spin" aria-hidden="true" />
         <span>{label}</span>
       </div>
@@ -135,7 +137,7 @@ export function BusinessLoadingState({
         {["88%", "72%", "81%"].map((width) => (
           <div
             key={width}
-            className="h-12 animate-pulse rounded-md border border-[#e1e8e9] bg-[#f0f5f5]"
+            className="border-border bg-muted/60 h-12 animate-pulse rounded-md border"
             style={{ width }}
           />
         ))}
@@ -167,14 +169,14 @@ export function BusinessErrorState({
         <AlertCircle className="size-5" aria-hidden="true" />
       </span>
       <h2 className="mt-4 text-base font-medium">{title}</h2>
-      <p className="mt-2 max-w-md text-sm leading-6 text-[#748388]">
+      <p className="text-muted-foreground mt-2 max-w-md text-sm leading-6">
         {description}
       </p>
       {onRetry && (
         <button
           type="button"
           onClick={onRetry}
-          className="mt-5 inline-flex h-9 items-center gap-2 rounded-md border border-[#c9d6d8] bg-white px-4 text-sm text-[#315f67] hover:bg-[#edf4f5]"
+          className="border-border bg-card text-primary hover:bg-muted/60 mt-5 inline-flex h-9 items-center gap-2 rounded-md border px-4 text-sm"
         >
           <RotateCcw className="size-4" aria-hidden="true" />
           重新加载
@@ -204,11 +206,11 @@ export function BusinessEmptyState({
         className,
       )}
     >
-      <span className="flex size-14 items-center justify-center rounded-full bg-[#e8f1f2] text-[#49757c]">
+      <span className="bg-accent text-muted-foreground flex size-14 items-center justify-center rounded-full">
         <Icon className="size-6" aria-hidden="true" />
       </span>
       <h2 className="mt-4 text-base font-medium">{title}</h2>
-      <p className="mt-2 max-w-md text-sm leading-6 text-[#748388]">
+      <p className="text-muted-foreground mt-2 max-w-md text-sm leading-6">
         {description}
       </p>
       {action && <div className="mt-5">{action}</div>}

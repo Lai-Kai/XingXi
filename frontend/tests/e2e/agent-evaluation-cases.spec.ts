@@ -26,7 +26,12 @@ async function mockQuestionManagement(page: Page) {
       required_tool: "search_sources",
       expected_terms: ["测试溪"],
     }));
-  const state = { failCreate: false, executed: [] as string[] };
+  const state = {
+    failRead: false,
+    missingManagement: false,
+    failCreate: false,
+    executed: [] as string[],
+  };
   await page.route("**/api/operations/evaluations/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
@@ -40,9 +45,14 @@ async function mockQuestionManagement(page: Page) {
         core_count: 6,
         cases: cases.filter((item) => item.active),
       };
-    else if (path.endsWith("/cases")) {
-      if (request.method() === "GET")
-        body = { execution_mode: "replay", methods, cases };
+    else if (path.endsWith("/questions")) {
+      if (state.missingManagement) {
+        status = 404;
+        body = { detail: "Not Found" };
+      } else if (request.method() === "GET")
+        body = state.failRead
+          ? []
+          : { execution_mode: "replay", methods, cases };
       else if (state.failCreate) {
         status = 503;
         body = { detail: "保存暂时失败" };
@@ -62,7 +72,7 @@ async function mockQuestionManagement(page: Page) {
         body = created;
         status = 201;
       }
-    } else if (path.includes("/cases/")) {
+    } else if (path.includes("/questions/")) {
       const item = cases.find((entry) => path.includes(entry.id))!;
       item.active = request.method() !== "DELETE";
       body = item;
@@ -83,6 +93,67 @@ async function mockQuestionManagement(page: Page) {
   return state;
 }
 
+test("an older service still exposes real questions and rules, then restores management after retry", async ({
+  page,
+}) => {
+  const state = await mockQuestionManagement(page);
+  state.missingManagement = true;
+  await page.goto("/workspace/evaluations");
+  await page
+    .getByRole("button", { name: "测试问题与方法", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "测试问题与方法" });
+  await expect(dialog.getByRole("article")).toHaveCount(30);
+  await expect(dialog.getByRole("status")).toContainText(
+    "当前可查看启用题目与服务端判定规则",
+  );
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await expect(dialog.getByLabel("显示已删除问题")).toHaveCount(0);
+  await expect(
+    dialog.getByRole("button", { name: /新增问题|删除题目|恢复题目|运行题目/ }),
+  ).toHaveCount(0);
+  const first = dialog.getByRole("article").first();
+  await first.getByText("查看测试方法与判定规则").click();
+  await expect(
+    first.getByText("按以下服务端规则检查本题回放结果。"),
+  ).toBeVisible();
+  await expect(first.getByText(/仅检查合成资料和运行契约/)).toBeVisible();
+  await dialog.getByLabel("搜索测试问题").fill("古文释义");
+  await expect(dialog.getByRole("article")).toHaveCount(3);
+  state.missingManagement = false;
+  await dialog.getByRole("button", { name: "重试读取", exact: true }).click();
+  await expect(
+    dialog.getByRole("button", { name: "新增问题", exact: true }),
+  ).toBeVisible();
+  await expect(dialog.getByLabel("显示已删除问题")).toBeVisible();
+  await expect(dialog.getByRole("status")).toHaveCount(0);
+});
+
+test("an incompatible question list shows a retry message and recovers without closing the panel", async ({
+  page,
+}) => {
+  const state = await mockQuestionManagement(page);
+  state.failRead = true;
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("/workspace/evaluations");
+  await page
+    .getByRole("button", { name: "测试问题与方法", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "测试问题与方法" });
+  await expect(dialog.getByRole("alert")).toContainText(
+    "暂时无法读取测试问题与方法，请重试。",
+    { timeout: 15000 },
+  );
+  state.failRead = false;
+  await dialog.getByRole("button", { name: "重试读取", exact: true }).click();
+  await expect(dialog.getByRole("article")).toHaveCount(30);
+  const first = dialog.getByRole("article").first();
+  await first.getByText("查看测试方法与判定规则").click();
+  await expect(first.getByText(/核对回答是否具有足够的资料出处/)).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
 test("admins inspect methods, add/delete/restore and run an individual question", async ({
   page,
 }) => {
@@ -95,8 +166,8 @@ test("admins inspect methods, add/delete/restore and run an individual question"
   await expect(dialog.getByText(/新增问题沿用所选方法/)).toBeVisible();
   const first = dialog.getByRole("article").first();
   await first.getByText("查看测试方法与判定规则").click();
-  await expect(first.getByText(/固定回放方法/)).toBeVisible();
-  await expect(first.getByText(/预期工具/)).toBeVisible();
+  await expect(first.getByText(/核对回答是否具有足够的资料出处/)).toBeVisible();
+  await expect(first.getByText(/需要查阅资料/)).toBeVisible();
   await dialog.getByRole("button", { name: "新增问题", exact: true }).click();
   await dialog.getByLabel("题目名称", { exact: true }).fill("自定义桥梁位置");
   await dialog
@@ -104,14 +175,16 @@ test("admins inspect methods, add/delete/restore and run an individual question"
     .fill("测试桥位于哪条溪流？");
   state.failCreate = true;
   await dialog.getByRole("button", { name: "保存问题", exact: true }).click();
-  await expect(dialog.getByRole("alert")).toContainText("保存暂时失败");
+  await expect(dialog.getByRole("alert")).toContainText(
+    "暂时无法读取或保存测试问题",
+  );
   await expect(dialog.getByLabel("测试问题", { exact: true })).toHaveValue(
     "测试桥位于哪条溪流？",
   );
   state.failCreate = false;
   await dialog.getByRole("button", { name: "保存问题", exact: true }).click();
   const custom = dialog.getByRole("article", {
-    name: "测试问题：自定义桥梁位置 · pro",
+    name: "测试问题：自定义桥梁位置 · 标准",
   });
   await expect(custom.getByText("测试桥位于哪条溪流？")).toBeVisible();
   await page.keyboard.press("Escape");

@@ -11,11 +11,12 @@ import {
   fetchSetupStatus,
   isSystemAlreadyInitializedError,
 } from "@/core/auth/setup";
-import { parseAuthError } from "@/core/auth/types";
+import { useI18n } from "@/core/i18n/hooks";
 
 type SetupMode = "loading" | "init_admin" | "change_password";
 
 export default function SetupPage() {
+  const { t } = useI18n();
   const router = useRouter();
   const { user, isAuthenticated } = useAuth();
   const [mode, setMode] = useState<SetupMode>("loading");
@@ -88,8 +89,7 @@ export default function SetupPage() {
           router.replace("/login");
           return;
         }
-        const authError = parseAuthError(data);
-        setError(authError.message);
+        setError(t.login.authFailed);
         return;
       }
 
@@ -132,9 +132,7 @@ export default function SetupPage() {
       });
 
       if (!res.ok) {
-        const data = await res.json();
-        const authError = parseAuthError(data);
-        setError(authError.message);
+        setError(t.login.authFailed);
         return;
       }
 

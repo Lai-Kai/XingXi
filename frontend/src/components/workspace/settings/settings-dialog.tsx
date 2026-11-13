@@ -106,7 +106,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
       onOpenChange={(open) => props.onOpenChange?.(open)}
     >
       <DialogContent
-        className="flex h-[75vh] max-h-[calc(100vh-2rem)] flex-col sm:max-w-5xl md:max-w-6xl"
+        className="xingxi-settings border-border bg-card/95 flex h-[75vh] max-h-[calc(100vh-2rem)] flex-col rounded-2xl shadow-xl backdrop-blur-xl sm:max-w-5xl md:max-w-6xl"
         aria-describedby={undefined}
       >
         <DialogHeader className="gap-1">
@@ -116,7 +116,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
           </p>
         </DialogHeader>
         <div className="grid min-h-0 flex-1 gap-4 md:grid-cols-[220px_minmax(0,1fr)]">
-          <nav className="bg-sidebar min-h-0 overflow-y-auto rounded-lg border p-2">
+          <nav className="bg-muted/50 min-h-0 overflow-y-auto rounded-xl border p-2">
             <ul className="space-y-1 pr-1">
               {sections.map(({ id, label, icon: Icon }) => {
                 const active = activeSection === id;
@@ -126,9 +126,9 @@ export function SettingsDialog(props: SettingsDialogProps) {
                       type="button"
                       onClick={() => setActiveSection(id as SettingsSection)}
                       className={cn(
-                        "flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                        "flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors duration-200",
                         active
-                          ? "bg-primary text-primary-foreground shadow-sm"
+                          ? "bg-accent text-primary shadow-xs"
                           : "text-muted-foreground hover:bg-muted hover:text-foreground",
                       )}
                     >
@@ -140,7 +140,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
               })}
             </ul>
           </nav>
-          <ScrollArea className="h-full min-h-0 rounded-lg border">
+          <ScrollArea className="bg-card/70 h-full min-h-0 rounded-xl border">
             <div className="space-y-8 p-6">
               {activeSection === "account" && <AccountSettingsPage />}
               {activeSection === "appearance" && <AppearanceSettingsPage />}

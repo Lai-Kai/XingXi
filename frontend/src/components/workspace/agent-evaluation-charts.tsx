@@ -13,8 +13,7 @@ import {
   type AgentEvaluationSummary,
 } from "@/core/operations/evaluations";
 
-const card =
-  "min-w-0 rounded-xl border border-[#dce5e6] bg-white p-5 shadow-sm";
+const card = "min-w-0 rounded-xl border border-border bg-card p-5 shadow-sm";
 
 export function EvaluationHistoryChart({
   batches,
@@ -50,7 +49,7 @@ export function EvaluationHistoryChart({
         </div>
         <div className="flex gap-3 text-xs text-slate-500">
           <span>▰ 计划数</span>
-          <span className="text-[#276f79]">▰ 通过数</span>
+          <span className="text-primary">▰ 通过数</span>
           <span className="text-emerald-700">● 通过率</span>
         </div>
       </div>
@@ -74,7 +73,7 @@ export function EvaluationHistoryChart({
                   x2={plot.x + plot.width}
                   y1={plot.y + plot.height * fraction}
                   y2={plot.y + plot.height * fraction}
-                  stroke="#e8eef0"
+                  stroke="var(--border)"
                   strokeDasharray="3 4"
                 />
                 <text
@@ -115,7 +114,7 @@ export function EvaluationHistoryChart({
                     width={width}
                     height={(point.passed / maxCount) * plot.height}
                     rx="3"
-                    fill="#276f79"
+                    fill="var(--primary)"
                   />
                   {index % Math.ceil(points.length / 7) === 0 && (
                     <text
@@ -151,12 +150,14 @@ export function EvaluationHistoryChart({
                   height={192}
                   rx="4"
                   fill="transparent"
-                  stroke={point.id === selectedId ? "#276f79" : "transparent"}
+                  stroke={
+                    point.id === selectedId ? "var(--primary)" : "transparent"
+                  }
                   strokeDasharray="3 3"
                   tabIndex={0}
                   role="button"
-                  className="cursor-pointer outline-[#276f79]"
-                  aria-label={`查看批次 ${point.id}`}
+                  className="outline-ring cursor-pointer"
+                  aria-label={`查看${point.label}`}
                   onMouseEnter={() => setHoveredId(point.id)}
                   onMouseLeave={() => setHoveredId(null)}
                   onFocus={() => setHoveredId(point.id)}
@@ -175,9 +176,9 @@ export function EvaluationHistoryChart({
           {hovered && (
             <div
               role="tooltip"
-              className="pointer-events-none absolute top-2 left-8 max-w-[85%] rounded-lg border bg-white/95 p-3 text-xs shadow-md"
+              className="xingxi-panel bg-card/95 pointer-events-none absolute top-2 left-8 max-w-[85%] rounded-2xl border p-3 text-xs shadow-md"
             >
-              <p className="truncate font-mono font-medium">{hovered.id}</p>
+              <p className="truncate font-mono font-medium">{hovered.label}</p>
               <p className="mt-1 text-slate-500">
                 {new Date(hovered.createdAt).toLocaleString()}
               </p>
@@ -277,7 +278,7 @@ export function EvaluationDistributionChart({
                 textAnchor="middle"
                 fontSize="30"
                 fontWeight="600"
-                fill="#202b2e"
+                fill="var(--foreground)"
               >
                 {total}
               </text>
@@ -294,7 +295,7 @@ export function EvaluationDistributionChart({
             {tooltip && (
               <div
                 role="tooltip"
-                className="pointer-events-none absolute inset-x-0 bottom-0 rounded-md border bg-white px-2 py-1 text-center text-xs shadow-sm"
+                className="xingxi-panel bg-card pointer-events-none absolute inset-x-0 bottom-0 rounded-2xl border px-2 py-1 text-center text-xs shadow-sm"
               >
                 {tooltip.label} · {tooltip.value} 项 ·{" "}
                 {((tooltip.value / total) * 100).toFixed(1)}%

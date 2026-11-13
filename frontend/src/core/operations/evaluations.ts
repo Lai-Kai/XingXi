@@ -1,4 +1,4 @@
-import { throwGatewayApiError } from "@/core/api/errors";
+import { GatewayApiError, throwGatewayApiError } from "@/core/api/errors";
 import { fetch } from "@/core/api/fetcher";
 import { getBackendBaseURL } from "@/core/config";
 
@@ -21,7 +21,7 @@ export type AgentCase = {
 
 export type ManagedAgentCase = AgentCase & {
   active: boolean;
-  builtin: boolean;
+  builtin: boolean | null;
 };
 export type AgentCaseMethod = AgentCase & { description: string };
 export type AgentCaseInput = {
@@ -36,6 +36,7 @@ export type AgentCaseCollection = {
   execution_mode: "replay";
   cases: ManagedAgentCase[];
   methods: AgentCaseMethod[];
+  management_available?: boolean;
 };
 
 export type AgentCheck = {
@@ -139,19 +140,114 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const loadAgentCatalog = (signal?: AbortSignal) =>
   request<AgentCatalog>("/catalog", { signal });
-export const loadAgentCases = (signal?: AbortSignal) =>
-  request<AgentCaseCollection>("/cases", { signal });
+
+const invalidQuestions = "暂时无法读取测试问题与方法，请重试。";
+
+function isCatalogCase(
+  value: unknown,
+): value is AgentCase & Partial<ManagedAgentCase> {
+  if (!value || typeof value !== "object") return false;
+  const item = value as Record<string, unknown>;
+  return (
+    ["id", "title", "question", "scenario", "review_rubric"].every(
+      (key) => typeof item[key] === "string",
+    ) &&
+    typeof item.version === "number" &&
+    Number.isFinite(item.version) &&
+    typeof item.mode === "string" &&
+    ["flash", "pro", "ultra"].includes(item.mode) &&
+    ["expected_terms", "forbidden_terms"].every(
+      (key) =>
+        item[key] === undefined ||
+        (Array.isArray(item[key]) &&
+          item[key].every((term) => typeof term === "string")),
+    ) &&
+    ["min_citations", "timeout_seconds"].every(
+      (key) =>
+        item[key] === undefined ||
+        (typeof item[key] === "number" && Number.isFinite(item[key])),
+    ) &&
+    (item.required_tool == null || typeof item.required_tool === "string") &&
+    (item.expected_run_status === undefined ||
+      typeof item.expected_run_status === "string") &&
+    ["active", "expect_empty_evidence"].every(
+      (key) => item[key] === undefined || typeof item[key] === "boolean",
+    ) &&
+    (item.builtin == null || typeof item.builtin === "boolean")
+  );
+}
+
+async function readCatalogQuestions(
+  signal?: AbortSignal,
+): Promise<AgentCaseCollection> {
+  let data: unknown;
+  try {
+    data = await request<unknown>("/catalog", { signal });
+  } catch (error) {
+    if (error instanceof GatewayApiError && error.status === 404) {
+      throw new Error("评测题库暂不可用，请更新并重启评测服务后重试。");
+    }
+    throw error;
+  }
+  if (
+    !data ||
+    typeof data !== "object" ||
+    !("execution_mode" in data) ||
+    data.execution_mode !== "replay" ||
+    !("cases" in data) ||
+    !Array.isArray(data.cases) ||
+    !data.cases.every(isCatalogCase)
+  )
+    throw new Error(invalidQuestions);
+  return {
+    execution_mode: "replay",
+    management_available: false,
+    methods: [],
+    cases: data.cases.map((item) => ({
+      ...item,
+      active: item.active ?? true,
+      builtin: item.builtin ?? null,
+    })),
+  };
+}
+
+export async function loadAgentCases(signal?: AbortSignal) {
+  let data: unknown;
+  try {
+    data = await request<unknown>("/questions", { signal });
+  } catch (error) {
+    // Older Gateways expose the real replay catalog without question management.
+    // Never fall back to /cases: it is the unrelated manual-evaluation API.
+    if (error instanceof GatewayApiError && error.status === 404) {
+      return readCatalogQuestions(signal);
+    }
+    throw error;
+  }
+  // A manual evaluation list is an array. Reject incompatible responses here
+  // so the Sheet can show its normal error/retry state instead of crashing.
+  if (
+    !data ||
+    typeof data !== "object" ||
+    !("cases" in data) ||
+    !Array.isArray(data.cases) ||
+    !("methods" in data) ||
+    !Array.isArray(data.methods)
+  ) {
+    throw new Error(invalidQuestions);
+  }
+  return data as AgentCaseCollection;
+}
 export const createAgentCase = (input: AgentCaseInput) =>
-  request<ManagedAgentCase>("/cases", {
+  request<ManagedAgentCase>("/questions", {
     method: "POST",
     body: JSON.stringify(input),
   });
 export const deleteAgentCase = (id: string) =>
-  request<ManagedAgentCase>(`/cases/${encodeURIComponent(id)}`, {
+  request<ManagedAgentCase>(`/questions/${encodeURIComponent(id)}`, {
     method: "DELETE",
   });
 export const restoreAgentCase = (id: string) =>
-  request<ManagedAgentCase>(`/cases/${encodeURIComponent(id)}/restore`, {
+  request<ManagedAgentCase>(`/questions/${encodeURIComponent(id)}/restore`, {
     method: "POST",
     body: "{}",
   });

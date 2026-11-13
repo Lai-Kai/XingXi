@@ -20,6 +20,7 @@ import {
 } from "@/core/api/feedback";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { hasCapability } from "@/core/auth/permissions";
+import { publicErrorMessage } from "@/core/ui/presentation";
 
 const categoryLabels: Record<FeedbackCategory, string> = {
   citation_error: "引用错误",
@@ -70,9 +71,7 @@ export default function QualityPage() {
       setItems(result.items);
       setTotal(result.total);
     } catch (loadError) {
-      setError(
-        loadError instanceof Error ? loadError.message : "无法读取反馈队列",
-      );
+      setError(publicErrorMessage(loadError, "无法读取反馈队列"));
     } finally {
       setLoading(false);
     }
@@ -82,7 +81,8 @@ export default function QualityPage() {
 
   if (!allowed) {
     return (
-      <main className="size-full overflow-y-auto bg-[#f7fafb]">
+      <main className="xingxi-module bg-muted/60 size-full overflow-y-auto">
+        <BusinessMobileHeader title="质量中心" />
         <div className="mx-auto max-w-7xl px-4 py-8 sm:px-8">
           <BusinessEmptyState
             icon={ClipboardList}
@@ -95,7 +95,7 @@ export default function QualityPage() {
   }
 
   return (
-    <main className="size-full overflow-y-auto bg-[#f7fafb] text-[#202b2e]">
+    <main className="xingxi-module bg-muted/60 text-foreground size-full overflow-y-auto">
       <BusinessMobileHeader title="质量中心" />
       <div className="mx-auto min-h-full max-w-7xl px-4 py-7 sm:px-8 lg:px-10 lg:py-10">
         <BusinessPageHeader
@@ -104,16 +104,16 @@ export default function QualityPage() {
           icon={ClipboardList}
         />
 
-        <div className="mt-5 flex flex-col gap-3 border-b border-[#d7e1e2] pb-4 sm:flex-row">
-          <label className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-md border border-[#d2dddf] bg-white px-3">
-            <Search className="size-4 text-[#68797e]" />
+        <div className="border-border mt-5 flex flex-col gap-3 border-b pb-4 sm:flex-row">
+          <label className="border-border bg-card flex h-10 min-w-0 flex-1 items-center gap-2 rounded-md border px-3">
+            <Search className="text-muted-foreground size-4" />
             <input
               value={query}
               onChange={(event) => {
                 setQuery(event.target.value);
                 setPage(1);
               }}
-              placeholder="搜索反馈内容、会话或运行编号"
+              placeholder="搜索反馈内容"
               className="min-w-0 flex-1 bg-transparent text-sm outline-none"
             />
           </label>
@@ -124,7 +124,7 @@ export default function QualityPage() {
               setPage(1);
             }}
             aria-label="处理状态"
-            className="h-10 rounded-md border border-[#d2dddf] bg-white px-3 text-sm"
+            className="border-border bg-card h-10 rounded-md border px-3 text-sm"
           >
             <option value="all">全部状态</option>
             {Object.entries(statusLabels).map(([value, label]) => (
@@ -147,8 +147,8 @@ export default function QualityPage() {
           />
         ) : (
           <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-            <div className="overflow-x-auto rounded-md border border-[#d7e1e2] bg-white">
-              <div className="grid min-w-[720px] grid-cols-[110px_110px_minmax(240px,1fr)_150px_80px] gap-3 border-b bg-[#f1f6f7] px-4 py-3 text-xs font-medium text-[#607176]">
+            <div className="xingxi-panel border-border bg-card overflow-x-auto rounded-2xl border">
+              <div className="bg-muted/60 text-muted-foreground grid min-w-[720px] grid-cols-[110px_110px_minmax(240px,1fr)_150px_80px] gap-3 border-b px-4 py-3 text-xs font-medium">
                 <span>问题类型</span>
                 <span>状态</span>
                 <span>反馈内容</span>
@@ -169,12 +169,12 @@ export default function QualityPage() {
                   </span>
                   <span>{statusLabels[item.status ?? "submitted"]}</span>
                   <span
-                    className="truncate text-[#526469]"
+                    className="text-muted-foreground truncate"
                     title={item.comment ?? ""}
                   >
                     {item.comment ?? "未填写说明"}
                   </span>
-                  <span className="text-xs text-[#718186]">
+                  <span className="text-muted-foreground text-xs">
                     {item.created_at
                       ? new Intl.DateTimeFormat("zh-CN", {
                           dateStyle: "short",
@@ -189,7 +189,7 @@ export default function QualityPage() {
                       setReviewStatus(item.status ?? "reviewing");
                       setReviewNote(item.review_note ?? "");
                     }}
-                    className="text-[#276f79] hover:underline"
+                    className="text-primary hover:underline"
                   >
                     {canReview ? "处理" : "查看"}
                   </button>
@@ -197,11 +197,11 @@ export default function QualityPage() {
               ))}
             </div>
 
-            <aside className="border-l border-[#d7e1e2] bg-white p-4 lg:min-h-[420px]">
+            <aside className="xingxi-panel border-border bg-card rounded-2xl border-l p-4 lg:min-h-[420px]">
               {selected ? (
                 <div className="grid gap-4">
                   <div>
-                    <p className="text-xs text-[#718186]">反馈内容</p>
+                    <p className="text-muted-foreground text-xs">反馈内容</p>
                     <p className="mt-1 text-sm leading-6">
                       {selected.comment ?? "未填写说明"}
                     </p>
@@ -209,7 +209,7 @@ export default function QualityPage() {
                   {selected.thread_id && (
                     <Link
                       href={`/workspace/chats/${selected.thread_id}`}
-                      className="flex items-center gap-1 text-sm text-[#276f79] hover:underline"
+                      className="text-primary flex items-center gap-1 text-sm hover:underline"
                     >
                       打开原会话 <ExternalLink className="size-3.5" />
                     </Link>
@@ -264,30 +264,32 @@ export default function QualityPage() {
                             await load();
                           } catch (saveError) {
                             setError(
-                              saveError instanceof Error
-                                ? saveError.message
-                                : "无法保存处理结果",
+                              publicErrorMessage(saveError, "无法保存处理结果"),
                             );
                           } finally {
                             setSaving(false);
                           }
                         }}
-                        className="h-10 rounded-md bg-[#276f79] px-4 text-sm text-white disabled:opacity-40"
+                        className="bg-primary text-primary-foreground h-10 rounded-md px-4 text-sm disabled:opacity-40"
                       >
                         {saving ? "保存中…" : "保存处理结果"}
                       </button>
                     </>
                   ) : (
-                    <div className="grid gap-3 border-t border-[#d7e1e2] pt-4 text-sm">
+                    <div className="border-border grid gap-3 border-t pt-4 text-sm">
                       <div>
-                        <p className="text-xs text-[#718186]">处理状态</p>
+                        <p className="text-muted-foreground text-xs">
+                          处理状态
+                        </p>
                         <p className="mt-1">
                           {statusLabels[selected.status ?? "submitted"]}
                         </p>
                       </div>
                       {selected.review_note && (
                         <div>
-                          <p className="text-xs text-[#718186]">处理意见</p>
+                          <p className="text-muted-foreground text-xs">
+                            处理意见
+                          </p>
                           <p className="mt-1 leading-6">
                             {selected.review_note}
                           </p>
@@ -297,7 +299,7 @@ export default function QualityPage() {
                   )}
                 </div>
               ) : (
-                <p className="text-sm text-[#718186]">
+                <p className="text-muted-foreground text-sm">
                   选择一条反馈查看并处理。
                 </p>
               )}

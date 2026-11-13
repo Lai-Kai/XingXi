@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import {
   Activity,
@@ -22,6 +22,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { hasCapability } from "@/core/auth/permissions";
@@ -58,7 +59,7 @@ const navigation: Array<{
     capability: "quality:read",
   },
   {
-    label: "Agent 评测",
+    label: "问答评测",
     href: "/workspace/evaluations",
     icon: FlaskConical,
     capability: "governance:read",
@@ -81,11 +82,14 @@ export function navigationForUser(user: User | null) {
 export function WorkspaceNavChatList() {
   const pathname = usePathname();
   const { user } = useAuth();
-  const visibleNavigation = navigationForUser(user);
+  const { setOpenMobile } = useSidebar();
+  const visibleNavigation = navigationForUser(user).filter(
+    (item) => item.href !== "/workspace/agent",
+  );
 
   return (
-    <SidebarGroup className="pt-2">
-      <SidebarMenu className="gap-1.5">
+    <SidebarGroup className="px-3 pt-3 group-data-[collapsible=icon]:px-2">
+      <SidebarMenu className="gap-1">
         {visibleNavigation.map((item) => {
           const active =
             item.href === "/workspace"
@@ -97,11 +101,15 @@ export function WorkspaceNavChatList() {
               <SidebarMenuButton
                 isActive={active}
                 tooltip={item.label}
-                className="h-10 px-3"
+                className="h-9 rounded-xl px-3 text-[13px] text-slate-600 transition-colors duration-200 hover:bg-white/80 hover:text-blue-700 data-[active=true]:bg-blue-50/90 data-[active=true]:font-medium data-[active=true]:text-blue-700"
                 asChild
               >
-                <Link href={item.href}>
-                  <Icon />
+                <Link
+                  href={item.href}
+                  onClick={() => setOpenMobile(false)}
+                  aria-current={active ? "page" : undefined}
+                >
+                  <Icon className="stroke-[1.7]" />
                   <span>{item.label}</span>
                 </Link>
               </SidebarMenuButton>

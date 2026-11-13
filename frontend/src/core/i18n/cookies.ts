@@ -3,7 +3,8 @@
  * Works on both client and server side
  */
 
-const LOCALE_COOKIE_NAME = "locale";
+// Keep Xingxi preferences separate from the inherited application's cookie.
+export const LOCALE_COOKIE_NAME = "xingxi_locale";
 
 /**
  * Get locale from cookie (client-side)
@@ -17,7 +18,11 @@ export function getLocaleFromCookie(): string | null {
   for (const cookie of cookies) {
     const [name, value] = cookie.trim().split("=");
     if (name === LOCALE_COOKIE_NAME) {
-      return decodeURIComponent(value ?? "");
+      try {
+        return decodeURIComponent(value ?? "");
+      } catch {
+        return null;
+      }
     }
   }
   return null;

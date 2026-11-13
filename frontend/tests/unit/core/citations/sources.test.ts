@@ -156,7 +156,7 @@ describe("evidence protocol citations", () => {
         id: "evidence://evidence-1",
         title: "1",
         url: "evidence://evidence-1",
-        domain: "evidence",
+        domain: "文献资料",
         count: 1,
         occurrences: [{ index: firstIndex, title: "1" }],
         evidenceId: "evidence-1",
@@ -166,7 +166,7 @@ describe("evidence protocol citations", () => {
         id: "evidence://evidence-2",
         title: "2",
         url: "evidence://evidence-2",
-        domain: "evidence",
+        domain: "文献资料",
         count: 1,
         occurrences: [{ index: secondIndex, title: "2" }],
         evidenceId: "evidence-2",
@@ -181,6 +181,18 @@ describe("evidence protocol citations", () => {
     );
     expect(evidenceDetailPath("synthetic-evidence-a-1")).toBe(
       "/workspace/library?evidence_id=synthetic-evidence-a-1",
+    );
+  });
+
+  it("uses a book-facing label and a navigable reference for internal evidence locators", () => {
+    const [source] = extractCitationSources(
+      "[citation:private-evidence-id](evidence://private-evidence-id)",
+    );
+    expect(source?.title).toBe("资料出处");
+    expect(source?.domain).toBe("文献资料");
+    expect(source?.evidenceId).toBe("private-evidence-id");
+    expect(formatCitationMarkdownReference(source!)).toBe(
+      "[资料出处](/workspace/library?evidence_id=private-evidence-id)",
     );
   });
 });

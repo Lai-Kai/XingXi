@@ -50,6 +50,76 @@ parent-directory cache. Run frontend installation commands from `frontend/`.
 
 `components/workspace/manual-evaluations.tsx` owns the simple manual evaluation view. It displays saved answers and rule outcomes before the input form, excludes inactive cases from submission, explains stored failure reasons, and blocks empty observations. Case creation and automatic replay are collapsible. Manual success is a rule match, never proof of historical accuracy or a new model execution.
 
+Homepage presentation lives in `components/workspace/home/`, with source-bound
+topic/document grouping and prompt preferences in `core/home/model.ts`. Use only
+the current feed's real source identities for document leads and reading groups;
+do not reinstate fixed library metrics, pretend facsimiles, or confidence scores.
+Degraded-feed notices remain data metadata but are not rendered on the homepage.
+Its Evidence Sheet uses the shared detail panel in embedded mode and loads real
+original text only after selection. Source chips are explicit reading preferences
+appended to the user's prompt, not enforced structured-search filters. Quick cards
+fill and focus the editable composer. Preserve IME composition and Shift+Enter.
+
+`workspace-agent-entry.tsx` owns the highlighted “星羲智能体” sidebar link
+and closes mobile navigation after selection. The standard navigation renders
+this module only through that entry; project creation remains in its own module.
+Sidebar resizing defaults to 240px and preserves collapse, drag and history actions.
+
+All product history links use `core/threads/utils.ts -> pathOfThread`, which
+always returns `/workspace/chats/{encoded_thread_id}`. Runtime agent metadata
+must not select the retired generic `/workspace/agents/...` routes. Sharing uses
+the current browser origin, including localhost/SSH forwards. Module, logo and
+history links dismiss mobile navigation. Map/graph loading and failure states,
+and governance permission screens, must retain a mobile sidebar trigger.
+Clipboard actions reuse `core/clipboard.ts` and surface failed copies.
+
+`tests/e2e/ui-action-integrity.spec.ts` checks current desktop/mobile navigation,
+failure/permission exits, agent-tagged history, sharing, glossary copy and print.
+`navigation-actions.test.ts` and `page-fallbacks.test.ts` cover the relevant
+handlers and server-rendered states. Rstest bundles MapLibre to process its CSS
+for page tests. `../docs/ui-click-audit.md` records the source inventory and the
+browser validation boundary; inventory and test collection are never click-pass
+counts. The read-only inventory command is
+`node .scratch/ui-click-audit/inventory.cjs` from the repository root.
+
+`styles/globals.css` owns slate/blue light tokens and navy/blue dark tokens,
+including portals. Business pages and shared workspace containers use
+`xingxi-module`; structural cards use `xingxi-panel`. Shared chat providers wrap
+both new and historical conversations in `xingxi-chat`; answer cards, user bubbles,
+research traces, citations and the composer are styled in
+`styles/xingxi-workspace.css`. Extend these shared styles and semantic Tailwind
+tokens instead of adding hard-coded teal UI colors or editing generated primitives.
+Map controls share the same tokens; map tiles, renderer output and marker meanings
+remain independent. Success, error and review colors retain their semantic roles.
+Browser regressions cover module surfaces, settings portals, mobile navigation and
+the existing first-send/second-send conversation lifecycle.
+
+The 12026 host serves a prebuilt production frontend. `next.config.js` uses
+`DEERFLOW_FRONTEND_DIST_DIR` only when `NODE_ENV=production`; this host opts into
+`.next-production` or versioned `.next-releases/` directories so a build cannot
+overwrite a running development server's `.next` or active production output. Keep `.next` as the default for development and deployments without the
+opt-in (including existing Docker standalone paths). Preserve both generated
+production type includes in `tsconfig.json`. See
+`../docs/native-frontend-performance.md` for measured deployment evidence.
+
+## Product presentation boundary
+
+Product pages use business language. Do not render internal model or service
+names, tool parameters/results, reasoning, token usage, hashes, run/thread/job
+identifiers or raw diagnostic responses, including in tooltips, accessible labels
+and restored preferences. `core/ui/presentation.ts` deliberately returns only a
+caller-supplied business error message. Keep diagnostics in internal state and
+logs; never conceal source authorization, review status, provenance or licensing.
+
+`messages/message-group.tsx` renders a neutral live progress status and no
+completed trace. `messages/message-list.tsx` preserves final answers,
+clarification cards, citations and presented attachments while omitting internal
+processing and subtask details. Model auto-selection and saved runtime context
+continue internally; the main and auxiliary composers expose research modes
+rather than model identities or low-level reasoning controls. Saved token display
+preferences cannot restore technical information. Do not reintroduce these
+surfaces through exports, error toasts or unknown-metadata fallbacks.
+
 ## Commands
 
 | Command          | Purpose                                           |
@@ -117,11 +187,33 @@ links with a configured model: navigation must automatically send the starter
 prompt exactly once to `xingxi`, retain the bound query/document/Evidence scope,
 and keep the resulting conversation visible after its canonical URL changes.
 
+`citations/evidence-inspector.tsx` adds an optional conversation-level Evidence
+panel inside `SidecarProvider` and around `ChatBox`. It opens on demand, aggregates
+only visible AI citations, and reuses `EvidenceDetailPanel` with the existing
+authorized detail API. It docks from 1280px and uses a Sheet below that width;
+attachments/sidecar take precedence. Reset its state on thread changes without
+keying/remounting the chat subtree, so the first-send transition remains intact.
+`evidence-markdown.ts` translates only Evidence anchor URLs before Streamdown's
+sanitizer; ordinary unsafe URL handling stays in place. Citation actions preserve
+modified clicks, explicit new tabs, and library navigation outside this Provider.
+
+`core/scheduled-tasks/recipes.ts` contains four Mudu research starter schedules;
+titles, descriptions and prompts live together in the locale contract. Applying
+a recipe fills a fresh-thread draft only, with the form resolving its empty
+timezone. Creation and execution still use the existing scheduler lifecycle.
+Do not claim access to map point/review data unavailable to the running tools.
+See `../docs/branch-feature-integration.md` for branch provenance and validation.
+
 `/goal` and `/compact` are built-in composer commands, not skill activations. `src/components/workspace/input-box.tsx` intercepts `/goal`, `/goal clear`, and `/goal <condition>` before normal chat submission, calling Gateway `GET/PUT/DELETE /api/threads/{thread_id}/goal`. Setting `/goal <condition>` also submits the condition text as the next user task so the agent starts running immediately; status and clear do not start a run. Goal and compact requests are tied to the current `threadId` with an `AbortController`, so switching threads or unmounting the composer aborts in-flight requests and stale responses cannot update the new thread's composer state. The chat pages render `GoalStatus` above the composer from `AgentThreadState.goal`, with local optimistic state until the next stream `values` update arrives. `/compact` calls `POST /api/threads/{thread_id}/compact` to summarize older active context while leaving the full visible chat history intact; it is skipped on new/empty threads and blocked server-side while a run is in flight.
 
 Human input requests are a structured message protocol layered on normal chat history. The backend writes request payloads to `ToolMessage.artifact.human_input`, `src/core/messages/human-input.ts` owns the runtime validators/types, and `src/components/workspace/messages/human-input-card.tsx` renders the reusable card. `MessageList` owns answered/latest/pending state for visible cards, but derives answered responses from raw `thread.messages` because replies are hidden; pending cards clear when the hidden reply appears, when dispatch is dropped, or when a new `thread.error` reports an async stream failure. Page-level submit callbacks must send a normal human message and put `hide_from_ui: true` plus the response payload in the fourth `sendMessage(..., options)` argument as `options.additionalKwargs`; the third argument remains run context such as `{ agent_name }`. Composer entry points should disable normal bottom input while `hasOpenHumanInputRequest(...)` is true so users answer through the card and preserve response metadata.
 
-Tool-calling AI messages can contain user-visible text as well as `tool_calls`. `core/messages/utils.ts` keeps these turns in an `assistant:processing` group, and `components/workspace/messages/message-group.tsx` must render the visible text as a processing step instead of treating the message as only tool metadata. This preserves provider text such as error explanations or "trying another approach" notes during tool-heavy runs.
+Tool-calling AI messages may contain provider commentary as well as `tool_calls`.
+`core/messages/utils.ts` retains these records in `assistant:processing` groups
+for the runtime. The product presentation boundary supersedes the former trace
+view: hide intermediate commentary and diagnostics and show only neutral live
+progress. User-facing final answers and structured clarification requests have
+separate rendering paths and remain visible.
 
 ### Key Patterns
 
@@ -148,6 +240,8 @@ Tool-calling AI messages can contain user-visible text as well as `tool_calls`. 
 - `src/core/projects/api.ts` owns the research-project wire type and normalizes legacy SQLite `0`/`1` archive flags to booleans; `src/app/workspace/projects/page.tsx` owns active/archived counts and tab filtering. `tests/unit/core/projects/api.test.ts` and `tests/e2e/research-project-workspace.spec.ts` own the corresponding API and rendered-list regressions.
 
 ## Code Style
+
+Map reconstruction preview (2026-10-29): the primary “预览高斯点” action reads the native final.ply through the Gaussian renderer. The independently exported RGB variant is explicitly “预览普通点云”; never silently substitute it when Gaussian loading fails. Show the decoder's actual Gaussian count and retain all native splats in light mode (resolution only). Verify a real authenticated native model separately from RGB rendering and from mocked request-routing regressions. Keep exact point bindings and original file bytes. Evidence: `../docs/map-gaussian-preview-20261029.md`.
 
 - **Imports**: Enforced ordering (builtin → external → internal → parent → sibling), alphabetized, newlines between groups. Use inline type imports: `import { type Foo }`.
 - **Unused variables**: Prefix with `_`.
@@ -181,6 +275,32 @@ production pages by default; `DEERFLOW_FRONTEND_MODE=development` restores hot
 reload. See `../docs/native-frontend-performance.md`; production source changes
 require a new build/restart. Patch regressions live in root `tests/` and mock
 service launches without opening ports.
+
+## Xingxi settings and localization
+
+`core/i18n/context.tsx` owns client locale state and persistence; consumers in
+`useI18n` must not reinitialize preferences on every mount. Server and client
+share the `xingxi_locale` cookie and Chinese default. Ignore the inherited
+`locale` cookie and browser language; preserve explicit Xingxi language choices.
+Keep the HTML language synchronized when users switch languages.
+
+`core/settings/catalog-labels.ts` translates shipped public skills and common
+MCP entries for display while keeping API identities and custom metadata intact.
+The legacy platform-integration skill is excluded from the product settings list.
+`core/channels/presentation.ts` translates known provider and credential labels;
+connection instructions retain the real binding code. Settings errors must use
+localized copy. The about content is a Chinese Xingxi introduction with the
+resolved application version; do not restore upstream promotional links, external
+star charts or support addresses. Memory export filenames use `xingxi-memory-`.
+Locale, settings catalog and about tests cover these boundaries; browser settings
+coverage includes inherited English cookies, all sections and notification text.
+
+The skills settings page exposes the skills query's `refetch` as a localized
+reload action after a load failure, disabled while fetching. Keep permission
+errors separate and never replace an unavailable catalog with a static list.
+The Gateway owns the catalog and persisted enabled state; see
+`tests/unit/components/workspace/settings/skill-settings-page.test.ts` and the
+skills recovery scenario in `settings-localization.spec.ts`.
 
 ## Resources
 
@@ -228,6 +348,17 @@ must not reload the same payload. Filtering, timeline playback, route selection,
 and detail panes operate on the cached catalog and must not trigger a catalog
 request.
 
+`core/map/use-study-routes.ts` owns the page-local itinerary draft. When the
+catalog has no routes, it supplies the explicitly labelled Mudu half-day example
+requested for demonstrations. Its stops bind exact existing reference point and
+entity IDs; missing or corpus points must not be invented or substituted by name.
+The template is independent of knowledge Releases and road navigation. Supplied
+routes take priority. Add/move/remove/reset operate on resolved stops, preserve
+intentional empty drafts across custom-point refreshes, and invalidate both road
+geometry and pending planning responses. Edits last for the current page; export
+uses the edited order. Unit coverage is in `use-study-routes.test.ts`, with desktop
+and mobile interaction coverage in `map-business.spec.ts`.
+
 `core/map/use-map-catalog.ts` loads the Release catalog and authenticated custom
 points independently. A slow or failed custom-point request must not block the
 base map or become a fatal catalog error. Show a separate retry for custom points,
@@ -258,6 +389,21 @@ Keep public provenance visible in the details pane. Historical event selection o
 ## Operations Surface
 
 `components/workspace/agent-evaluation-cases.tsx` owns the “测试问题与方法” Sheet on the evaluation dashboard: searchable full questions, method/rule inspection, admin creation, soft deletion/restoration and single-question execution. Its SQL API contract lives in `core/operations/evaluations.ts`. Mutations invalidate both case and active-catalog queries; run counts follow the active catalog, and custom questions join the full suite. Creation must explain that the selected method retains its fixed synthetic retrieval/answer script. Readers can inspect but have no mutation controls. History and reruns preserve original snapshots. Browser regressions live in `tests/e2e/agent-evaluation-cases.spec.ts`.
+
+Automatic question reads and mutations use `/api/operations/evaluations/questions`
+and its subpaths; `/cases` belongs to the manual evaluation list. `loadAgentCases`
+checks the response's `cases` and `methods` arrays before returning data, so an
+incompatible success response shows the Sheet's error/retry state without a render
+exception. Transport tests cover the former manual-array response and browser
+regressions cover retry followed by question/method inspection. Only a 404 from
+`/questions` permits compatibility reads from the actual server `/catalog`.
+Validate replay mode and the returned case fields, preserve exact questions and
+rules, and mark `management_available: false`. Do not synthesize templates or
+method descriptions, fall back to manual `/cases`, or conceal permission/server/
+abort failures. Catalog-only reads hide deleted filtering, creation, mutations and
+single-case execution; retry probes `/questions` again and restores full controls
+when available. Unknown builtin identity stays null. The Sheet uses manual retry
+so a missing management endpoint does not cause repeated automatic 404 requests.
 
 `app/workspace/evaluations/page.tsx` owns the standalone **Agent 评测** workspace, exposed alongside map/graph through `workspace-nav-chat-list.tsx` only to governance readers and admins. The operations regression tab keeps manual evaluation and links to this route. `components/workspace/agent-evaluations.tsx` owns automatic replay batches, controls, current-batch KPI cards and table filters; `agent-evaluation-detail.tsx` owns the accessible trajectory Sheet, append-only review and exact Evidence locators. `core/operations/evaluations.ts` owns the wire contract, authenticated API calls and portable exports. Pure metrics/filter/distribution/sequence projection lives in `core/operations/evaluation-dashboard.ts`; the SVG charts in `agent-evaluation-charts.tsx` plot real planned/passed counts and only terminal pass rates, with hover/focus tooltips. History time filters and charts cover only the current server page (20 batches), not the complete database. KPI scope stays at the selected batch when the table is filtered; missing durations remain unavailable and measured sample counts are visible. Do not invent failure causes or same-condition version comparisons from these aggregates.
 
@@ -297,3 +443,22 @@ stream bodies ahead of the generic Gateway fallback in `next.config.js`; retain
 authentication, CSRF and Range headers. Unit regressions cover uploads over 10 MiB
 and partial downloads. Browser coverage lives in `map-create-point`,
 `map-create-model`, `map-reconstruction` and `reconstruction-proxy` specs.
+
+Map reconstruction file picking uses a shared Button to trigger its visually hidden native input in the same direct user event. Keep the input accessible via aria-labelledby, type=button to avoid accidental submission, 44px touch targets, keyboard activation and motion-safe displacement/scaling. Do not replace user-selected files with filesystem access or relax Gateway admin checks. Browser coverage lives in tests/e2e/map-reconstruction.spec.ts; see ../docs/map-upload-button.md.
+
+Map model completion: while the map is visible, refresh the registered-model catalog every15seconds and on visibility return; avoid state updates for unchanged results and abort on unmount. A closed reconstruction panel must not prevent completed models appearing. Retrying a transfer uses the explicit admin POST retry-connection endpoint, never a GET side effect.
+
+
+Map preview performance (2026-10-25): `core/map/ply-data.ts` owns pure scalar parsing and `ply-worker{,-client}.ts` transfers/cancels buffers off the UI thread; preview defaults to 300000 sampled RGB points, with an explicit full mode (5000000 max) rereading source and preserving original downloads/colors/alpha/bounds. `demand-render.ts` owns idle/hidden/offscreen scheduling, Orbit damping and Spark onDirty wakeups. Release observers, event listeners and GPU resources; expansion moves the same canvas. `display-performance.ts` caps map DPR (balanced1.5/light1), stores the local preference and disables overlay blur in light/drag modes. Do not alter OSM pixels or fixed model marker meanings. Model clients consume `/model-assets/page` and the dedicated upload proxy must permit that path. Deterministic software fixtures live in tests/fixtures/map-ply.ts; browser regressions include map-preview-performance.spec.ts. See ../docs/map-model-integrity-performance.md for limits.
+
+
+Parallel reconstruction (2026-10-27): the map panel uses server resumable and rgb_artifact_url fields for explicit resume and separate RGB preview/download. Keep the native Gaussian default and animated file picker; old jobs without these optional fields retain their previous controls. See ../docs/map-parallel-reconstruction.md.
+
+Map presentation (2026-10-27): product controls, progress and errors use functional descriptions rather than underlying model/service/project names. `core/map/model-presentation.ts` owns stage labels, fixed actionable error messages and source categories; unknown remote stages/errors must never echo raw payloads. Do not render reconstruction worker logs or generator brand metadata in the page. Preserve internal API values, server logs, provenance/permission semantics, licensing, user-authored model titles, and PLY/GLB format guidance.
+
+
+Map worker permission errors (2026-10-29): `modelErrorMessage` distinguishes request authorization from background execution failures. Pass `source="worker"` for stored job errors. Native EACCES/Errno 13/PermissionError indicates processing-service file access, never the signed-in user's role. Preserve the server's latest user-facing wording and `mapDataNotice` when applying local patches. The shared GPU lock directory needs reciprocal named-user/default ACLs; never unlink or replace active lock files to change access.
+
+Gaussian discrete-center display (2026-10-29): `GaussianViewer` separates rendering style (Gaussian / discrete centers) from PLY fidelity. Both styles share the decoded native model, canvas and camera; switching must not fetch another file, filter native centers, or mutate Spark unpacking objects. Discrete centers use opaque base colors and adjustable screen-pixel dots, not Gaussian ellipsoids/opacity blending. Batch extraction yields and respects cancellation. Preserve demand rendering, original PLY bytes, and explicit RGB artifact boundaries. Evidence: `../docs/map-discrete-points-20261029.md`.
+
+Building GLB preview loading (2026-10-29): static map assets carry separate content-addressed `previewSrc`/`previewSizeBytes`; `src`/`sizeBytes` remain the unmodified original. Default to the smaller preview, allow explicit original quality and download, and preserve exact point/entity bindings. `model-load-watchdog.ts` measures lack of strictly increasing progress, not total download duration; distinguish slow loading, idle timeout and WebGL context loss. Do not apply mesh simplification to native Gaussian PLY. See `../docs/map-glb-loading-20261029.md` and `../docs/map-glb-previews-20261029.json`.

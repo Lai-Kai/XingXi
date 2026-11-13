@@ -30,6 +30,7 @@ import {
   type ReviewStatus,
   type SourceChunkSet,
 } from "@/core/source-files/api";
+import { publicErrorMessage } from "@/core/ui/presentation";
 
 type SourceReviewDialogProps = {
   open: boolean;
@@ -50,7 +51,7 @@ const statusText: Record<ReviewStatus, string> = {
 };
 
 const statusClass: Record<ReviewStatus, string> = {
-  pending: "bg-[#edf2f3] text-[#52656a]",
+  pending: "bg-muted/60 text-muted-foreground",
   reviewed: "bg-[#e3f2e9] text-[#286846]",
   rejected: "bg-[#f8e8e6] text-[#963d36]",
   disputed: "bg-[#fff0d5] text-[#855c16]",
@@ -98,10 +99,7 @@ export function SourceReviewDialog({
         if (active) setQueue(nextQueue);
       })
       .catch((reason: unknown) => {
-        if (active)
-          setError(
-            reason instanceof Error ? reason.message : "无法读取复核资料",
-          );
+        if (active) setError(publicErrorMessage(reason, "无法读取复核资料"));
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -150,7 +148,7 @@ export function SourceReviewDialog({
       setActiveId("");
       setSelected([]);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "无法读取复核队列");
+      setError(publicErrorMessage(reason, "无法读取复核队列"));
     } finally {
       setLoading(false);
     }
@@ -185,7 +183,7 @@ export function SourceReviewDialog({
       setSelected([]);
       setComment("");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "无法提交复核结论");
+      setError(publicErrorMessage(reason, "无法提交复核结论"));
     } finally {
       setSaving(false);
     }
@@ -199,7 +197,9 @@ export function SourceReviewDialog({
       await finalizeReview(documentId, fileId, chunkSetId, ingestionJobId);
       onFinalized?.();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "复核门禁尚未通过");
+      setError(
+        publicErrorMessage(reason, "尚有内容未完成复核，请核对后重试。"),
+      );
     } finally {
       setSaving(false);
     }
@@ -208,23 +208,23 @@ export function SourceReviewDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[92vh] w-[calc(100vw-1.5rem)] max-w-6xl flex-col overflow-hidden p-0">
-        <DialogHeader className="border-b border-[#dbe4e5] px-5 py-4 pr-12">
+        <DialogHeader className="border-border border-b px-5 py-4 pr-12">
           <DialogTitle className="flex items-center gap-2 text-base">
-            <ClipboardCheck className="size-4 text-[#2f737d]" />
+            <ClipboardCheck className="text-primary size-4" />
             文本人工复核
           </DialogTitle>
           <DialogDescription className="truncate">{title}</DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-wrap items-center gap-3 border-b border-[#e1e8e9] px-5 py-3">
-          <div className="flex rounded-md border border-[#ccd9db] bg-[#f4f7f7] p-0.5">
+        <div className="border-border flex flex-wrap items-center gap-3 border-b px-5 py-3">
+          <div className="border-border bg-muted/60 flex rounded-md border p-0.5">
             {(["page", "chunk"] as const).map((value) => (
               <button
                 key={value}
                 type="button"
                 aria-pressed={mode === value}
                 onClick={() => setMode(value)}
-                className={`h-8 rounded px-3 text-sm ${mode === value ? "bg-white text-[#203034] shadow-sm" : "text-[#64767a]"}`}
+                className={`h-8 rounded px-3 text-sm ${mode === value ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"}`}
               >
                 {value === "page" ? "按页复核" : "按片段复核"}
               </button>
@@ -234,23 +234,23 @@ export function SourceReviewDialog({
             value={chunkSetId}
             onChange={(event) => void changeVersion(event.target.value)}
             disabled={loading || versions.length === 0}
-            className="h-9 rounded-md border border-[#ccd9db] bg-white px-3 text-sm"
+            className="border-border bg-card h-9 rounded-md border px-3 text-sm"
           >
-            {versions.length === 0 && <option value="">暂无切分版本</option>}
-            {versions.map((version) => (
+            {versions.length === 0 && <option value="">暂无复核版本</option>}
+            {versions.map((version, index) => (
               <option key={version.id} value={version.id}>
-                {version.policy.split_version}
+                第 {index + 1} 版
               </option>
             ))}
           </select>
-          <span className="text-xs text-[#6e7e82]">
+          <span className="text-muted-foreground text-xs">
             已选 {selected.length} 项
           </span>
           <a
             href={sourceFileContentUrl(documentId, fileId)}
             target="_blank"
             rel="noreferrer"
-            className="flex h-9 items-center gap-2 rounded-md border border-[#8aafb4] px-3 text-sm text-[#275f68] hover:bg-[#edf5f5]"
+            className="border-primary text-primary hover:bg-muted/60 flex h-9 items-center gap-2 rounded-md border px-3 text-sm"
           >
             <ExternalLink className="size-4" />
             打开原件
@@ -259,7 +259,7 @@ export function SourceReviewDialog({
             type="button"
             disabled={!ingestionJobId || !queue || saving}
             onClick={() => void finalize()}
-            className="ml-auto flex h-9 items-center gap-2 rounded-md bg-[#202b2e] px-3 text-sm text-white disabled:opacity-40"
+            className="bg-primary text-primary-foreground ml-auto flex h-9 items-center gap-2 rounded-md px-3 text-sm disabled:opacity-40"
           >
             <Check className="size-4" />
             完成复核
@@ -273,21 +273,21 @@ export function SourceReviewDialog({
         )}
 
         {loading ? (
-          <div className="flex min-h-96 items-center justify-center text-sm text-[#6d7c80]">
+          <div className="text-muted-foreground flex min-h-96 items-center justify-center text-sm">
             <LoaderCircle className="mr-2 size-4 animate-spin" />
             正在读取复核资料
           </div>
         ) : !queue ? (
-          <div className="flex min-h-96 items-center justify-center px-6 text-center text-sm text-[#6d7c80]">
-            该文件尚无可复核的切分版本
+          <div className="text-muted-foreground flex min-h-96 items-center justify-center px-6 text-center text-sm">
+            该文件尚无可复核的文本
           </div>
         ) : (
           <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)]">
-            <div className="max-h-56 overflow-y-auto border-b border-[#dfe7e8] lg:max-h-none lg:border-r lg:border-b-0">
+            <div className="border-border max-h-56 overflow-y-auto border-b lg:max-h-none lg:border-r lg:border-b-0">
               {targets.map((target) => (
                 <div
                   key={target.id}
-                  className={`grid grid-cols-[24px_minmax(0,1fr)] gap-2 border-b border-[#e8eded] px-3 py-3 ${activeId === target.id ? "bg-[#eef5f5]" : "bg-white"}`}
+                  className={`border-border grid grid-cols-[24px_minmax(0,1fr)] gap-2 border-b px-3 py-3 ${activeId === target.id ? "bg-muted/60" : "bg-card"}`}
                 >
                   <input
                     type="checkbox"
@@ -299,8 +299,12 @@ export function SourceReviewDialog({
                           : [...current, target.id],
                       )
                     }
-                    className="mt-0.5 size-4 accent-[#277986]"
-                    aria-label={`选择 ${target.id}`}
+                    className="accent-primary mt-0.5 size-4"
+                    aria-label={
+                      mode === "page"
+                        ? `选择第 ${"page_number" in target ? target.page_number : ""} 页`
+                        : `选择片段 ${"chunk_index" in target ? target.chunk_index + 1 : ""}`
+                    }
                   />
                   <button
                     type="button"
@@ -325,24 +329,14 @@ export function SourceReviewDialog({
             <div className="min-h-0 overflow-y-auto px-4 py-4 sm:px-5">
               {activeTarget && (
                 <>
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-[#617277]">
-                    {"ocr_confidence" in activeTarget && (
-                      <span>
-                        OCR{" "}
-                        {Math.round((activeTarget.ocr_confidence ?? 0) * 100)}%
-                      </span>
-                    )}
+                  <div className="text-muted-foreground flex flex-wrap items-center gap-2 text-xs">
                     {"folio_label" in activeTarget &&
                       activeTarget.folio_label && (
                         <span>叶码 {activeTarget.folio_label}</span>
                       )}
-                    {"rotation_degrees" in activeTarget &&
-                      activeTarget.rotation_degrees !== 0 && (
-                        <span>旋转 {activeTarget.rotation_degrees}°</span>
-                      )}
                     {"cleaning_change_count" in activeTarget && (
                       <span>
-                        清洗变更 {activeTarget.cleaning_change_count} 处
+                        文字整理 {activeTarget.cleaning_change_count} 处
                       </span>
                     )}
                     {"page_start" in activeTarget && (
@@ -353,24 +347,24 @@ export function SourceReviewDialog({
                   </div>
                   <div className="mt-3 grid gap-3 md:grid-cols-2">
                     <section>
-                      <h3 className="mb-2 text-xs font-medium text-[#65767a]">
+                      <h3 className="text-muted-foreground mb-2 text-xs font-medium">
                         原始文本
                       </h3>
-                      <pre className="min-h-52 border-l-2 border-[#98adb1] bg-[#f7f9f9] p-3 font-serif text-sm leading-7 whitespace-pre-wrap text-[#273438]">
+                      <pre className="border-primary bg-muted/60 text-foreground min-h-52 border-l-2 p-3 font-serif text-sm leading-7 whitespace-pre-wrap">
                         {activeTarget.raw_text}
                       </pre>
                     </section>
                     <section>
-                      <h3 className="mb-2 text-xs font-medium text-[#65767a]">
-                        清洗文本
+                      <h3 className="text-muted-foreground mb-2 text-xs font-medium">
+                        整理后文本
                       </h3>
-                      <pre className="min-h-52 border-l-2 border-[#4f8c95] bg-[#f2f7f7] p-3 font-serif text-sm leading-7 whitespace-pre-wrap text-[#273438]">
+                      <pre className="border-primary bg-muted/60 text-foreground min-h-52 border-l-2 p-3 font-serif text-sm leading-7 whitespace-pre-wrap">
                         {activeTarget.clean_text}
                       </pre>
                     </section>
                   </div>
                   <label className="mt-4 block">
-                    <span className="mb-1.5 block text-xs font-medium text-[#65767a]">
+                    <span className="text-muted-foreground mb-1.5 block text-xs font-medium">
                       复核意见
                     </span>
                     <textarea
@@ -378,10 +372,10 @@ export function SourceReviewDialog({
                       onChange={(event) => setComment(event.target.value)}
                       rows={3}
                       placeholder="退回或争议时必填"
-                      className="w-full resize-y rounded-md border border-[#ccd9db] px-3 py-2 text-sm outline-none focus:border-[#5a949d]"
+                      className="border-border focus:border-primary w-full resize-y rounded-md border px-3 py-2 text-sm outline-none"
                     />
                   </label>
-                  <div className="sticky bottom-0 z-10 -mx-4 mt-3 flex flex-wrap gap-2 border-t border-[#e0e7e8] bg-white px-4 py-3 sm:-mx-5 sm:px-5">
+                  <div className="xingxi-panel border-border bg-card sticky bottom-0 z-10 -mx-4 mt-3 flex flex-wrap gap-2 rounded-2xl border-t px-4 py-3 sm:-mx-5 sm:px-5">
                     <button
                       type="button"
                       disabled={saving}
@@ -411,14 +405,14 @@ export function SourceReviewDialog({
                     </button>
                   </div>
                   {history.length > 0 && (
-                    <section className="mt-5 border-t border-[#e0e7e8] pt-4">
-                      <h3 className="text-xs font-medium text-[#65767a]">
+                    <section className="border-border mt-5 border-t pt-4">
+                      <h3 className="text-muted-foreground text-xs font-medium">
                         复核历史
                       </h3>
                       {history.map((record) => (
                         <div
                           key={record.id}
-                          className="mt-2 flex gap-3 text-xs text-[#596b70]"
+                          className="text-muted-foreground mt-2 flex gap-3 text-xs"
                         >
                           <span>v{record.revision}</span>
                           <span>{statusText[record.decision]}</span>

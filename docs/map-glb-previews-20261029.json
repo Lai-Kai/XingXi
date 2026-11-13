@@ -1,0 +1,185 @@
+{
+  "profile": {
+    "target_triangles": 40000,
+    "max_error": 0.05,
+    "texture_max_dimension": 768,
+    "texture_format": "webp",
+    "position_bits": 14,
+    "cpu_only": true,
+    "dependencies": {
+      "@gltf-transform/core": "4.2.1",
+      "@gltf-transform/extensions": "4.2.1",
+      "@gltf-transform/functions": "4.2.1",
+      "meshoptimizer": "0.24.0",
+      "sharp": "0.33.5"
+    }
+  },
+  "models": [
+    {
+      "name": "bangyan",
+      "src": "/models/bangyan/v1/model.c6345f1a451d.glb",
+      "originalSize": 65870372,
+      "originalSha256": "c6345f1a451d4d6e1767f81b6f529c72db5b4de4f87adea6ae10990d309e0da6",
+      "previewSrc": "/models/bangyan/v1/preview.3a1b0f52d3fc.glb",
+      "previewSize": 5639684,
+      "previewSha256": "3a1b0f52d3fc30b85e081d4b04dacd1c94f183952f7f0bcabadc5a4c8e5da2b2",
+      "originalTriangles": 1793005,
+      "previewTriangles": 185728,
+      "textures": [
+        [
+          768,
+          768
+        ],
+        [
+          768,
+          768
+        ],
+        [
+          768,
+          768
+        ]
+      ],
+      "seconds": 3.758
+    },
+    {
+      "name": "gusong-tree",
+      "src": "/models/gusong-tree/v1/model.59f2b1689b0f.glb",
+      "originalSize": 71633044,
+      "originalSha256": "59f2b1689b0fbda73222e3d81dc8ea4f027772d0ed2f5ba5c65d5f6823e253cb",
+      "previewSrc": "/models/gusong-tree/v1/preview.343e015c347e.glb",
+      "previewSize": 3862136,
+      "previewSha256": "343e015c347ecb4f8d1baec1881436ebda8a037f0d8b69454702cc28a8f9d68c",
+      "originalTriangles": 1907038,
+      "previewTriangles": 127212,
+      "textures": [
+        [
+          768,
+          768
+        ],
+        [
+          768,
+          768
+        ],
+        [
+          768,
+          768
+        ]
+      ],
+      "seconds": 3.367
+    },
+    {
+      "name": "hongyin",
+      "src": "/models/hongyin/v1/model.af8089412860.glb",
+      "originalSize": 59741080,
+      "originalSha256": "af8089412860fdf34c56a985b4075551cdc5bd03a0b9d0ab00eafbd348abc575",
+      "previewSrc": "/models/hongyin/v1/preview.630df9ef7231.glb",
+      "previewSize": 3411684,
+      "previewSha256": "630df9ef723166a547d5d4dcaf5a246b3d7da9aa3f4f1346d20a0761e06a1b43",
+      "originalTriangles": 1877394,
+      "previewTriangles": 116827,
+      "textures": [
+        [
+          768,
+          768
+        ]
+      ],
+      "seconds": 2.793
+    },
+    {
+      "name": "lingyan-gate",
+      "src": "/models/lingyan-gate/v1/model.00f2396c74d0.glb",
+      "originalSize": 67757752,
+      "originalSha256": "00f2396c74d0362b45445538f43073effbcb0847c2465bb8c4a492c17d97da7c",
+      "previewSrc": "/models/lingyan-gate/v1/preview.517ce2299ead.glb",
+      "previewSize": 1098512,
+      "previewSha256": "517ce2299ead2bc58d4bbf2bb89b66bb29ff3a3deeb529d00b56a125dd12a1cd",
+      "originalTriangles": 1923511,
+      "previewTriangles": 39997,
+      "textures": [
+        [
+          768,
+          768
+        ],
+        [
+          768,
+          768
+        ],
+        [
+          768,
+          768
+        ]
+      ],
+      "seconds": 2.648
+    },
+    {
+      "name": "mingyue",
+      "src": "/models/mingyue/v1/model.b2c499e22f05.glb",
+      "originalSize": 58305884,
+      "originalSha256": "b2c499e22f05bfc295ee51dcadefd5faafb91f6cfe484d9a848b562a59e6d8d9",
+      "previewSrc": "/models/mingyue/v1/preview.8a3168870452.glb",
+      "previewSize": 2531800,
+      "previewSha256": "8a3168870452b86d716c22c0e4e8cad75231793b8645b4a20351c6031a3f3cc7",
+      "originalTriangles": 1783929,
+      "previewTriangles": 79643,
+      "textures": [
+        [
+          768,
+          768
+        ]
+      ],
+      "seconds": 2.664
+    },
+    {
+      "name": "mudu-gate",
+      "src": "/models/mudu-gate/v1/model.3966d61b08b7.glb",
+      "originalSize": 20577288,
+      "originalSha256": "3966d61b08b739cc0ca26087126140409bada0d8b13afada772a6a67986d1ca0",
+      "previewSrc": "/models/mudu-gate/v1/preview.9cf1b0ace04a.glb",
+      "previewSize": 1263212,
+      "previewSha256": "9cf1b0ace04a2bf5b05639c555120395c2d1f1e534e9d1bd4039cef295002e8d",
+      "originalTriangles": 288130,
+      "previewTriangles": 40000,
+      "textures": [
+        [
+          768,
+          768
+        ],
+        [
+          768,
+          768
+        ],
+        [
+          768,
+          768
+        ]
+      ],
+      "seconds": 0.936
+    },
+    {
+      "name": "yongan-bridge",
+      "src": "/models/yongan-bridge/v1/model.39ae9c010f74.glb",
+      "originalSize": 75036744,
+      "originalSha256": "39ae9c010f74b500cffd9be54adbc1cbd4fd2439f67f8179695e40a257639346",
+      "previewSrc": "/models/yongan-bridge/v1/preview.fd3b7fc4b565.glb",
+      "previewSize": 6141388,
+      "previewSha256": "fd3b7fc4b565717e524f2c769b507c3e0fc4262c4e3802c8735be7b4d1438fba",
+      "originalTriangles": 1930727,
+      "previewTriangles": 200181,
+      "textures": [
+        [
+          768,
+          768
+        ],
+        [
+          768,
+          768
+        ],
+        [
+          768,
+          768
+        ]
+      ],
+      "seconds": 3.459
+    }
+  ]
+}

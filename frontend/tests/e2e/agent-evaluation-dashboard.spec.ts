@@ -46,10 +46,10 @@ test("standalone navigation, real batch metrics, tooltips and combined filters",
   ]);
   await page.goto("/workspace/evaluations");
   await expect(
-    page.getByRole("link", { name: "Agent 评测", exact: true }),
+    page.getByRole("link", { name: "问答评测", exact: true }),
   ).toHaveAttribute("href", "/workspace/evaluations");
   await expect(
-    page.getByRole("heading", { name: "星羲 Agent 自动评测" }),
+    page.getByRole("heading", { name: "星羲问答评测" }),
   ).toBeVisible();
   await expect(
     page
@@ -77,7 +77,7 @@ test("standalone navigation, real batch metrics, tooltips and combined filters",
     .first()
     .hover();
   await expect(page.getByRole("tooltip")).toContainText("60.0%");
-  await page.getByRole("heading", { name: "星羲 Agent 自动评测" }).hover();
+  await page.getByRole("heading", { name: "星羲问答评测" }).hover();
   await page.screenshot({
     path: testInfo.outputPath("evaluation-dashboard-desktop.png"),
     fullPage: true,
@@ -86,28 +86,23 @@ test("standalone navigation, real batch metrics, tooltips and combined filters",
   await page.getByLabel("执行模式筛选").selectOption("pro");
   await page.getByLabel("结果筛选").selectOption("passed");
   await page.getByLabel("搜索测试记录").fill("中断");
-  const row = page.getByRole("row").filter({ hasText: "timeout-pro" });
+  const row = page.getByRole("row").filter({ hasText: "超时后终止真实运行" });
   await expect(row.getByText("通过", { exact: true })).toBeVisible();
   await expect(
     page
       .getByRole("region", { name: "测试记录", exact: true })
       .getByRole("row"),
   ).toHaveCount(2);
-  await row.getByRole("button", { name: /查看轨迹/ }).click();
+  await row.getByRole("button", { name: /查看详情/ }).click();
   const dialog = page.getByRole("dialog");
   await expect(
     dialog.getByText("运行已按用例预期中断。", { exact: true }),
   ).toBeVisible();
   await expect(
     dialog.getByText("batch-current-run-4", { exact: true }),
-  ).toBeVisible();
-  const timeline = await dialog.locator("ol > li").allTextContents();
-  expect(timeline.findIndex((value) => value.includes("#2"))).toBeLessThan(
-    timeline.findIndex((value) => value.includes("#3")),
-  );
-  await expect(
-    dialog.locator("pre").filter({ hasText: '"query"' }),
-  ).toContainText("测试桥");
+  ).toHaveCount(0);
+  await expect(dialog.locator("pre")).toHaveCount(0);
+  await expect(dialog.getByText("调用参数", { exact: true })).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(dialog).not.toBeVisible();
   await page.getByLabel("搜索测试记录").fill("不存在的用例");
@@ -121,7 +116,7 @@ test("evidence locators and a responsive trajectory drawer remain readable on mo
   await mockEvaluations(page, [evaluationFixture()]);
   await page.goto("/workspace/evaluations");
   await page
-    .getByRole("button", { name: "有据回答与真实引用 · 查看轨迹" })
+    .getByRole("button", { name: "有据回答与真实引用 · 查看详情" })
     .click();
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByText("测试资料（合成） · 第 1 页")).toBeVisible();
@@ -180,7 +175,7 @@ test("API failures remain errors and can recover without demo fallback", async (
       : route.fallback(),
   );
   await page.goto("/workspace/evaluations");
-  await expect(page.getByRole("alert")).toContainText("评测记录读取失败");
+  await expect(page.getByRole("alert")).toContainText("暂时无法读取或更新评测记录");
   await expect(page.getByRole("table")).not.toBeVisible();
   failed = false;
   await page.getByRole("button", { name: "重试读取" }).click();
@@ -252,10 +247,10 @@ test("governance readers can inspect records without execution or review control
     page.getByRole("button", { name: "重跑未通过项" }),
   ).not.toBeVisible();
   await expect(
-    page.getByRole("button", { name: "JSON", exact: true }),
+    page.getByRole("button", { name: "下载表格报告", exact: true }),
   ).toBeVisible();
   await page
-    .getByRole("button", { name: "有据回答与真实引用 · 查看轨迹" })
+    .getByRole("button", { name: "有据回答与真实引用 · 查看详情" })
     .click();
   await expect(
     page.getByRole("dialog").getByLabel("复核意见"),
@@ -284,10 +279,10 @@ test("users without governance access lose the navigation and see a permission s
     document.dispatchEvent(new Event("visibilitychange")),
   );
   await expect(
-    page.getByRole("heading", { name: "无 Agent 评测查看权限" }),
+    page.getByRole("heading", { name: "无问答评测查看权限" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("link", { name: "Agent 评测", exact: true }),
+    page.getByRole("link", { name: "问答评测", exact: true }),
   ).not.toBeVisible();
   await expect(page.getByRole("table")).not.toBeVisible();
 });

@@ -57,6 +57,7 @@ import {
   pageSourceDocuments,
   type SourceDocumentSummary,
 } from "@/core/source-files/api";
+import { publicErrorMessage } from "@/core/ui/presentation";
 
 const recordKinds: Array<{
   id: ResearchRecordKind;
@@ -139,7 +140,7 @@ export default function ResearchProjectWorkspacePage() {
       setRecords(nextRecords);
       setAvailableDocuments(sourcePage.items);
     } catch (error) {
-      setLoadError(error instanceof Error ? error.message : "无法读取研究项目");
+      setLoadError(publicErrorMessage(error, "无法读取研究项目"));
     } finally {
       setLoading(false);
     }
@@ -177,7 +178,7 @@ export default function ResearchProjectWorkspacePage() {
           : current,
       );
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : "无法添加文献");
+      setActionError(publicErrorMessage(error, "无法添加文献"));
     } finally {
       setAddingDocumentId(null);
     }
@@ -202,7 +203,7 @@ export default function ResearchProjectWorkspacePage() {
       setSearchHits([]);
       setSearchMessage("");
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : "无法移除文献");
+      setActionError(publicErrorMessage(error, "无法移除文献"));
     } finally {
       setRemovingDocumentId(null);
     }
@@ -222,9 +223,7 @@ export default function ResearchProjectWorkspacePage() {
       setRecords((current) => [created, ...current]);
       setRecordContent("");
     } catch (error) {
-      setActionError(
-        error instanceof Error ? error.message : "无法保存研究记录",
-      );
+      setActionError(publicErrorMessage(error, "无法保存研究记录"));
     } finally {
       setSavingRecord(false);
     }
@@ -239,9 +238,7 @@ export default function ResearchProjectWorkspacePage() {
         current.filter((record) => record.id !== recordId),
       );
     } catch (error) {
-      setActionError(
-        error instanceof Error ? error.message : "无法删除研究记录",
-      );
+      setActionError(publicErrorMessage(error, "无法删除研究记录"));
     } finally {
       setDeletingRecordId(null);
     }
@@ -263,7 +260,7 @@ export default function ResearchProjectWorkspacePage() {
       setSearchMessage(result.message);
     } catch (error) {
       setSearchHits([]);
-      setActionError(error instanceof Error ? error.message : "项目内检索失败");
+      setActionError(publicErrorMessage(error, "项目内检索失败"));
     } finally {
       setSearching(false);
     }
@@ -271,7 +268,7 @@ export default function ResearchProjectWorkspacePage() {
 
   if (loading) {
     return (
-      <main className="size-full overflow-y-auto bg-[#f7fafb]">
+      <main className="xingxi-module bg-muted/60 size-full overflow-y-auto">
         <BusinessMobileHeader title="研究项目" />
         <BusinessLoadingState label="正在读取项目工作区…" />
       </main>
@@ -280,7 +277,7 @@ export default function ResearchProjectWorkspacePage() {
 
   if (loadError || !project) {
     return (
-      <main className="size-full overflow-y-auto bg-[#f7fafb]">
+      <main className="xingxi-module bg-muted/60 size-full overflow-y-auto">
         <BusinessMobileHeader title="研究项目" />
         <BusinessErrorState
           description={loadError ?? "研究项目不存在"}
@@ -296,28 +293,28 @@ export default function ResearchProjectWorkspacePage() {
   });
 
   return (
-    <main className="size-full overflow-y-auto bg-[#f7fafb] text-[#202b2e]">
+    <main className="xingxi-module bg-muted/60 text-foreground size-full overflow-y-auto">
       <BusinessMobileHeader title={project.name} />
       <div className="mx-auto min-h-full max-w-7xl px-4 py-7 sm:px-8 lg:px-10 lg:py-10">
         <Link
           href="/workspace/projects"
-          className="inline-flex items-center gap-2 text-sm text-[#587075] hover:text-[#245f68]"
+          className="text-muted-foreground hover:text-primary inline-flex items-center gap-2 text-sm"
         >
           <ArrowLeft className="size-4" />
           返回研究项目
         </Link>
 
-        <header className="mt-5 flex flex-col justify-between gap-5 border-b border-[#d9e3e4] pb-7 md:flex-row md:items-end">
+        <header className="border-border mt-5 flex flex-col justify-between gap-5 border-b pb-7 md:flex-row md:items-end">
           <div>
             <div className="flex items-center gap-3">
-              <span className="flex size-11 items-center justify-center rounded-md bg-[#dfedef] text-[#2c6d77]">
+              <span className="bg-accent text-primary flex size-11 items-center justify-center rounded-md">
                 <BookOpenText className="size-5" />
               </span>
               <div>
                 <h1 className="text-2xl font-semibold sm:text-3xl">
                   {project.name}
                 </h1>
-                <p className="mt-1 text-sm text-[#64777c]">
+                <p className="text-muted-foreground mt-1 text-sm">
                   {documents.length} 份文献 · {records.length} 条研究记录 ·
                   创建于 {formatDate(project.created_at)}
                 </p>
@@ -350,9 +347,9 @@ export default function ResearchProjectWorkspacePage() {
           </div>
         )}
 
-        <section className="mt-8 border-b border-[#d9e3e4] pb-9">
+        <section className="border-border mt-8 border-b pb-9">
           <div className="flex items-center gap-2">
-            <FileSearch className="size-5 text-[#36747d]" />
+            <FileSearch className="text-primary size-5" />
             <h2 className="text-lg font-medium">项目内检索</h2>
             <BusinessStatusBadge status="active" />
           </div>
@@ -388,14 +385,14 @@ export default function ResearchProjectWorkspacePage() {
           {(searchMessage || searchHits.length > 0) && (
             <div className="mt-5 max-w-4xl space-y-3">
               {searchMessage && (
-                <p className="text-sm text-[#607378]">{searchMessage}</p>
+                <p className="text-muted-foreground text-sm">{searchMessage}</p>
               )}
               {searchHits.map((hit) => (
                 <article
                   key={hit.citation.evidence_id}
-                  className="rounded-md border border-[#d8e2e3] bg-white p-4"
+                  className="xingxi-panel border-border bg-card rounded-2xl border p-4"
                 >
-                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[#667a7f]">
+                  <div className="text-muted-foreground flex flex-wrap items-center justify-between gap-2 text-xs">
                     <span>
                       {hit.citation.document_title}
                       {hit.citation.edition ? ` · ${hit.citation.edition}` : ""}
@@ -408,12 +405,12 @@ export default function ResearchProjectWorkspacePage() {
                       页
                     </span>
                   </div>
-                  <p className="mt-2 text-sm leading-7 text-[#2f3d40]">
+                  <p className="text-foreground mt-2 text-sm leading-7">
                     {hit.citation.quote}
                   </p>
                   <Link
                     href={`/workspace/library?evidence_id=${encodeURIComponent(hit.citation.evidence_id)}`}
-                    className="mt-3 inline-flex text-xs font-medium text-[#27707a] hover:text-[#174e56]"
+                    className="text-primary hover:text-primary mt-3 inline-flex text-xs font-medium"
                   >
                     查看关联资料出处
                   </Link>
@@ -428,7 +425,7 @@ export default function ResearchProjectWorkspacePage() {
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h2 className="text-lg font-medium">项目文献</h2>
-                <p className="mt-1 text-sm text-[#6b7d81]">
+                <p className="text-muted-foreground mt-1 text-sm">
                   检索和智能体研究只使用这里关联的文献。
                 </p>
               </div>
@@ -446,7 +443,7 @@ export default function ResearchProjectWorkspacePage() {
                 icon={BookOpenText}
                 title="项目还没有文献"
                 description="添加文献后，可以限定范围检索并启动智能体研究。"
-                className="mt-5 min-h-72 border-t border-[#d9e3e4]"
+                className="border-border mt-5 min-h-72 border-t"
                 action={
                   <Button
                     variant="outline"
@@ -462,17 +459,17 @@ export default function ResearchProjectWorkspacePage() {
                 {documents.map((document) => (
                   <article
                     key={document.id}
-                    className="flex items-start justify-between gap-4 rounded-md border border-[#d8e2e3] bg-white p-4"
+                    className="xingxi-panel border-border bg-card flex items-start justify-between gap-4 rounded-2xl border p-4"
                   >
                     <div className="min-w-0">
-                      <h3 className="font-medium text-[#263438]">
+                      <h3 className="text-foreground font-medium">
                         {document.title}
                       </h3>
-                      <p className="mt-1 text-xs leading-5 text-[#6a7d81]">
+                      <p className="text-muted-foreground mt-1 text-xs leading-5">
                         {document.edition} · {document.source_institution} ·
                         来源等级 {document.source_level}
                       </p>
-                      <p className="mt-2 text-xs text-[#849195]">
+                      <p className="text-muted-foreground mt-2 text-xs">
                         加入于 {formatDate(document.added_at)}
                       </p>
                     </div>
@@ -481,7 +478,7 @@ export default function ResearchProjectWorkspacePage() {
                       title="从项目移除"
                       disabled={removingDocumentId === document.id}
                       onClick={() => void removeDocument(document.id)}
-                      className="flex size-8 shrink-0 items-center justify-center rounded-md text-[#77878b] hover:bg-[#f7eaea] hover:text-[#a34343] disabled:cursor-wait disabled:opacity-50"
+                      className="text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md hover:bg-[#f7eaea] hover:text-[#a34343] disabled:cursor-wait disabled:opacity-50"
                     >
                       {removingDocumentId === document.id ? (
                         <Loader2 className="size-4 animate-spin" />
@@ -498,11 +495,11 @@ export default function ResearchProjectWorkspacePage() {
           <section>
             <div>
               <h2 className="text-lg font-medium">研究记录</h2>
-              <p className="mt-1 text-sm text-[#6b7d81]">
+              <p className="text-muted-foreground mt-1 text-sm">
                 保存问题、阅读笔记和有资料出处支持的阶段结论。
               </p>
             </div>
-            <div className="mt-5 flex gap-1 rounded-md bg-[#eaf1f2] p-1">
+            <div className="bg-accent mt-5 flex gap-1 rounded-md p-1">
               {recordKinds.map((kind) => {
                 const Icon = kind.icon;
                 return (
@@ -512,8 +509,8 @@ export default function ResearchProjectWorkspacePage() {
                     onClick={() => setRecordKind(kind.id)}
                     className={`flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md px-2 text-xs ${
                       recordKind === kind.id
-                        ? "bg-white font-medium text-[#286873] shadow-sm"
-                        : "text-[#63767a] hover:text-[#2d5960]"
+                        ? "bg-card text-primary font-medium shadow-sm"
+                        : "text-muted-foreground hover:text-primary"
                     }`}
                   >
                     <Icon className="size-3.5" />
@@ -528,7 +525,7 @@ export default function ResearchProjectWorkspacePage() {
               placeholder={
                 recordKinds.find((item) => item.id === recordKind)?.placeholder
               }
-              className="mt-3 min-h-28 resize-y bg-white"
+              className="bg-card mt-3 min-h-28 resize-y"
             />
             <Button
               className="mt-2 w-full"
@@ -544,18 +541,18 @@ export default function ResearchProjectWorkspacePage() {
             </Button>
 
             {records.length === 0 ? (
-              <p className="mt-6 border-t border-[#d9e3e4] pt-6 text-center text-sm text-[#7a898d]">
+              <p className="border-border text-muted-foreground mt-6 border-t pt-6 text-center text-sm">
                 暂无研究记录
               </p>
             ) : (
-              <div className="mt-6 space-y-3 border-t border-[#d9e3e4] pt-5">
+              <div className="border-border mt-6 space-y-3 border-t pt-5">
                 {records.map((record) => (
                   <article
                     key={record.id}
-                    className="rounded-md border border-[#d8e2e3] bg-white p-4"
+                    className="xingxi-panel border-border bg-card rounded-2xl border p-4"
                   >
                     <div className="flex items-center justify-between gap-3">
-                      <span className="text-xs font-medium text-[#29717b]">
+                      <span className="text-primary text-xs font-medium">
                         {recordLabel(record.kind)}
                       </span>
                       <button
@@ -563,7 +560,7 @@ export default function ResearchProjectWorkspacePage() {
                         title="删除记录"
                         disabled={deletingRecordId === record.id}
                         onClick={() => void deleteRecord(record.id)}
-                        className="flex size-7 items-center justify-center rounded-md text-[#829095] hover:bg-[#f7eaea] hover:text-[#a34343]"
+                        className="text-muted-foreground flex size-7 items-center justify-center rounded-md hover:bg-[#f7eaea] hover:text-[#a34343]"
                       >
                         {deletingRecordId === record.id ? (
                           <Loader2 className="size-3.5 animate-spin" />
@@ -572,10 +569,10 @@ export default function ResearchProjectWorkspacePage() {
                         )}
                       </button>
                     </div>
-                    <p className="mt-2 text-sm leading-6 whitespace-pre-wrap text-[#344448]">
+                    <p className="text-muted-foreground mt-2 text-sm leading-6 whitespace-pre-wrap">
                       {record.content}
                     </p>
-                    <p className="mt-3 text-xs text-[#879397]">
+                    <p className="text-muted-foreground mt-3 text-xs">
                       {formatDate(record.updated_at)}
                     </p>
                   </article>
@@ -601,20 +598,20 @@ export default function ResearchProjectWorkspacePage() {
           />
           <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
             {selectableDocuments.length === 0 ? (
-              <p className="py-12 text-center text-sm text-[#75868a]">
+              <p className="text-muted-foreground py-12 text-center text-sm">
                 没有可添加的文献
               </p>
             ) : (
               selectableDocuments.map((document) => (
                 <div
                   key={document.id}
-                  className="flex items-center justify-between gap-4 rounded-md border border-[#dce5e6] p-3"
+                  className="border-border flex items-center justify-between gap-4 rounded-md border p-3"
                 >
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium">
                       {document.title}
                     </p>
-                    <p className="mt-1 truncate text-xs text-[#718287]">
+                    <p className="text-muted-foreground mt-1 truncate text-xs">
                       {document.edition} · {document.source_institution}
                     </p>
                   </div>

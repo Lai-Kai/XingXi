@@ -3,19 +3,23 @@
 import { BookMarked, ExternalLink, Loader2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { reviewLabels } from "@/core/knowledge-graph/review";
 import { getEvidenceDetail } from "@/core/knowledge-search/api";
 import type { EvidenceDetail } from "@/core/knowledge-search/types";
 import { sourceFileContentUrl } from "@/core/source-files/api";
+import { publicErrorMessage } from "@/core/ui/presentation";
 import { cn } from "@/lib/utils";
 
 export function EvidenceDetailPanel({
   evidenceId,
   onClose,
   className,
+  embedded = false,
 }: {
   evidenceId: string;
   onClose: () => void;
   className?: string;
+  embedded?: boolean;
 }) {
   const [detail, setDetail] = useState<EvidenceDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -28,6 +32,7 @@ export function EvidenceDetailPanel({
     setDetail(null);
     void getEvidenceDetail(evidenceId, controller.signal)
       .then((payload) => {
+        if (controller.signal.aborted) return;
         setDetail(payload);
         setLoading(false);
       })
@@ -35,7 +40,12 @@ export function EvidenceDetailPanel({
         if (controller.signal.aborted) {
           return;
         }
-        setError(err instanceof Error ? err.message : "资料出处详情加载失败");
+        setError(
+          publicErrorMessage(
+            err,
+            "资料暂不可用，请稍后重试或联系管理员确认访问权限。",
+          ),
+        );
         setLoading(false);
       });
     return () => controller.abort();
@@ -44,7 +54,9 @@ export function EvidenceDetailPanel({
   return (
     <aside
       className={cn(
-        "border-border/70 bg-background fixed inset-x-0 bottom-0 z-40 max-h-[70vh] overflow-y-auto rounded-t-xl border shadow-2xl sm:inset-x-auto sm:right-4 sm:bottom-4 sm:max-h-[80vh] sm:w-[420px] sm:rounded-xl",
+        embedded
+          ? "border-border/70 bg-card text-card-foreground m-5 rounded-xl border"
+          : "border-border/70 bg-background fixed inset-x-0 bottom-0 z-40 max-h-[70vh] overflow-y-auto rounded-t-xl border shadow-2xl sm:inset-x-auto sm:right-4 sm:bottom-4 sm:max-h-[80vh] sm:w-[420px] sm:rounded-xl",
         className,
       )}
       data-evidence-detail-id={evidenceId}
@@ -55,20 +67,19 @@ export function EvidenceDetailPanel({
           <BookMarked className="text-primary size-4 shrink-0" />
           <h2 className="truncate text-sm font-semibold">资料出处详情</h2>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="text-muted-foreground hover:bg-muted rounded p-1"
-          aria-label="关闭资料出处详情"
-        >
-          <X className="size-4" />
-        </button>
+        {!embedded && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-muted-foreground hover:bg-muted rounded p-1"
+            aria-label="关闭资料出处详情"
+          >
+            <X className="size-4" />
+          </button>
+        )}
       </div>
 
       <div className="space-y-3 px-4 py-4 text-sm">
-        <div className="text-muted-foreground text-xs break-all">
-          出处编号：{evidenceId}
-        </div>
         {loading && (
           <div className="text-muted-foreground flex items-center gap-2 py-8">
             <Loader2 className="size-4 animate-spin" />
@@ -80,8 +91,7 @@ export function EvidenceDetailPanel({
             <p className="font-medium">暂无法打开该资料出处详情</p>
             <p className="mt-1 text-xs leading-5">{error}</p>
             <p className="mt-2 text-xs leading-5">
-              引用协议仍有效：`evidence://{evidenceId}
-              `。请确认该资料出处已发布到当前知识版本。
+              请稍后重试，或联系资料管理员确认该资料的可用范围。
             </p>
           </div>
         )}
@@ -122,7 +132,7 @@ export function EvidenceDetailPanel({
               <div>
                 <div className="text-muted-foreground text-xs">等级 / 复核</div>
                 <div>
-                  {detail.source_level} / {detail.review_status}
+                  {detail.source_level}级 / {reviewLabels[detail.review_status]}
                 </div>
               </div>
             </div>

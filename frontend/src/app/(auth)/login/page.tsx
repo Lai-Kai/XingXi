@@ -12,7 +12,6 @@ import {
   fetchSetupStatus,
   type SetupStatusResponse,
 } from "@/core/auth/setup";
-import { parseAuthError } from "@/core/auth/types";
 import { useI18n } from "@/core/i18n/hooks";
 
 /**
@@ -171,9 +170,7 @@ export default function LoginPage() {
       });
 
       if (!res.ok) {
-        const data = await res.json();
-        const authError = parseAuthError(data);
-        setError(authError.message);
+        setError(t.login.authFailed);
         // On a failed login with SSO configured, surface a hint pointing at the
         // SSO buttons — the "wrong password" may really mean "this is an SSO account".
         if (isLogin && ssoProviders.length > 0) {

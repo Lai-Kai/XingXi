@@ -30,5 +30,5 @@ export function manualFailureLabel(reason: string) {
     /^expected status (answered|refused), got (answered|refused)$/.exec(reason);
   if (status)
     return `期望${status[1] === "answered" ? "回答" : "拒答"}，本次标记为${status[2] === "answered" ? "回答" : "拒答"}`;
-  return reason;
+  return "本项未满足预设要求，请核对录入内容。";
 }

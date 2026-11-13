@@ -402,7 +402,7 @@ export function extractContentFromMessage(message: Message) {
     );
   }
   if (Array.isArray(message.content)) {
-    return message.content
+    const content = message.content
       .map((content) => {
         if (typeof content === "string") {
           return content;
@@ -419,6 +419,9 @@ export function extractContentFromMessage(message: Message) {
       })
       .join("\n")
       .trim();
+    return message.type === "ai"
+      ? splitInlineReasoning(content).content
+      : content;
   }
   return "";
 }
@@ -466,18 +469,11 @@ export function extractURLFromImageURLContent(
 }
 
 export function hasContent(message: Message) {
-  if (typeof message.content === "string") {
-    return (
-      (
-        splitInlineReasoningFromAIMessage(message)?.content ??
-        message.content.trim()
-      ).length > 0
-    );
-  }
-  if (Array.isArray(message.content)) {
-    return message.content.length > 0;
-  }
-  return false;
+  const files = message.additional_kwargs?.files;
+  return (
+    extractContentFromMessage(message).length > 0 ||
+    (Array.isArray(files) && files.length > 0)
+  );
 }
 
 export function hasReasoning(message: Message) {

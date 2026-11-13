@@ -1,0 +1,251 @@
+/* Shared product surfaces. Map tiles and data markers keep their own rendering. */
+.xingxi-workspace {
+  background: var(--background);
+}
+
+.xingxi-sidebar [data-sidebar="sidebar"] {
+  background: linear-gradient(
+    165deg,
+    rgb(255 255 255 / 78%),
+    rgb(241 247 255 / 72%)
+  );
+  backdrop-filter: blur(18px);
+  color: #475569;
+}
+
+.xingxi-sidebar[data-slot="sidebar-container"] {
+  border-color: rgb(203 213 225 / 50%);
+}
+
+.xingxi-home,
+.xingxi-sidebar,
+.home-surface,
+[data-sidebar="sidebar"][data-mobile="true"] {
+  --background: #ffffff;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
+  --secondary: #eaf2ff;
+  --secondary-foreground: #1e40af;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+  --primary: #2563eb;
+  --primary-foreground: #ffffff;
+  --border: #e2e8f0;
+  --accent: #eff6ff;
+  --accent-foreground: #1d4ed8;
+  --input: #cbd5e1;
+  --ring: #3b82f6;
+  --sidebar-accent: #eff6ff;
+  --sidebar-accent-foreground: #1d4ed8;
+  font-weight: 400;
+  color-scheme: light;
+}
+
+[data-sidebar="sidebar"][data-mobile="true"] {
+  background: #f3f7fe;
+  color: #475569;
+}
+
+.xingxi-sidebar [data-sidebar="group-label"],
+[data-sidebar="sidebar"][data-mobile="true"] [data-sidebar="group-label"] {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.xingxi-sidebar [data-sidebar="menu-button"],
+[data-sidebar="sidebar"][data-mobile="true"] [data-sidebar="menu-button"] {
+  border-radius: 12px;
+}
+
+.xingxi-home {
+  background:
+    radial-gradient(
+      ellipse 55% 30% at 88% 8%,
+      rgb(221 214 254 / 32%),
+      transparent 100%
+    ),
+    radial-gradient(
+      ellipse 65% 38% at 8% 28%,
+      rgb(186 230 253 / 30%),
+      transparent 100%
+    ),
+    linear-gradient(135deg, #f5f8fc, #eef4fb 52%, #e6f0fa);
+  color-scheme: light;
+}
+
+.xingxi-module,
+.xingxi-chat {
+  background:
+    radial-gradient(
+      ellipse 55% 38% at 95% 0%,
+      color-mix(in srgb, #a78bfa 9%, transparent),
+      transparent 100%
+    ),
+    radial-gradient(
+      ellipse 65% 55% at 0% 35%,
+      color-mix(in srgb, #7dd3fc 12%, transparent),
+      transparent 100%
+    ),
+    linear-gradient(
+      135deg,
+      var(--background),
+      color-mix(in srgb, var(--background) 90%, var(--accent-foreground))
+    );
+  color: var(--foreground);
+  font-weight: 400;
+}
+
+.xingxi-panel {
+  border-color: color-mix(in srgb, var(--border) 80%, transparent);
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  box-shadow: 0 8px 30px rgb(15 23 42 / 4%);
+}
+
+.xingxi-module :is(button, input, textarea, select) {
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.xingxi-module :is(input, textarea, select):focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ring) 55%, transparent);
+  outline-offset: 2px;
+}
+
+.xingxi-chat-header {
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+  background: color-mix(in srgb, var(--card) 80%, transparent);
+  backdrop-filter: blur(16px);
+}
+
+.xingxi-chat [data-assistant-turn] {
+  border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--card) 94%, transparent);
+  padding: clamp(16px, 3vw, 28px);
+  box-shadow: 0 6px 24px rgb(15 23 42 / 4%);
+}
+
+.xingxi-human-content {
+  border: 1px solid color-mix(in srgb, var(--primary) 12%, var(--border));
+  border-radius: 16px 16px 4px 16px;
+  background: var(--secondary);
+  color: var(--foreground);
+  padding: 12px 18px;
+}
+
+.xingxi-answer-content {
+  color: var(--foreground);
+  line-height: 1.85;
+}
+
+.xingxi-answer-content :is(h1, h2, h3, h4) {
+  color: var(--foreground);
+  letter-spacing: -0.015em;
+}
+
+.xingxi-answer-content a {
+  color: var(--primary);
+  text-underline-offset: 3px;
+}
+
+.xingxi-answer-content blockquote {
+  border-color: var(--ring);
+  border-radius: 0 10px 10px 0;
+  background: color-mix(in srgb, var(--accent) 65%, transparent);
+  padding: 10px 16px;
+}
+
+.xingxi-research-trace {
+  border-color: var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--muted) 45%, transparent);
+}
+
+.xingxi-chat-composer > [data-slot="input-group"] {
+  border: 1px solid color-mix(in srgb, var(--ring) 24%, var(--border));
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--card) 96%, transparent);
+  box-shadow:
+    0 8px 32px rgb(37 99 235 / 6%),
+    0 2px 8px rgb(15 23 42 / 3%);
+}
+
+.xingxi-chat-composer > [data-slot="input-group"]:focus-within {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 10%, transparent);
+}
+
+.xingxi-chat-send,
+.home-primary {
+  background: linear-gradient(120deg, #2563eb, #1d4ed8);
+  color: #ffffff;
+}
+
+.xingxi-chat-send:hover:not(:disabled),
+.home-primary:hover:not(:disabled) {
+  background: linear-gradient(120deg, #1d4ed8, #1e40af);
+}
+
+.xingxi-chat-input-mask {
+  background: transparent;
+}
+
+.xingxi-citation-sources {
+  border-color: color-mix(in srgb, var(--primary) 18%, var(--border));
+  background: color-mix(in srgb, var(--accent) 45%, var(--card));
+}
+
+.xingxi-chat-portal {
+  border-color: var(--border);
+  background: var(--popover);
+  color: var(--popover-foreground);
+  border-radius: 14px;
+  box-shadow: 0 12px 36px rgb(15 23 42 / 10%);
+}
+
+.xingxi-module :is(button, a):focus-visible,
+.xingxi-chat :is(button, a):focus-visible,
+.xingxi-home :is(button, a):focus-visible,
+.xingxi-sidebar :is(button, a):focus-visible,
+[data-sidebar="sidebar"][data-mobile="true"] :is(button, a):focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 4px;
+}
+
+.home-document-leaf {
+  transform: rotate(3deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .xingxi-home *,
+  .xingxi-sidebar *,
+  .xingxi-module *,
+  .xingxi-chat *,
+  .home-primary {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .xingxi-home button:hover,
+  .xingxi-module article:hover,
+  .xingxi-sidebar a:hover,
+  .home-primary:hover {
+    transform: none;
+    translate: none;
+  }
+}
+
+@media print {
+  .xingxi-module,
+  .xingxi-panel {
+    background: white;
+    color: black;
+    box-shadow: none;
+  }
+}

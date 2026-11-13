@@ -24,6 +24,10 @@ import {
   prepareConnectWindow,
 } from "@/core/channels/open-connect-url";
 import {
+  channelName,
+  channelUnavailableMessage,
+} from "@/core/channels/presentation";
+import {
   providerCanConnect,
   providerCanEditRuntimeConfig,
   providerNeedsRuntimeConfig,
@@ -38,9 +42,10 @@ import { ChannelRuntimeConfigDialog } from "./channel-runtime-config-dialog";
 function getProviderUnavailableReason(
   provider: ChannelProvider,
   t: ReturnType<typeof useI18n>["t"],
+  locale: ReturnType<typeof useI18n>["locale"],
 ): string | undefined {
   if (provider.unavailable_reason) {
-    return provider.unavailable_reason;
+    return channelUnavailableMessage(provider.unavailable_reason, locale);
   }
   if (!provider.enabled) {
     return t.channels.disabled;
@@ -53,7 +58,7 @@ function getProviderUnavailableReason(
 
 export function WorkspaceChannelsList() {
   const { open: isSidebarOpen } = useSidebar();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { enabled, providers, isLoading, error } = useChannelProviders();
   const connectMutation = useConnectChannelProvider();
   const configureMutation = useConfigureChannelProvider();
@@ -80,12 +85,19 @@ export function WorkspaceChannelsList() {
           return;
         }
         closeConnectWindow(connectWindow);
-        toast.success(result.instruction);
+        toast.success(
+          t.channels.bindingInstruction(
+            channelName(provider.provider, provider.display_name, locale),
+            result.code,
+          ),
+        );
       })
       .catch((error) => {
         closeConnectWindow(connectWindow);
         toast.error(
-          error instanceof Error ? error.message : t.channels.unavailable,
+          error instanceof Error
+            ? channelUnavailableMessage(error.message, locale)
+            : t.channels.unavailable,
         );
       });
   };
@@ -126,7 +138,11 @@ export function WorkspaceChannelsList() {
             (configureMutation.isPending &&
               configureMutation.variables?.provider === provider.provider);
           const canConnect = providerCanConnect(provider);
-          const unavailableReason = getProviderUnavailableReason(provider, t);
+          const unavailableReason = getProviderUnavailableReason(
+            provider,
+            t,
+            locale,
+          );
 
           return (
             <SidebarMenuItem key={provider.provider}>
@@ -136,7 +152,11 @@ export function WorkspaceChannelsList() {
                   className="size-5 shrink-0"
                 />
                 <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                  {provider.display_name}
+                  {channelName(
+                    provider.provider,
+                    provider.display_name,
+                    locale,
+                  )}
                 </span>
                 <Button
                   type="button"
@@ -205,7 +225,9 @@ export function WorkspaceChannelsList() {
             .catch((error) => {
               closeConnectWindow(connectWindow);
               toast.error(
-                error instanceof Error ? error.message : t.channels.unavailable,
+                error instanceof Error
+                  ? channelUnavailableMessage(error.message, locale)
+                  : t.channels.unavailable,
               );
             });
         }}

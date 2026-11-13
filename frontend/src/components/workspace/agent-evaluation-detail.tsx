@@ -13,28 +13,19 @@ import {
 } from "@/components/ui/sheet";
 import { orderedEvents } from "@/core/operations/evaluation-dashboard";
 import {
+  evaluationAnswerText,
+  evaluationCheckLabel,
+  evaluationEventLabel,
+} from "@/core/operations/evaluation-presentation";
+import {
   evaluationLabel,
   reviewAgentEvaluation,
   type AgentEvaluation,
   type AgentObservation,
 } from "@/core/operations/evaluations";
+import { publicErrorMessage } from "@/core/ui/presentation";
 
-import {
-  EvaluationBadge,
-  evaluationButton,
-  EvaluationJson,
-} from "./agent-evaluation-ui";
-
-const formatValue = (value: unknown) =>
-  typeof value === "string" ? value : JSON.stringify(value ?? null, null, 2);
-const eventLabels: Record<string, string> = {
-  tool_call: "工具调用",
-  tool_result: "工具返回",
-  "run.started": "运行开始",
-  "run.completed": "运行结束",
-  "run.cancelled": "运行取消",
-  "run.interrupted": "运行中断",
-};
+import { EvaluationBadge, evaluationButton } from "./agent-evaluation-ui";
 
 export function AgentEvaluationDetail({
   observation,
@@ -56,11 +47,11 @@ export function AgentEvaluationDetail({
         if (!open) onClose();
       }}
     >
-      <SheetContent className="w-full gap-0 bg-[#f7fafb] sm:max-w-[760px]">
-        <SheetHeader className="border-b border-[#dce5e6] bg-white p-6 pr-12">
-          <SheetTitle>{observation?.case.title} · 轨迹详情</SheetTitle>
+      <SheetContent className="bg-muted/60 w-full gap-0 sm:max-w-[760px]">
+        <SheetHeader className="border-border bg-card border-b p-6 pr-12">
+          <SheetTitle>{observation?.case.title} · 测试详情</SheetTitle>
           <SheetDescription>
-            可观察的运行事件、工具、回答与证据；固定模型回放不代表真实模型质量。
+            查看测试进度、回答与出处。使用预设资料和回答的流程测试，不衡量实际回答质量。
           </SheetDescription>
         </SheetHeader>
         <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
@@ -110,7 +101,7 @@ function ObservationDetail({
   const reviews = batch.reviews.filter(
     (item) => item.case_id === observation.case_id,
   );
-  const box = "rounded-xl border border-[#dce5e6] bg-white p-4 shadow-sm";
+  const box = "rounded-xl border border-border bg-card p-4 shadow-sm";
   return (
     <article className="space-y-5" aria-label="用例详情">
       <section className={box}>
@@ -118,49 +109,22 @@ function ObservationDetail({
           <EvaluationBadge value={observation.status} />
           <EvaluationBadge value={observation.verdict} />
         </div>
-        <dl className="mt-4 grid gap-2 font-mono text-xs break-all text-slate-500">
-          <div>
-            <dt className="inline">Batch：</dt>
-            <dd className="inline">{batch.id}</dd>
-          </div>
-          <div>
-            <dt className="inline">Case：</dt>
-            <dd className="inline">
-              {observation.case_id} · v{observation.case.version} ·{" "}
-              {observation.case.mode}
-            </dd>
-          </div>
-          <div>
-            <dt className="inline">Run：</dt>
-            <dd className="inline">{observation.agent_run_id ?? "尚未创建"}</dd>
-          </div>
-          <div>
-            <dt className="inline">Thread：</dt>
-            <dd className="inline">{observation.thread_id ?? "未采集"}</dd>
-          </div>
-          <div>
-            <dt className="inline">Release：</dt>
-            <dd className="inline">{observation.release_id ?? "未采集"}</dd>
-          </div>
-        </dl>
-        <p className="mt-3 text-xs leading-5 text-slate-500">
-          {observation.case.review_rubric}
-        </p>
         {observation.error && (
           <p
             role="alert"
             className="mt-3 rounded-lg bg-rose-50 p-3 text-sm text-rose-800"
           >
-            {observation.error}
+            {publicErrorMessage(
+              observation.error,
+              "本次测试未能完成，请重试。",
+            )}
           </p>
         )}
       </section>
       <section className={box}>
         <h3 className="font-semibold">执行时间线</h3>
-        <p className="mt-1 text-xs text-slate-500">
-          事件按持久化序号排列；缺失事件不补造。
-        </p>
-        <ol className="mt-5 ml-3 border-l-2 border-[#d5e4e6]">
+        <p className="mt-1 text-xs text-slate-500">按实际记录展示测试进度。</p>
+        <ol className="border-border mt-5 ml-3 border-l-2">
           <li className="relative pb-6 pl-7">
             <TimelineDot icon={MessageSquare} />
             <h4 className="text-sm font-semibold">用户输入</h4>
@@ -179,23 +143,13 @@ function ObservationDetail({
               />
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h4 className="text-sm font-semibold">
-                  {eventLabels[event.type] ?? event.type}
-                  {event.name ? ` · ${event.name}` : ""}
+                  {evaluationEventLabel(event.type)}
                 </h4>
                 <span className="font-mono text-xs text-slate-400">
-                  #{event.seq} ·{" "}
                   {event.at
                     ? new Date(event.at).toLocaleTimeString()
                     : "未采集时间"}
                 </span>
-              </div>
-              <div className="mt-2 space-y-2">
-                {event.args != null && (
-                  <EvaluationJson label="调用参数" value={event.args} />
-                )}
-                {event.output != null && (
-                  <EvaluationJson label="返回结果" value={event.output} />
-                )}
               </div>
             </li>
           ))}
@@ -206,7 +160,9 @@ function ObservationDetail({
             <TimelineDot icon={FileText} />
             <h4 className="text-sm font-semibold">最终回答</h4>
             <p className="mt-2 text-sm leading-6 break-words whitespace-pre-wrap">
-              {observation.answer?.trim() ? observation.answer : "尚无回答记录"}
+              {observation.answer?.trim()
+                ? evaluationAnswerText(observation.answer)
+                : "尚无回答记录"}
             </p>
           </li>
         </ol>
@@ -221,23 +177,15 @@ function ObservationDetail({
             >
               <summary className="cursor-pointer">
                 <EvaluationBadge value={check.status} />
-                <span className="ml-2">{check.label}</span>
+                <span className="ml-2">{evaluationCheckLabel(check.key)}</span>
               </summary>
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                {[
-                  { label: "期望", value: check.expected },
-                  { label: "实际", value: check.actual },
-                ].map((item) => (
-                  <div key={item.label} className="rounded-lg bg-slate-50 p-3">
-                    <strong className="text-xs text-slate-500">
-                      {item.label}
-                    </strong>
-                    <pre className="mt-2 text-xs break-all whitespace-pre-wrap">
-                      {formatValue(item.value)}
-                    </pre>
-                  </div>
-                ))}
-              </div>
+              <p className="mt-3 text-sm text-slate-500">
+                {check.status === "passed"
+                  ? "本项符合预设要求。"
+                  : check.status === "failed"
+                    ? "本项未达到预设要求，请结合回答与出处复核。"
+                    : "本项尚需进一步核对。"}
+              </p>
             </details>
           ))}
         </div>
@@ -261,16 +209,9 @@ function ObservationDetail({
             >
               {item.verified ? "已核对版本、授权与原文" : "证据核对失败"}
             </p>
-            <blockquote className="mt-3 border-l-2 border-[#8fb5ba] pl-3 leading-6 whitespace-pre-wrap">
+            <blockquote className="border-primary mt-3 border-l-2 pl-3 leading-6 whitespace-pre-wrap">
               {item.quote}
             </blockquote>
-            <p className="mt-3 font-mono text-xs leading-5 break-all text-slate-500">
-              Evidence：{item.evidence_id}
-              <br />
-              Chunk：{item.chunk_id}
-              <br />
-              Release：{item.release_id}
-            </p>
           </div>
         ))}
         {!observation.evidence.length && (
@@ -290,7 +231,7 @@ function ObservationDetail({
             className="mt-3 rounded-lg bg-slate-50 p-3 text-sm"
           >
             <p className="text-xs text-slate-500">
-              {evaluationLabel(item.decision)} · {item.actor_id} ·{" "}
+              {evaluationLabel(item.decision)} ·{" "}
               {new Date(item.created_at).toLocaleString()}
             </p>
             <p className="mt-2 whitespace-pre-wrap">{item.note}</p>
@@ -313,7 +254,7 @@ function ObservationDetail({
               onChange={(event) =>
                 setDecision(event.target.value as typeof decision)
               }
-              className="min-h-9 w-full rounded-lg border bg-white p-2 text-sm"
+              className="bg-card min-h-9 w-full rounded-lg border p-2 text-sm"
               disabled={review.isPending}
             >
               <option value="confirmed">确认原判定</option>
@@ -337,7 +278,7 @@ function ObservationDetail({
             </button>
             {review.error && (
               <p role="alert" className="text-sm text-rose-800">
-                {review.error.message}
+                {publicErrorMessage(review.error, "复核意见保存失败，请重试。")}
               </p>
             )}
           </form>
@@ -349,7 +290,7 @@ function ObservationDetail({
 
 function TimelineDot({ icon: Icon }: { icon: typeof Wrench }) {
   return (
-    <span className="absolute -left-[15px] flex size-7 items-center justify-center rounded-full border-2 border-white bg-[#e7f1f2] text-[#276f79]">
+    <span className="bg-accent text-primary absolute -left-[15px] flex size-7 items-center justify-center rounded-full border-2 border-white">
       <Icon className="size-3.5" aria-hidden="true" />
     </span>
   );

@@ -1,8 +1,16 @@
 "use client";
 
-import { createContext, useContext, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
 
-import type { Locale } from "@/core/i18n";
+import { setLocaleInCookie } from "./cookies";
+import { normalizeLocale, type Locale } from "./locale";
 
 export interface I18nContextType {
   locale: Locale;
@@ -20,10 +28,15 @@ export function I18nProvider({
 }) {
   const [locale, setLocale] = useState<Locale>(initialLocale);
 
-  const handleSetLocale = (newLocale: Locale) => {
-    setLocale(newLocale);
-    document.cookie = `locale=${newLocale}; path=/; max-age=31536000`;
-  };
+  const handleSetLocale = useCallback((newLocale: Locale) => {
+    const normalized = normalizeLocale(newLocale);
+    setLocale(normalized);
+    setLocaleInCookie(normalized);
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.lang = locale;
+  }, [locale]);
 
   return (
     <I18nContext.Provider value={{ locale, setLocale: handleSetLocale }}>

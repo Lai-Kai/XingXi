@@ -15,7 +15,11 @@
     "noImplicitAny": false,
     "checkJs": false,
     /* Bundled projects */
-    "lib": ["dom", "dom.iterable", "ES2022"],
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "ES2022"
+    ],
     "noEmit": true,
     "module": "ESNext",
     "moduleResolution": "Bundler",
@@ -29,7 +33,9 @@
     /* Path Aliases */
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": [
+        "./src/*"
+      ]
     }
   },
   "include": [
@@ -39,7 +45,20 @@
     "**/*.cjs",
     "**/*.js",
     ".next/types/**/*.ts",
-    ".next/dev/types/**/*.ts"
+    ".next/dev/types/**/*.ts",
+    ".next-production/types/**/*.ts",
+    ".next-production/dev/types/**/*.ts",
+    ".next-releases/upload-button-20261021/types/**/*.ts",
+    ".next-releases/upload-button-20261021/dev/types/**/*.ts",
+    ".next-releases/upload-button-20261021-v2/types/**/*.ts",
+    ".next-releases/upload-button-20261021-v2/dev/types/**/*.ts",
+    ".next-releases/reconstruction-reliability-20261024/types/**/*.ts",
+    ".next-releases/reconstruction-reliability-20261024/dev/types/**/*.ts",
+    ".next-releases/map-model-rounds-20261025/types/**/*.ts",
+    ".next-releases/map-model-rounds-20261025/dev/types/**/*.ts"
   ],
-  "exclude": ["node_modules", "generated"]
+  "exclude": [
+    "node_modules",
+    "generated"
+  ]
 }

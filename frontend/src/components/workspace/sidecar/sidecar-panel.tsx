@@ -57,8 +57,6 @@ import {
 } from "@/core/messages/human-input";
 import { isHiddenFromUIMessage } from "@/core/messages/utils";
 import { useModels } from "@/core/models/hooks";
-import type { Model } from "@/core/models/types";
-import { useLocalSettings } from "@/core/settings";
 import {
   buildParentConversationContext,
   buildReferenceMessageMetadata,
@@ -70,6 +68,7 @@ import {
   useThreadStream,
   type ThreadStreamOptions,
 } from "@/core/threads/hooks";
+import { publicErrorMessage } from "@/core/ui/presentation";
 import {
   formatUploadSize,
   useUploadLimits,
@@ -80,15 +79,6 @@ import {
 import { env } from "@/env";
 import { cn } from "@/lib/utils";
 
-import {
-  ModelSelector,
-  ModelSelectorContent,
-  ModelSelectorInput,
-  ModelSelectorItem,
-  ModelSelectorList,
-  ModelSelectorName,
-  ModelSelectorTrigger,
-} from "../../ai-elements/model-selector";
 import { MessageList, MESSAGE_LIST_DEFAULT_PADDING_BOTTOM } from "../messages";
 import { useThread as useParentThread } from "../messages/context";
 import { ModeHoverGuide } from "../mode-hover-guide";
@@ -150,9 +140,7 @@ export function SidecarPanel({ className }: { className?: string }) {
   const { t } = useI18n();
   const sidecar = useSidecar();
   const { thread: parentThread } = useParentThread();
-  const [localSettings] = useLocalSettings();
-  const { models, tokenUsageEnabled } = useModels();
-  const [modelDialogOpen, setModelDialogOpen] = useState(false);
+  const { models } = useModels();
   const [creatingThread, setCreatingThread] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const { mutateAsync: deleteThread, isPending: isDeleting } =
@@ -217,9 +205,6 @@ export function SidecarPanel({ className }: { className?: string }) {
       ),
     [thread.messages],
   );
-  const tokenUsageInlineMode = tokenUsageEnabled
-    ? localSettings.tokenUsage.inlineMode
-    : "off";
   const disabled =
     (!hasSidecarThread && !hasPendingReferences) ||
     thread.isLoading ||
@@ -286,30 +271,6 @@ export function SidecarPanel({ className }: { className?: string }) {
       }
     },
     [t.uploads],
-  );
-
-  const handleModelSelect = useCallback(
-    (modelName: string) => {
-      const model = models.find((candidate) => candidate.name === modelName);
-      if (!model) {
-        return;
-      }
-      const nextMode = getResolvedMode(
-        sidecar.context.mode,
-        model.supports_thinking ?? false,
-      );
-      const modeChanged = sidecar.context.mode !== nextMode;
-      sidecar.setContext({
-        ...sidecar.context,
-        model_name: modelName,
-        mode: nextMode,
-        reasoning_effort: modeChanged
-          ? reasoningEffortForMode(nextMode)
-          : sidecar.context.reasoning_effort,
-      });
-      setModelDialogOpen(false);
-    },
-    [models, sidecar],
   );
 
   const handleModeSelect = useCallback(
@@ -439,9 +400,7 @@ export function SidecarPanel({ className }: { className?: string }) {
         }
       },
     ).catch((error) => {
-      toast.error(
-        error instanceof Error ? error.message : t.sidecar.sendFailed,
-      );
+      toast.error(publicErrorMessage(error, t.sidecar.sendFailed));
     });
   }, [
     queuedSubmit,
@@ -484,9 +443,7 @@ export function SidecarPanel({ className }: { className?: string }) {
           },
         );
       } catch (error) {
-        toast.error(
-          error instanceof Error ? error.message : t.sidecar.sendFailed,
-        );
+        toast.error(publicErrorMessage(error, t.sidecar.sendFailed));
       }
     },
     [
@@ -521,9 +478,7 @@ export function SidecarPanel({ className }: { className?: string }) {
       setDeleteDialogOpen(false);
       toast.success(t.sidecar.deleteSuccess);
     } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : t.sidecar.deleteFailed,
-      );
+      toast.error(publicErrorMessage(error, t.sidecar.deleteFailed));
     }
   }, [
     deleteThread,
@@ -592,7 +547,7 @@ export function SidecarPanel({ className }: { className?: string }) {
             hasMoreHistory={hasMoreHistory}
             loadMoreHistory={loadMoreHistory}
             isHistoryLoading={isHistoryLoading}
-            tokenUsageInlineMode={tokenUsageInlineMode}
+            tokenUsageInlineMode="off"
             sidecarSurface
             initialScroll="instant"
             resizeScroll="instant"
@@ -652,15 +607,6 @@ export function SidecarPanel({ className }: { className?: string }) {
                 />
               </PromptInputTools>
               <PromptInputTools className="min-w-0 justify-end">
-                <SidecarModelSelector
-                  className="max-w-40 min-w-0 sm:max-w-56 @max-[240px]:hidden"
-                  context={sidecar.context}
-                  models={models}
-                  open={modelDialogOpen}
-                  selectedModel={selectedModel}
-                  onModelSelect={handleModelSelect}
-                  onOpenChange={setModelDialogOpen}
-                />
                 <Tooltip content={t.sidecar.send}>
                   <PromptInputSubmit
                     className="rounded-full"
@@ -797,7 +743,7 @@ function SidecarModeMenu({
           </div>
         </PromptInputActionMenuTrigger>
       </ModeHoverGuide>
-      <PromptInputActionMenuContent className="w-80">
+      <PromptInputActionMenuContent className="xingxi-chat-portal w-80">
         <DropdownMenuGroup>
           <DropdownMenuLabel className="text-muted-foreground text-xs">
             {t.inputBox.mode}
@@ -921,67 +867,5 @@ function SidecarModeMenu({
         </DropdownMenuGroup>
       </PromptInputActionMenuContent>
     </PromptInputActionMenu>
-  );
-}
-
-function SidecarModelSelector({
-  className,
-  context,
-  models,
-  open,
-  selectedModel,
-  onModelSelect,
-  onOpenChange,
-}: {
-  className?: string;
-  context: ThreadStreamOptions["context"];
-  models: Model[];
-  open: boolean;
-  selectedModel?: Model;
-  onModelSelect: (modelName: string) => void;
-  onOpenChange: (open: boolean) => void;
-}) {
-  const { t } = useI18n();
-
-  if (!selectedModel) {
-    return null;
-  }
-
-  return (
-    <ModelSelector open={open} onOpenChange={onOpenChange}>
-      <ModelSelectorTrigger asChild>
-        <PromptInputButton className={cn("min-w-0 px-2!", className)}>
-          <div className="flex min-w-0 flex-col items-start text-left">
-            <ModelSelectorName className="truncate text-xs font-normal">
-              {selectedModel.display_name}
-            </ModelSelectorName>
-          </div>
-        </PromptInputButton>
-      </ModelSelectorTrigger>
-      <ModelSelectorContent>
-        <ModelSelectorInput placeholder={t.inputBox.searchModels} />
-        <ModelSelectorList>
-          {models.map((model) => (
-            <ModelSelectorItem
-              key={model.name}
-              value={model.name}
-              onSelect={() => onModelSelect(model.name)}
-            >
-              <div className="flex min-w-0 flex-1 flex-col">
-                <ModelSelectorName>{model.display_name}</ModelSelectorName>
-                <span className="text-muted-foreground truncate text-[10px]">
-                  {model.model}
-                </span>
-              </div>
-              {model.name === context.model_name ? (
-                <CheckIcon className="ml-auto size-4" />
-              ) : (
-                <div className="ml-auto size-4" />
-              )}
-            </ModelSelectorItem>
-          ))}
-        </ModelSelectorList>
-      </ModelSelectorContent>
-    </ModelSelector>
   );
 }

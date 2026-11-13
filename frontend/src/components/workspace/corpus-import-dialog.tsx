@@ -18,7 +18,13 @@ import {
   type CorpusImportItem,
   type CorpusQualityIssue,
 } from "@/core/corpus-imports/api";
-import { sourceFileContentUrl } from "@/core/source-files/api";
+import {
+  listSourceDocuments,
+  sourceFileContentUrl,
+  type SourceDocumentSummary,
+} from "@/core/source-files/api";
+import { corpusQualityMessage } from "@/core/source-files/presentation";
+import { publicErrorMessage } from "@/core/ui/presentation";
 
 const statusLabel = {
   running: "导入中",
@@ -36,6 +42,7 @@ export function CorpusImportDialog({
   const [batches, setBatches] = useState<CorpusImportBatch[]>([]);
   const [items, setItems] = useState<CorpusImportItem[]>([]);
   const [issues, setIssues] = useState<CorpusQualityIssue[]>([]);
+  const [sources, setSources] = useState<SourceDocumentSummary[]>([]);
   const [batchId, setBatchId] = useState("");
   const [itemId, setItemId] = useState("");
   const [loading, setLoading] = useState(false);
@@ -53,7 +60,7 @@ export function CorpusImportDialog({
           : (next[0]?.id ?? ""),
       );
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "无法读取导入批次");
+      setError(publicErrorMessage(reason, "无法读取导入批次"));
     } finally {
       setLoading(false);
     }
@@ -62,6 +69,21 @@ export function CorpusImportDialog({
   useEffect(() => {
     if (open) void loadBatches();
   }, [loadBatches, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+    void listSourceDocuments()
+      .then((next) => {
+        if (active) setSources(next);
+      })
+      .catch(() => {
+        if (active) setSources([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open || !batchId) {
@@ -77,10 +99,7 @@ export function CorpusImportDialog({
         setItemId(next[0]?.id ?? "");
       })
       .catch((reason: unknown) => {
-        if (active)
-          setError(
-            reason instanceof Error ? reason.message : "无法读取导入条目",
-          );
+        if (active) setError(publicErrorMessage(reason, "无法读取导入条目"));
       });
     return () => {
       active = false;
@@ -98,10 +117,7 @@ export function CorpusImportDialog({
         if (active) setIssues(next);
       })
       .catch((reason: unknown) => {
-        if (active)
-          setError(
-            reason instanceof Error ? reason.message : "无法读取质量问题",
-          );
+        if (active) setError(publicErrorMessage(reason, "无法读取质量问题"));
       });
     return () => {
       active = false;
@@ -109,16 +125,19 @@ export function CorpusImportDialog({
   }, [itemId, open]);
 
   const selectedItem = items.find((item) => item.id === itemId);
+  const titleOfItem = (item: CorpusImportItem) =>
+    sources.find((source) => source.id === item.document_id)?.title ??
+    `第 ${items.indexOf(item) + 1} 册`;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[92vh] w-[calc(100vw-1.5rem)] max-w-7xl flex-col overflow-hidden p-0">
-        <DialogHeader className="border-b border-[#dbe4e5] px-5 py-4 pr-12">
+        <DialogHeader className="border-border border-b px-5 py-4 pr-12">
           <DialogTitle className="text-base">府县志导入批次</DialogTitle>
-          <DialogDescription>批次、书目与预计算文本质量记录</DialogDescription>
+          <DialogDescription>查看已导入书目与文字核对提示</DialogDescription>
         </DialogHeader>
-        <div className="flex items-center gap-3 border-b border-[#dbe4e5] px-5 py-3">
-          <span className="text-sm text-[#637479]">
+        <div className="border-border flex items-center gap-3 border-b px-5 py-3">
+          <span className="text-muted-foreground text-sm">
             {batches.length} 个批次
           </span>
           <button
@@ -126,7 +145,7 @@ export function CorpusImportDialog({
             onClick={() => void loadBatches()}
             disabled={loading}
             title="刷新导入批次"
-            className="ml-auto flex size-9 items-center justify-center rounded-md border border-[#ccd9db] text-[#456970] hover:bg-[#edf5f5] disabled:opacity-40"
+            className="border-border text-muted-foreground hover:bg-muted/60 ml-auto flex size-9 items-center justify-center rounded-md border disabled:opacity-40"
           >
             {loading ? (
               <LoaderCircle className="size-4 animate-spin" />
@@ -141,68 +160,59 @@ export function CorpusImportDialog({
           </div>
         )}
         <div className="grid min-h-[520px] flex-1 overflow-hidden lg:grid-cols-[250px_360px_minmax(0,1fr)]">
-          <div className="overflow-y-auto border-r border-[#dfe7e8]">
-            {batches.map((batch) => (
+          <div className="border-border overflow-y-auto border-r">
+            {batches.map((batch, index) => (
               <button
                 key={batch.id}
                 type="button"
                 onClick={() => setBatchId(batch.id)}
-                className={`block w-full border-b border-[#e8eded] px-4 py-3 text-left ${batch.id === batchId ? "bg-[#eef5f5]" : "bg-white hover:bg-[#f7fafa]"}`}
+                className={`border-border block w-full border-b px-4 py-3 text-left ${batch.id === batchId ? "bg-muted/60" : "bg-card hover:bg-muted/60"}`}
               >
                 <span className="block text-sm font-medium">
-                  {statusLabel[batch.status]}
+                  第 {index + 1} 批 · {statusLabel[batch.status]}
                 </span>
-                <span className="mt-1 block text-xs text-[#687a7f]">
+                <span className="text-muted-foreground mt-1 block text-xs">
                   {batch.item_count} 册 · {batch.page_count.toLocaleString()} 页
-                </span>
-                <span
-                  className="mt-1 block truncate font-mono text-[11px] text-[#849195]"
-                  title={batch.manifest_sha256}
-                >
-                  {batch.manifest_sha256.slice(0, 16)}
                 </span>
               </button>
             ))}
             {!loading && batches.length === 0 && (
-              <p className="px-4 py-8 text-center text-sm text-[#718186]">
+              <p className="text-muted-foreground px-4 py-8 text-center text-sm">
                 暂无导入批次
               </p>
             )}
           </div>
-          <div className="overflow-y-auto border-r border-[#dfe7e8]">
+          <div className="border-border overflow-y-auto border-r">
             {items.map((item) => (
               <button
                 key={item.id}
                 type="button"
                 onClick={() => setItemId(item.id)}
-                className={`block w-full border-b border-[#e8eded] px-4 py-3 text-left ${item.id === itemId ? "bg-[#eef5f5]" : "bg-white hover:bg-[#f7fafa]"}`}
+                className={`border-border block w-full border-b px-4 py-3 text-left ${item.id === itemId ? "bg-muted/60" : "bg-card hover:bg-muted/60"}`}
               >
                 <span
                   className="block truncate text-sm font-medium"
-                  title={item.bundle_id}
+                  title={titleOfItem(item)}
                 >
-                  {item.bundle_id}
+                  {titleOfItem(item)}
                 </span>
-                <span className="mt-1 block text-xs text-[#687a7f]">
+                <span className="text-muted-foreground mt-1 block text-xs">
                   {item.page_count} 页 · {item.quality_issue_count} 条质量提示
                 </span>
               </button>
             ))}
             {batchId && items.length === 0 && (
-              <p className="px-4 py-8 text-center text-sm text-[#718186]">
+              <p className="text-muted-foreground px-4 py-8 text-center text-sm">
                 该批次暂无书目
               </p>
             )}
           </div>
-          <div className="overflow-y-auto bg-white px-5 py-4">
+          <div className="bg-card overflow-y-auto px-5 py-4">
             {selectedItem && (
-              <div className="mb-4 flex flex-wrap items-center gap-3 border-b border-[#dfe7e8] pb-4">
+              <div className="border-border mb-4 flex flex-wrap items-center gap-3 border-b pb-4">
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">
-                    {selectedItem.document_id}
-                  </p>
-                  <p className="mt-1 text-xs text-[#718186]">
-                    ChunkSet {selectedItem.chunk_set_id}
+                    {titleOfItem(selectedItem)}
                   </p>
                 </div>
                 <a
@@ -212,7 +222,7 @@ export function CorpusImportDialog({
                   )}
                   target="_blank"
                   rel="noreferrer"
-                  className="flex h-9 items-center gap-2 rounded-md border border-[#8aafb4] px-3 text-sm text-[#275f68] hover:bg-[#edf5f5]"
+                  className="border-primary text-primary hover:bg-muted/60 flex h-9 items-center gap-2 rounded-md border px-3 text-sm"
                 >
                   <ExternalLink className="size-4" />
                   打开原件
@@ -222,17 +232,17 @@ export function CorpusImportDialog({
             {issues.map((issue) => (
               <div
                 key={issue.id}
-                className="grid grid-cols-[90px_90px_minmax(0,1fr)] gap-3 border-b border-[#edf1f2] py-3 text-sm"
+                className="border-border grid grid-cols-[90px_90px_minmax(0,1fr)] gap-3 border-b py-3 text-sm"
               >
                 <span>第 {issue.physical_page_number} 页</span>
                 <span>叶码 {issue.folio_label}</span>
-                <span className="text-[#566b70]">
-                  {issue.message} ({issue.count})
+                <span className="text-muted-foreground">
+                  {corpusQualityMessage(issue.code)}（{issue.count} 处）
                 </span>
               </div>
             ))}
             {selectedItem && issues.length === 0 && (
-              <p className="py-8 text-center text-sm text-[#718186]">
+              <p className="text-muted-foreground py-8 text-center text-sm">
                 该书目没有质量提示
               </p>
             )}

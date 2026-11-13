@@ -119,3 +119,9 @@ config.yaml.bak
 
 # Monocle agent-observability trace output (local file exporter)
 .monocle/
+
+# Host-native production frontend build
+/frontend/.next-production/
+
+# Versioned frontend builds keep the active production output intact
+/frontend/.next-releases/

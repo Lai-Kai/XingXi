@@ -54,12 +54,12 @@ def test_custom_question_is_persistent_executable_and_removal_preserves_snapshot
     async def scenario():
         client, engine, sf = await client_for(tmp_path)
         async with client:
-            catalog = (await client.get(ROOT + "/cases")).json()
+            catalog = (await client.get(ROOT + "/questions")).json()
             assert len(catalog["cases"]) == 30
             assert len(catalog["methods"]) == 10
             assert all(method["description"] for method in catalog["methods"])
             response = await client.post(
-                ROOT + "/cases",
+                ROOT + "/questions",
                 json={
                     "title": "新增位置问题",
                     "question": "测试桥坐落在哪条溪流？",
@@ -79,8 +79,8 @@ def test_custom_question_is_persistent_executable_and_removal_preserves_snapshot
             batch = response.json()
             assert batch["spec"]["cases"][0]["question"] == created["question"]
             assert batch["spec"]["cases"][0]["required_tool"] == "search_sources"
-            assert (await client.delete(ROOT + "/cases/" + created["id"])).status_code == 200
-            assert (await client.delete(ROOT + "/cases/" + created["id"])).status_code == 200
+            assert (await client.delete(ROOT + "/questions/" + created["id"])).status_code == 200
+            assert (await client.delete(ROOT + "/questions/" + created["id"])).status_code == 200
             assert len((await client.get(ROOT + "/catalog")).json()["cases"]) == 30
             rejected = await client.post(ROOT + "/executions", json={"request_key": "removed-run-key", "case_ids": [created["id"]]})
             assert rejected.status_code == 422
@@ -89,7 +89,7 @@ def test_custom_question_is_persistent_executable_and_removal_preserves_snapshot
             rerun = await client.post(ROOT + "/executions/" + batch["id"] + "/rerun", json={"request_key": "rerun-deleted-key"})
             assert rerun.status_code == 202, rerun.text
             assert rerun.json()["spec"]["cases"] == batch["spec"]["cases"]
-            assert (await client.post(ROOT + "/cases/" + created["id"] + "/restore")).status_code == 200
+            assert (await client.post(ROOT + "/questions/" + created["id"] + "/restore")).status_code == 200
             assert len((await client.get(ROOT + "/catalog")).json()["cases"]) == 31
         await engine.dispose()
 
@@ -100,12 +100,12 @@ def test_builtin_removal_updates_smoke_and_catalog_counts_and_can_be_restored(tm
     async def scenario():
         client, engine, _ = await client_for(tmp_path)
         async with client:
-            assert (await client.delete(ROOT + "/cases/grounded-pro")).status_code == 200
+            assert (await client.delete(ROOT + "/questions/grounded-pro")).status_code == 200
             catalog = (await client.get(ROOT + "/catalog")).json()
             assert len(catalog["cases"]) == 29 and catalog["core_count"] == 5
-            assert (await client.post(ROOT + "/cases/grounded-pro/restore")).status_code == 200
+            assert (await client.post(ROOT + "/questions/grounded-pro/restore")).status_code == 200
             assert (await client.get(ROOT + "/catalog")).json()["core_count"] == 6
-            assert (await client.delete(ROOT + "/cases/unknown")).status_code == 404
+            assert (await client.delete(ROOT + "/questions/unknown")).status_code == 404
         await engine.dispose()
 
     asyncio.run(scenario())
@@ -115,11 +115,11 @@ def test_reader_can_inspect_but_cannot_change_questions(tmp_path):
     async def scenario():
         client, engine, _ = await client_for(tmp_path, "user")
         async with client:
-            assert (await client.get(ROOT + "/cases")).status_code == 200
+            assert (await client.get(ROOT + "/questions")).status_code == 200
             body = {"title": "题目", "question": "问题", "scenario": "grounded", "mode": "pro"}
-            assert (await client.post(ROOT + "/cases", json=body)).status_code == 403
-            assert (await client.delete(ROOT + "/cases/grounded-pro")).status_code == 403
-            assert (await client.post(ROOT + "/cases/grounded-pro/restore")).status_code == 403
+            assert (await client.post(ROOT + "/questions", json=body)).status_code == 403
+            assert (await client.delete(ROOT + "/questions/grounded-pro")).status_code == 403
+            assert (await client.post(ROOT + "/questions/grounded-pro/restore")).status_code == 403
         await engine.dispose()
 
     asyncio.run(scenario())
@@ -131,7 +131,7 @@ def test_case_input_rejects_blank_fields_and_execution_overrides(tmp_path):
         async with client:
             valid = {"title": "题目", "question": "问题", "scenario": "grounded", "mode": "pro"}
             for changes in ({"question": "  "}, {"title": " "}, {"scenario": "shell"}, {"required_tool": "publish_release"}, {"execution_mode": "live"}, {"expected_terms": [""]}):
-                assert (await client.post(ROOT + "/cases", json={**valid, **changes})).status_code == 422
+                assert (await client.post(ROOT + "/questions", json={**valid, **changes})).status_code == 422
         await engine.dispose()
 
     asyncio.run(scenario())

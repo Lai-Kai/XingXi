@@ -24,6 +24,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { useI18n } from "@/core/i18n/hooks";
+import { getSkillLabel, isProductSkill } from "@/core/settings/catalog-labels";
 import { SkillRequestError } from "@/core/skills/api";
 import { useEnableSkill, useSkills } from "@/core/skills/hooks";
 import type { Skill } from "@/core/skills/type";
@@ -33,7 +34,7 @@ import { SettingsSection } from "./settings-section";
 
 export function SkillSettingsPage({ onClose }: { onClose?: () => void } = {}) {
   const { t } = useI18n();
-  const { skills, isLoading, error } = useSkills();
+  const { skills, isLoading, isFetching, error, refetch } = useSkills();
   const adminRequired =
     error instanceof SkillRequestError && error.isAdminRequired;
   return (
@@ -48,7 +49,19 @@ export function SkillSettingsPage({ onClose }: { onClose?: () => void } = {}) {
           {t.settings.skills.adminRequired}
         </div>
       ) : error ? (
-        <div>Error: {error.message}</div>
+        <div className="flex flex-col items-start gap-3">
+          <div role="alert" className="text-destructive text-sm">
+            {t.settings.skills.loadError}
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={isFetching}
+            onClick={() => void refetch()}
+          >
+            {isFetching ? t.common.loading : t.settings.skills.retryLoad}
+          </Button>
+        </div>
       ) : (
         <SkillSettingsList skills={skills} onClose={onClose} />
       )}
@@ -63,14 +76,17 @@ function SkillSettingsList({
   skills: Skill[];
   onClose?: () => void;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const router = useRouter();
   const { user } = useAuth();
   const isAdmin = user?.system_role === "admin";
   const [filter, setFilter] = useState<string>("public");
   const { mutate: enableSkill } = useEnableSkill();
   const filteredSkills = useMemo(
-    () => skills.filter((skill) => skill.category === filter),
+    () =>
+      skills.filter(
+        (skill) => isProductSkill(skill) && skill.category === filter,
+      ),
     [skills, filter],
   );
   const handleCreateSkill = () => {
@@ -99,29 +115,33 @@ function SkillSettingsList({
         <EmptySkill onCreateSkill={handleCreateSkill} />
       )}
       {filteredSkills.length > 0 &&
-        filteredSkills.map((skill) => (
-          <Item className="w-full" variant="outline" key={skill.name}>
-            <ItemContent>
-              <ItemTitle>
-                <div className="flex items-center gap-2">{skill.name}</div>
-              </ItemTitle>
-              <ItemDescription className="line-clamp-4">
-                {skill.description}
-              </ItemDescription>
-            </ItemContent>
-            <ItemActions>
-              <Switch
-                checked={skill.enabled}
-                disabled={
-                  env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY === "true" || !isAdmin
-                }
-                onCheckedChange={(checked) =>
-                  enableSkill({ skillName: skill.name, enabled: checked })
-                }
-              />
-            </ItemActions>
-          </Item>
-        ))}
+        filteredSkills.map((skill, index) => {
+          const label = getSkillLabel(skill, locale, index);
+          return (
+            <Item className="w-full" variant="outline" key={skill.name}>
+              <ItemContent>
+                <ItemTitle>
+                  <div className="flex items-center gap-2">{label.name}</div>
+                </ItemTitle>
+                <ItemDescription className="line-clamp-4">
+                  {label.description}
+                </ItemDescription>
+              </ItemContent>
+              <ItemActions>
+                <Switch
+                  aria-label={label.name}
+                  checked={skill.enabled}
+                  disabled={
+                    env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY === "true" || !isAdmin
+                  }
+                  onCheckedChange={(checked) =>
+                    enableSkill({ skillName: skill.name, enabled: checked })
+                  }
+                />
+              </ItemActions>
+            </Item>
+          );
+        })}
     </div>
   );
 }

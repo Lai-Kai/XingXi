@@ -60,16 +60,16 @@ export function ArtifactFileList({
           path: filepath,
         });
         if (result.success) {
-          toast.success(result.message);
+          toast.success(t.settings.skills.installSuccess);
         } else {
-          toast.error(result.message || "Failed to install skill");
+          toast.error(t.settings.skills.installFailed);
         }
       } catch (error) {
         console.error("Failed to install skill:", error);
         if (error instanceof SkillRequestError && error.isAdminRequired) {
           toast.error(t.settings.skills.installAdminRequired);
         } else {
-          toast.error("Failed to install skill");
+          toast.error(t.settings.skills.installFailed);
         }
       } finally {
         setInstallingFile(null);

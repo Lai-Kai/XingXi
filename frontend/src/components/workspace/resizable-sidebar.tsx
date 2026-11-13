@@ -5,7 +5,7 @@ import * as React from "react";
 import { SidebarProvider, useSidebar } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 
-const SIDEBAR_DEFAULT_WIDTH = 256;
+const SIDEBAR_DEFAULT_WIDTH = 240;
 const SIDEBAR_COLLAPSED_WIDTH = 48;
 const SIDEBAR_MIN_EXPANDED_WIDTH = 224;
 const SIDEBAR_MAX_WIDTH = 480;

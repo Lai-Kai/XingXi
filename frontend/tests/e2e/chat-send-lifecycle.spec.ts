@@ -6,6 +6,22 @@ test("first send keeps its conversation and the next message uses the same threa
   page,
 }) => {
   mockLangGraphAPI(page);
+  await page.addInitScript(() => localStorage.setItem("theme", "light"));
+  await page.route("**/api/models", (route) =>
+    route.fulfill({
+      json: {
+        models: [
+          {
+            id: "test-model",
+            name: "test-model",
+            model: "test-model",
+            display_name: "测试模型",
+            supports_thinking: false,
+          },
+        ],
+      },
+    }),
+  );
   const errors: string[] = [];
   const runPaths: string[] = [];
   let threadCreates = 0;
@@ -24,6 +40,10 @@ test("first send keeps its conversation and the next message uses the same threa
   });
 
   await page.goto("/workspace/chats/new");
+  await expect(page.getByTestId("xingxi-chat-surface")).toHaveCSS(
+    "background-image",
+    /linear-gradient/,
+  );
   const composer = page.locator("textarea").first();
   const messages = page.getByTestId("main-message-list");
   await expect(composer).toBeVisible();
@@ -33,6 +53,16 @@ test("first send keeps its conversation and the next message uses the same threa
   await expect(page).toHaveURL(/\/workspace\/chats\/[0-9a-f-]{36}$/);
   const conversationPath = new URL(page.url()).pathname;
   await expect(messages.getByText("Hello from DeerFlow!")).toBeVisible();
+  const answer = messages.locator("[data-assistant-turn]").first();
+  await expect(answer).toHaveCSS("border-radius", "20px");
+  await expect(answer.locator(".xingxi-answer-content")).toHaveCSS(
+    "color",
+    "rgb(15, 23, 42)",
+  );
+  await expect(page.locator(".xingxi-chat-send")).toHaveCSS(
+    "background-image",
+    /37, 99, 235/,
+  );
   await expect(composer).toBeEnabled();
   await expect(
     page

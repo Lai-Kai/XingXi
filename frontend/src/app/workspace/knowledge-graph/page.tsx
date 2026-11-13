@@ -38,6 +38,7 @@ import {
 import { GraphOverview } from "@/components/workspace/graph-overview";
 import { GraphReviewControls } from "@/components/workspace/graph-review-controls";
 import { useAuth } from "@/core/auth/AuthProvider";
+import { evidenceDetailPath } from "@/core/citations/sources";
 import {
   createEntity,
   createEvent,
@@ -81,6 +82,7 @@ import type {
   ReviewStatus,
 } from "@/core/knowledge-graph/types";
 import { createLatestRequestTracker } from "@/core/source-files/latest-request";
+import { publicErrorMessage } from "@/core/ui/presentation";
 
 type View = "graph" | "events" | "geo";
 type GraphMode = "explore" | "overview";
@@ -441,9 +443,10 @@ export default function KnowledgeGraphPage() {
                   resultRequestSequence.current === resultSequence
                 ) {
                   setError(
-                    reason instanceof Error
-                      ? reason.message
-                      : "关系网加载失败，当前保留已载入的直接关系",
+                    publicErrorMessage(
+                      reason,
+                      "关系网加载失败，当前保留已载入的直接关系",
+                    ),
                   );
                 }
               } finally {
@@ -478,7 +481,7 @@ export default function KnowledgeGraphPage() {
         ) {
           return;
         }
-        setError(reason instanceof Error ? reason.message : "无法读取知识图谱");
+        setError(publicErrorMessage(reason, "无法读取知识图谱"));
       } finally {
         if (supportDataTracker.current.isCurrent(request.sequence)) {
           setLoading(false);
@@ -735,7 +738,7 @@ export default function KnowledgeGraphPage() {
             y: Math.floor(index / 4) * 130,
           },
         data: {
-          label: `${entity.canonical_name}\n${entityTypes.find((item) => item.value === entity.entity_type)?.label ?? entity.entity_type}`,
+          label: `${entity.canonical_name}\n${entityTypes.find((item) => item.value === entity.entity_type)?.label ?? "其他"}`,
         },
         style: {
           width: 170,
@@ -743,11 +746,14 @@ export default function KnowledgeGraphPage() {
           borderRadius: 6,
           border:
             entity.id === focusedEntityId
-              ? "2px solid #174f53"
+              ? "2px solid var(--primary)"
               : `1px solid ${entity.review_status === "reviewed" ? nodeStyle.border : "#c39a47"}`,
           background:
-            entity.id === focusedEntityId ? "#dff2ef" : nodeStyle.background,
-          color: "#203334",
+            entity.id === focusedEntityId
+              ? "var(--accent)"
+              : nodeStyle.background,
+          color:
+            entity.id === focusedEntityId ? "var(--foreground)" : "#0f172a",
           fontSize: 13,
           padding: 12,
           boxShadow:
@@ -770,8 +776,8 @@ export default function KnowledgeGraphPage() {
         label: relationLabels[relation.relation_type],
         markerEnd: { type: MarkerType.ArrowClosed },
         animated: relation.is_inferred,
-        style: { stroke: relation.is_inferred ? "#b7791f" : "#39737a" },
-        labelStyle: { fontSize: 11, fill: "#4c5f62" },
+        style: { stroke: relation.is_inferred ? "#b7791f" : "var(--primary)" },
+        labelStyle: { fontSize: 11, fill: "var(--muted-foreground)" },
       }));
     return { nodes, edges };
   }, [
@@ -931,7 +937,7 @@ export default function KnowledgeGraphPage() {
       ) {
         return;
       }
-      setError(reason instanceof Error ? reason.message : "图谱查询失败");
+      setError(publicErrorMessage(reason, "图谱查询失败"));
     } finally {
       if (
         queryTracker.current.isCurrent(request.sequence) &&
@@ -1023,7 +1029,7 @@ export default function KnowledgeGraphPage() {
         graphDepthRef.current = graphDepth;
         setGraphDepth(graphDepth);
       }
-      setError(reason instanceof Error ? reason.message : "关系加载失败");
+      setError(publicErrorMessage(reason, "关系加载失败"));
     } finally {
       if (
         focusTracker.current.isCurrent(request.sequence) &&
@@ -1059,7 +1065,7 @@ export default function KnowledgeGraphPage() {
       toast.success(message);
       await load(true);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "保存失败");
+      setError(publicErrorMessage(reason, "保存失败"));
     } finally {
       setSaving(false);
     }
@@ -1147,23 +1153,33 @@ export default function KnowledgeGraphPage() {
     try {
       const response = await extractTextKnowledge(extractionText.trim(), false);
       setExtraction(response);
-      toast.success("抽取结果仅供预览，正式图谱只接收文献 Evidence");
+      toast.success("线索仅供预览，正式图谱需有文献出处");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "文本抽取失败");
+      setError(
+        publicErrorMessage(reason, "暂时无法整理文字中的线索，请重试。"),
+      );
     } finally {
       setSaving(false);
     }
   }
 
-  if (!discoveryView && loading && !entities.length)
-    return <BusinessLoadingState label="正在读取知识图谱…" />;
-  if (!discoveryView && error && !entities.length)
+  if (!discoveryView && !entities.length && (loading || error))
     return (
-      <BusinessErrorState description={error} onRetry={() => void load(true)} />
+      <main className="xingxi-module bg-muted/60 size-full overflow-y-auto">
+        <BusinessMobileHeader title="知识图谱" />
+        {loading ? (
+          <BusinessLoadingState label="正在读取知识图谱…" />
+        ) : (
+          <BusinessErrorState
+            description={error!}
+            onRetry={() => void load(true)}
+          />
+        )}
+      </main>
     );
 
   return (
-    <main className="size-full overflow-y-auto bg-[#f7faf9] text-[#202d2e]">
+    <main className="xingxi-module bg-muted/60 text-foreground size-full overflow-y-auto">
       <BusinessMobileHeader title="知识图谱" />
       <div className="mx-auto max-w-7xl px-4 py-7 sm:px-8 lg:px-10 lg:py-9">
         <BusinessPageHeader
@@ -1173,14 +1189,14 @@ export default function KnowledgeGraphPage() {
         />
 
         {!discoveryView && (
-          <div className="mt-5 flex flex-col gap-3 border-b border-[#d7e1df] pb-4 md:flex-row">
-            <label className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-md border bg-white px-3">
-              <Search className="size-4 text-[#66797a]" />
+          <div className="border-border mt-5 flex flex-col gap-3 border-b pb-4 md:flex-row">
+            <label className="bg-card flex h-10 min-w-0 flex-1 items-center gap-2 rounded-md border px-3">
+              <Search className="text-muted-foreground size-4" />
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 onKeyDown={(event) => event.key === "Enter" && void runQuery()}
-                placeholder="输入实体名称或编号"
+                placeholder="输入人物、地点或其他名称"
                 className="min-w-0 flex-1 bg-transparent text-sm outline-none"
               />
             </label>
@@ -1188,7 +1204,7 @@ export default function KnowledgeGraphPage() {
               type="button"
               disabled={queryLoading || !query.trim()}
               onClick={() => void runQuery()}
-              className="h-10 rounded-md bg-[#245f64] px-4 text-sm text-white hover:bg-[#194d51] disabled:cursor-not-allowed disabled:opacity-45"
+              className="bg-primary text-primary-foreground hover:bg-primary/90 h-10 rounded-md px-4 text-sm disabled:cursor-not-allowed disabled:opacity-45"
             >
               {queryLoading ? "查询中…" : "查询关系"}
             </button>
@@ -1203,7 +1219,7 @@ export default function KnowledgeGraphPage() {
           <p className="mt-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
             {result.status === "ambiguous"
               ? "名称存在多个候选，请输入更具体的名称。"
-              : "当前图谱没有匹配实体；管理员可在下方先建立待审核实体。"}
+              : "当前图谱没有匹配内容；管理员可在下方添加待复核的人物、地点等资料。"}
           </p>
         )}
         {!discoveryView &&
@@ -1223,7 +1239,7 @@ export default function KnowledgeGraphPage() {
         <div className="mt-5 flex gap-1 border-b" role="tablist">
           {(
             [
-              ["graph", "实体与关系", Database],
+              ["graph", "对象与关系", Database],
               ["events", "时间事件", CalendarDays],
               ["geo", "地图定位", MapPinned],
             ] as const
@@ -1232,7 +1248,7 @@ export default function KnowledgeGraphPage() {
               key={id}
               type="button"
               onClick={() => changeView(id)}
-              className={`inline-flex h-10 items-center gap-2 border-b-2 px-3 text-sm ${view === id ? "border-[#296e72] text-[#225b5f]" : "border-transparent text-[#697b7c]"}`}
+              className={`inline-flex h-10 items-center gap-2 border-b-2 px-3 text-sm ${view === id ? "border-primary text-primary" : "text-muted-foreground border-transparent"}`}
             >
               <Icon className="size-4" />
               {label}
@@ -1257,7 +1273,7 @@ export default function KnowledgeGraphPage() {
             <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border-b pb-3">
               <div className="flex flex-wrap items-center gap-2">
                 <div
-                  className="flex rounded-md bg-[#eaf1ef] p-1"
+                  className="bg-accent flex rounded-md p-1"
                   role="group"
                   aria-label="图谱视图"
                 >
@@ -1267,7 +1283,7 @@ export default function KnowledgeGraphPage() {
                     disabled={loading || focusLoading || queryLoading}
                     onClick={showGraphOverview}
                     title="查看当前知识版本中的所有独立关系网"
-                    className={`h-8 rounded px-3 text-xs disabled:cursor-wait disabled:opacity-60 ${isGraphOverview ? "bg-white font-medium text-[#225b5f] shadow-sm" : "text-[#68797a]"}`}
+                    className={`h-8 rounded px-3 text-xs disabled:cursor-wait disabled:opacity-60 ${isGraphOverview ? "bg-card text-primary font-medium shadow-sm" : "text-muted-foreground"}`}
                   >
                     全图总览
                   </button>
@@ -1277,7 +1293,7 @@ export default function KnowledgeGraphPage() {
                     disabled={loading || focusLoading || queryLoading}
                     onClick={() => enterFocusedGraph({ restore: true })}
                     title="返回当前主体的多跳关系探索"
-                    className={`h-8 rounded px-3 text-xs disabled:cursor-wait disabled:opacity-60 ${!isGraphOverview ? "bg-white font-medium text-[#225b5f] shadow-sm" : "text-[#68797a]"}`}
+                    className={`h-8 rounded px-3 text-xs disabled:cursor-wait disabled:opacity-60 ${!isGraphOverview ? "bg-card text-primary font-medium shadow-sm" : "text-muted-foreground"}`}
                   >
                     主体探索
                   </button>
@@ -1288,14 +1304,14 @@ export default function KnowledgeGraphPage() {
                     disabled={focusLoading}
                     onClick={goBackToPreviousEntity}
                     title="返回上一个探索主体"
-                    className="inline-flex h-8 items-center gap-1.5 rounded border border-[#cbdad7] bg-white px-2.5 text-xs text-[#225f64] hover:bg-[#eef5f4] disabled:cursor-not-allowed disabled:opacity-45"
+                    className="border-border bg-card text-primary hover:bg-muted/60 inline-flex h-8 items-center gap-1.5 rounded border px-2.5 text-xs disabled:cursor-not-allowed disabled:opacity-45"
                   >
                     <ArrowLeft className="size-3.5" />
                     返回上一个主体
                   </button>
                 )}
                 <div
-                  className="flex rounded-md bg-[#eaf1ef] p-1"
+                  className="bg-accent flex rounded-md p-1"
                   role="group"
                   aria-label="关系层数"
                 >
@@ -1317,14 +1333,14 @@ export default function KnowledgeGraphPage() {
                         queryLoading
                       }
                       onClick={() => changeGraphDepth(depth)}
-                      className={`h-8 rounded px-3 text-xs disabled:cursor-wait disabled:opacity-60 ${graphDepth === depth ? "bg-white font-medium text-[#225b5f] shadow-sm" : "text-[#68797a]"}`}
+                      className={`h-8 rounded px-3 text-xs disabled:cursor-wait disabled:opacity-60 ${graphDepth === depth ? "bg-card text-primary font-medium shadow-sm" : "text-muted-foreground"}`}
                     >
                       {label}
                     </button>
                   ))}
                 </div>
                 <div
-                  className="flex rounded-md bg-[#eaf1ef] p-1"
+                  className="bg-accent flex rounded-md p-1"
                   aria-label="关系范围"
                 >
                   {(
@@ -1343,7 +1359,7 @@ export default function KnowledgeGraphPage() {
                           ? "查看人物、地点、建筑、事件等全部关系"
                           : "仅查看人物与人物之间的亲属和社会关系"
                       }
-                      className={`h-8 rounded px-3 text-xs ${graphScope === value ? "bg-white font-medium text-[#225b5f] shadow-sm" : "text-[#68797a]"}`}
+                      className={`h-8 rounded px-3 text-xs ${graphScope === value ? "bg-card text-primary font-medium shadow-sm" : "text-muted-foreground"}`}
                     >
                       {label}
                     </button>
@@ -1358,7 +1374,7 @@ export default function KnowledgeGraphPage() {
             </div>
             {rejectedView ? (
               <section aria-label="已驳回关系审核">
-                <p className="mb-3 text-sm text-[#68797a]">
+                <p className="text-muted-foreground mb-3 text-sm">
                   已驳回关系仅在管理员审核列表中显示。改判后仍需通过后续发布流程对外生效。
                 </p>
                 <ul className="space-y-3">
@@ -1368,14 +1384,14 @@ export default function KnowledgeGraphPage() {
                       <li
                         key={item.id}
                         id={`graph-relation-${item.id}`}
-                        className="rounded border bg-white p-4 text-sm"
+                        className="bg-card rounded border p-4 text-sm"
                       >
                         <p>
                           {entityById.get(item.subject_id)?.canonical_name ??
-                            item.subject_id}{" "}
+                            "名称未详"}{" "}
                           · {relationLabels[item.relation_type]} ·{" "}
                           {entityById.get(item.object_id)?.canonical_name ??
-                            item.object_id}
+                            "名称未详"}
                         </p>
                         <p className="mt-1 text-amber-800">
                           审核状态：{reviewLabels[item.review_status]}
@@ -1384,10 +1400,10 @@ export default function KnowledgeGraphPage() {
                           {item.evidence_ids.map((evidenceId, index) => (
                             <a
                               key={evidenceId}
-                              href={`/api/knowledge-search/evidence/${encodeURIComponent(evidenceId)}`}
+                              href={evidenceDetailPath(evidenceId)}
                               target="_blank"
                               rel="noreferrer"
-                              className="mr-3 text-[#24676c] hover:underline"
+                              className="text-primary mr-3 hover:underline"
                             >
                               查看资料出处 {index + 1}
                             </a>
@@ -1411,7 +1427,7 @@ export default function KnowledgeGraphPage() {
               </section>
             ) : (
               <>
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-[#dbe5e2] pb-3 text-xs text-[#68797a]">
+                <div className="border-border text-muted-foreground mb-4 flex flex-wrap items-center justify-between gap-2 border-b pb-3 text-xs">
                   <span>
                     {isGraphOverview
                       ? `全图总览 · ${connectedComponentCount} 个独立关系网${isolatedEntityCount ? ` · ${isolatedEntityCount} 个孤立主体` : ""}`
@@ -1426,7 +1442,7 @@ export default function KnowledgeGraphPage() {
                   </span>
                 </div>
                 {!isGraphOverview && graphRelationPageCount > 1 && (
-                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded border border-[#dbe5e2] bg-white px-3 py-2 text-xs text-[#68797a]">
+                  <div className="xingxi-panel border-border bg-card text-muted-foreground mb-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl border px-3 py-2 text-xs">
                     <span>
                       地图关系第 {safeGraphRelationPage + 1} /{" "}
                       {graphRelationPageCount} 组 · 本组{" "}
@@ -1442,7 +1458,7 @@ export default function KnowledgeGraphPage() {
                           )
                         }
                         title="查看上一组关系"
-                        className="inline-flex h-7 items-center gap-1 rounded border border-[#cbdad7] bg-white px-2 text-xs text-[#225f64] hover:bg-[#eef5f4] disabled:cursor-not-allowed disabled:opacity-40"
+                        className="border-border bg-card text-primary hover:bg-muted/60 inline-flex h-7 items-center gap-1 rounded border px-2 text-xs disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         <ChevronLeft className="size-3.5" />
                         上一组
@@ -1458,7 +1474,7 @@ export default function KnowledgeGraphPage() {
                           )
                         }
                         title="查看下一组关系"
-                        className="inline-flex h-7 items-center gap-1 rounded border border-[#cbdad7] bg-white px-2 text-xs text-[#225f64] hover:bg-[#eef5f4] disabled:cursor-not-allowed disabled:opacity-40"
+                        className="border-border bg-card text-primary hover:bg-muted/60 inline-flex h-7 items-center gap-1 rounded border px-2 text-xs disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         下一组
                         <ChevronRight className="size-3.5" />
@@ -1467,7 +1483,7 @@ export default function KnowledgeGraphPage() {
                   </div>
                 )}
                 <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
-                  <div className="h-[680px] overflow-hidden rounded-md border bg-white lg:h-[760px]">
+                  <div className="xingxi-panel bg-card h-[680px] overflow-hidden rounded-2xl border lg:h-[760px]">
                     {flow.nodes.length ? (
                       <ReactFlow
                         nodes={flow.nodes}
@@ -1513,31 +1529,33 @@ export default function KnowledgeGraphPage() {
                             ?.scrollIntoView({ block: "nearest" });
                         }}
                       >
-                        <Background color="#dbe5e2" gap={32} />
+                        <Background color="var(--border)" gap={32} />
                         <Controls showInteractive={false} />
                       </ReactFlow>
                     ) : (
                       <BusinessEmptyState
                         icon={Share2}
-                        title="图谱尚无实体"
-                        description="当前还没有绑定文献 Evidence 的实体。"
+                        title="图谱尚无人物、地点等资料"
+                        description="当前还没有附有文献出处的人物、地点等资料。"
                         className="h-full"
                       />
                     )}
                   </div>
-                  <aside className="max-h-[680px] overflow-y-auto border-l bg-white p-4 lg:max-h-[760px]">
+                  <aside className="bg-card max-h-[680px] overflow-y-auto border-l p-4 lg:max-h-[760px]">
                     {focusedEntity ? (
                       <>
-                        <div className="border-b border-[#dbe5e2] pb-3">
-                          <p className="text-xs text-[#718082]">当前探索中心</p>
+                        <div className="border-border border-b pb-3">
+                          <p className="text-muted-foreground text-xs">
+                            当前探索中心
+                          </p>
                           <h2 className="mt-1 text-base font-semibold">
                             {focusedEntity.canonical_name}
                           </h2>
-                          <p className="mt-1 text-xs text-[#718082]">
+                          <p className="text-muted-foreground mt-1 text-xs">
                             {entityTypes.find(
                               (item) =>
                                 item.value === focusedEntity.entity_type,
-                            )?.label ?? focusedEntity.entity_type}
+                            )?.label ?? "其他"}
                             {focusedEntity.summary
                               ? ` · ${focusedEntity.summary}`
                               : ""}
@@ -1549,12 +1567,12 @@ export default function KnowledgeGraphPage() {
                             {panelRelations.length}）
                           </h3>
                           {focusLoading && (
-                            <span className="text-xs text-[#718082]">
+                            <span className="text-muted-foreground text-xs">
                               加载中…
                             </span>
                           )}
                         </div>
-                        <p className="mt-1 text-xs leading-5 text-[#718082]">
+                        <p className="text-muted-foreground mt-1 text-xs leading-5">
                           {graphDepth === 1
                             ? "当前显示主体的直接关系；切换到两层或三层关系网，可查看关联主体之间及更外围的联系。"
                             : "关系网包含当前主体及外围主体的联系。点击连线查看出处，点击主体可继续以它为中心探索。"}
@@ -1582,26 +1600,26 @@ export default function KnowledgeGraphPage() {
                               <li
                                 key={relation.id}
                                 id={`graph-relation-${relation.id}`}
-                                className="border-b border-[#e4ebea] pb-3 text-xs leading-5"
+                                className="border-border border-b pb-3 text-xs leading-5"
                               >
                                 <div className="flex items-center gap-2">
                                   <span className="min-w-0 flex-1 truncate font-medium">
                                     {entityById.get(relationCenterId)
-                                      ?.canonical_name ?? relationCenterId}
+                                      ?.canonical_name ?? "名称未详"}
                                   </span>
-                                  <ArrowRight className="size-3.5 shrink-0 text-[#7b9293]" />
+                                  <ArrowRight className="text-muted-foreground size-3.5 shrink-0" />
                                   <button
                                     type="button"
                                     disabled={focusLoading || queryLoading}
                                     onClick={() => void focusEntity(otherId)}
-                                    className="inline-flex min-w-0 items-center gap-1 truncate font-semibold text-[#24676c] hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+                                    className="text-primary inline-flex min-w-0 items-center gap-1 truncate font-semibold hover:underline disabled:cursor-not-allowed disabled:opacity-50"
                                   >
                                     <span className="truncate">
-                                      {other?.canonical_name ?? otherId}
+                                      {other?.canonical_name ?? "名称未详"}
                                     </span>
                                   </button>
                                 </div>
-                                <p className="mt-1 text-[#315f64]">
+                                <p className="text-primary mt-1">
                                   {relationLabelForCenter(
                                     relation,
                                     relationCenterId,
@@ -1610,7 +1628,7 @@ export default function KnowledgeGraphPage() {
                                     ? ` · ${relation.start_time ?? ""}${relation.end_time ? `—${relation.end_time}` : ""}`
                                     : ""}
                                 </p>
-                                <div className="mt-1 text-[#748385]">
+                                <div className="text-muted-foreground mt-1">
                                   关系可靠程度{" "}
                                   {Math.round(relation.confidence * 100)}% ·{" "}
                                   {relation.is_inferred
@@ -1628,13 +1646,13 @@ export default function KnowledgeGraphPage() {
                                       isEvidenceOpen ? null : relation.id,
                                     )
                                   }
-                                  className="mt-1 inline-flex items-center gap-1 text-[#24676c] hover:underline"
+                                  className="text-primary mt-1 inline-flex items-center gap-1 hover:underline"
                                 >
                                   <FileSearch className="size-3.5" />
                                   {isEvidenceOpen ? "收起出处" : "查看资料出处"}
                                 </button>
                                 {isEvidenceOpen && (
-                                  <div className="mt-2 rounded border border-[#d9e4e2] bg-[#f6faf9] p-2 text-[#627477]">
+                                  <div className="border-border bg-muted/60 text-muted-foreground mt-2 rounded border p-2">
                                     {evidence.length ? (
                                       evidence.map((item) => {
                                         const documentTitle =
@@ -1667,10 +1685,12 @@ export default function KnowledgeGraphPage() {
                                           (evidenceId, index) => (
                                             <a
                                               key={evidenceId}
-                                              href={`/api/knowledge-search/evidence/${encodeURIComponent(evidenceId)}`}
+                                              href={evidenceDetailPath(
+                                                evidenceId,
+                                              )}
                                               target="_blank"
                                               rel="noreferrer"
-                                              className="block text-[#24676c] hover:underline"
+                                              className="text-primary block hover:underline"
                                             >
                                               查看资料出处 {index + 1}
                                             </a>
@@ -1702,7 +1722,7 @@ export default function KnowledgeGraphPage() {
                             );
                           })}
                           {!panelRelations.length && (
-                            <li className="text-sm text-[#718082]">
+                            <li className="text-muted-foreground text-sm">
                               当前范围还没有可展示的关系。
                             </li>
                           )}
@@ -1713,7 +1733,7 @@ export default function KnowledgeGraphPage() {
                         <h2 className="text-sm font-semibold">
                           关系网总览（{connectedComponentCount}）
                         </h2>
-                        <p className="mt-1 text-xs leading-5 text-[#718082]">
+                        <p className="text-muted-foreground mt-1 text-xs leading-5">
                           当前知识版本中有 {connectedComponentCount}{" "}
                           个互不相连的关系网。点击任意关系网的主体，即可进入对应的多跳探索。
                           {isolatedEntityCount
@@ -1735,18 +1755,18 @@ export default function KnowledgeGraphPage() {
                             return (
                               <li
                                 key={component.id}
-                                className="border-b border-[#e4ebea] pb-3 text-xs leading-5"
+                                className="border-border border-b pb-3 text-xs leading-5"
                               >
                                 <div className="font-medium">
                                   {isIsolated
                                     ? "孤立主体"
                                     : `关系网 ${index + 1}`}
                                 </div>
-                                <div className="mt-1 text-[#748385]">
+                                <div className="text-muted-foreground mt-1">
                                   {component.entityIds.length} 个主体 ·{" "}
                                   {component.relationIds.length} 条关系
                                 </div>
-                                <p className="mt-1 text-[#315f64]">
+                                <p className="text-primary mt-1">
                                   {names.slice(0, 5).join("、")}
                                   {names.length > 5
                                     ? ` 等 ${names.length} 个主体`
@@ -1760,7 +1780,7 @@ export default function KnowledgeGraphPage() {
                                       addToHistory: false,
                                     })
                                   }
-                                  className="mt-1 font-semibold text-[#24676c] hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+                                  className="text-primary mt-1 font-semibold hover:underline disabled:cursor-not-allowed disabled:opacity-50"
                                 >
                                   从此关系网开始探索
                                 </button>
@@ -1774,7 +1794,7 @@ export default function KnowledgeGraphPage() {
                         <h2 className="text-sm font-semibold">
                           关系记录（{displayedRelations.length}）
                         </h2>
-                        <p className="mt-1 text-xs leading-5 text-[#718082]">
+                        <p className="text-muted-foreground mt-1 text-xs leading-5">
                           点击图中的任意节点，开始以它为中心探索关系。
                         </p>
                         <ul className="mt-3 space-y-3">
@@ -1786,12 +1806,12 @@ export default function KnowledgeGraphPage() {
                             >
                               <div className="font-medium">
                                 {entityById.get(relation.subject_id)
-                                  ?.canonical_name ?? relation.subject_id}{" "}
+                                  ?.canonical_name ?? "名称未详"}{" "}
                                 · {relationLabels[relation.relation_type]} ·{" "}
                                 {entityById.get(relation.object_id)
-                                  ?.canonical_name ?? relation.object_id}
+                                  ?.canonical_name ?? "名称未详"}
                               </div>
-                              <div className="text-[#748385]">
+                              <div className="text-muted-foreground">
                                 关系可靠程度{" "}
                                 {Math.round(relation.confidence * 100)}% ·{" "}
                                 {relation.is_inferred
@@ -1814,7 +1834,7 @@ export default function KnowledgeGraphPage() {
                             </li>
                           ))}
                           {!displayedRelations.length && (
-                            <li className="text-sm text-[#718082]">
+                            <li className="text-muted-foreground text-sm">
                               当前没有关系记录。
                             </li>
                           )}
@@ -1850,18 +1870,18 @@ export default function KnowledgeGraphPage() {
         {view === "geo" && (
           <section className="mt-4">
             <div className="mb-3 flex items-center justify-between gap-3 border-b pb-3">
-              <p className="text-xs text-[#68797a]">
+              <p className="text-muted-foreground text-xs">
                 坐标为历史地点的现状参照，定位可靠程度与审核状态分别展示。
               </p>
               <Link
                 href="/workspace/map"
-                className="inline-flex h-9 shrink-0 items-center gap-2 rounded-md border bg-white px-3 text-xs text-[#225f64] hover:bg-[#eef5f4]"
+                className="bg-card text-primary hover:bg-muted/60 inline-flex h-9 shrink-0 items-center gap-2 rounded-md border px-3 text-xs"
               >
                 <MapPinned className="size-3.5" /> 在古舆地图查看
               </Link>
             </div>
             {geo.length ? (
-              <ul className="divide-y border-y bg-white">
+              <ul className="bg-card divide-y border-y">
                 {geo.map((item) => (
                   <li
                     key={item.entity_id}
@@ -1869,15 +1889,21 @@ export default function KnowledgeGraphPage() {
                   >
                     <div>
                       <h2 className="text-sm font-semibold">{item.name}</h2>
-                      <p className="mt-1 font-mono text-xs text-[#647779]">
+                      <p className="text-muted-foreground mt-1 font-mono text-xs">
                         {item.lon.toFixed(6)}, {item.lat.toFixed(6)}
                       </p>
                     </div>
-                    <p className="text-xs leading-5 text-[#647779]">
+                    <p className="text-muted-foreground text-xs leading-5">
                       {item.basis}
                     </p>
                     <div className="text-right text-xs">
-                      <div>{item.confidence}</div>
+                      <div>
+                        {{
+                          exact: "确切位置",
+                          approximate: "大致位置",
+                          speculative: "推测位置",
+                        }[item.confidence] ?? "位置待核对"}
+                      </div>
                       <div className="mt-1 text-amber-800">
                         {reviewLabels[item.review_status]}
                       </div>
@@ -1888,7 +1914,7 @@ export default function KnowledgeGraphPage() {
             ) : (
               <BusinessEmptyState
                 icon={MapPinned}
-                title="当前没有数据库定位记录"
+                title="暂无可定位的地点"
                 description="古舆地图的公开资料目录仍可正常使用。"
               />
             )}
@@ -1899,63 +1925,62 @@ export default function KnowledgeGraphPage() {
           <section className="mt-8 border-t pt-6">
             <div className="mb-4">
               <h2 className="text-base font-semibold">图谱数据维护</h2>
-              <p className="mt-1 text-xs text-[#68797a]">
-                文献导入会自动绑定
-                Evidence。手工文本只允许预览，不能绕过文献证据写入正式图谱。
+              <p className="text-muted-foreground mt-1 text-xs">
+                正式图谱需要文献出处。粘贴的文字仅供预览，发布前仍需核对原件。
               </p>
             </div>
-            <div className="mb-6 grid gap-4 border-b border-[#d8e2df] pb-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+            <div className="border-border mb-6 grid gap-4 border-b pb-6 lg:grid-cols-[minmax(0,1fr)_340px]">
               <div>
                 <label
                   className="text-sm font-medium"
                   htmlFor="knowledge-extraction-text"
                 >
-                  文本知识抽取
+                  文本线索预览
                 </label>
                 <textarea
                   id="knowledge-extraction-text"
                   value={extractionText}
                   onChange={(event) => setExtractionText(event.target.value)}
                   rows={4}
-                  placeholder="粘贴文献片段，仅预览可抽取的实体、关系和事件"
-                  className="mt-2 w-full resize-y rounded-md border border-[#cedbd8] bg-white px-3 py-2 text-sm leading-6 outline-none"
+                  placeholder="粘贴文献片段，预览其中的人物、地点、关系和事件"
+                  className="border-border bg-card mt-2 w-full resize-y rounded-md border px-3 py-2 text-sm leading-6 outline-none"
                 />
                 <div className="mt-3 flex gap-2">
                   <button
                     type="button"
                     disabled={saving}
                     onClick={() => void runExtraction()}
-                    className="h-9 rounded-md border bg-white px-3 text-sm disabled:opacity-40"
+                    className="bg-card h-9 rounded-md border px-3 text-sm disabled:opacity-40"
                   >
-                    预览抽取
+                    预览线索
                   </button>
                 </div>
               </div>
-              <div className="border-l border-[#d8e2df] pl-4 text-sm">
-                <h3 className="font-medium">抽取结果</h3>
+              <div className="border-border border-l pl-4 text-sm">
+                <h3 className="font-medium">线索预览</h3>
                 {extraction ? (
                   <dl className="mt-2 grid grid-cols-[100px_1fr] gap-y-2 text-xs">
-                    <dt className="text-[#718082]">实体</dt>
+                    <dt className="text-muted-foreground">人物、地点等</dt>
                     <dd>
                       {extraction.extraction.entities
                         .map((item) => item.name)
                         .join("、") || "无"}
                     </dd>
-                    <dt className="text-[#718082]">关系</dt>
+                    <dt className="text-muted-foreground">关系</dt>
                     <dd>{extraction.extraction.relations.length} 条</dd>
-                    <dt className="text-[#718082]">事件</dt>
+                    <dt className="text-muted-foreground">事件</dt>
                     <dd>{extraction.extraction.events.length} 条</dd>
-                    <dt className="text-[#718082]">别名候选</dt>
+                    <dt className="text-muted-foreground">别名候选</dt>
                     <dd>
                       {extraction.extraction.aliases
                         .map((item) => `${item.alias} → ${item.canonical_name}`)
                         .join("、") || "无"}
                     </dd>
-                    <dt className="text-[#718082]">写入状态</dt>
+                    <dt className="text-muted-foreground">写入状态</dt>
                     <dd>仅预览，未写入</dd>
                   </dl>
                 ) : (
-                  <p className="mt-2 text-xs leading-5 text-[#718082]">
+                  <p className="text-muted-foreground mt-2 text-xs leading-5">
                     先预览可检查规则结果；确认写入后，记录保持待审核状态，不直接发布。
                   </p>
                 )}
@@ -1963,9 +1988,9 @@ export default function KnowledgeGraphPage() {
             </div>
             <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
               <AdminForm
-                title="新建实体"
+                title="添加图谱资料"
                 onSubmit={() =>
-                  save(() => createEntity(entityForm), "实体已建立")
+                  save(() => createEntity(entityForm), "资料已添加")
                 }
                 saving={saving}
               >
@@ -2055,7 +2080,7 @@ export default function KnowledgeGraphPage() {
                 />
               </AdminForm>
               <AdminForm
-                title="登记演示事件"
+                title="登记事件草稿"
                 onSubmit={() =>
                   save(() => createEvent(eventForm), "事件已登记")
                 }
@@ -2253,7 +2278,7 @@ export default function KnowledgeGraphPage() {
             </div>
           </section>
         ) : (
-          <p className="mt-7 border-t pt-4 text-xs text-[#748385]">
+          <p className="text-muted-foreground mt-7 border-t pt-4 text-xs">
             当前账号可查询图谱、事件与定位；数据维护仅向管理员开放。
           </p>
         )}
@@ -2272,7 +2297,7 @@ function ReviewFilter({
   isAdmin: boolean;
 }) {
   return (
-    <div className="flex rounded-md bg-[#eaf1ef] p-1" aria-label="审核状态">
+    <div className="bg-accent flex rounded-md p-1" aria-label="审核状态">
       {(
         [
           ["all", "全部状态"],
@@ -2286,7 +2311,7 @@ function ReviewFilter({
           type="button"
           aria-pressed={value === item}
           onClick={() => onChange(item)}
-          className={`h-8 rounded px-3 text-xs ${value === item ? "bg-white font-medium text-[#225b5f] shadow-sm" : "text-[#68797a]"}`}
+          className={`h-8 rounded px-3 text-xs ${value === item ? "bg-card text-primary font-medium shadow-sm" : "text-muted-foreground"}`}
         >
           {label}
         </button>
@@ -2323,13 +2348,13 @@ function EventTimeline({
     );
   }
   return (
-    <ol className="relative ml-3 border-l border-[#9bb7b4] bg-white py-2">
+    <ol className="border-primary bg-card relative ml-3 border-l py-2">
       {events.map((item) => {
         const place = item.place_entity_id
           ? entityById.get(item.place_entity_id)
           : null;
         const participants = item.participant_entity_ids
-          .map((id) => entityById.get(id)?.canonical_name ?? id)
+          .map((id) => entityById.get(id)?.canonical_name ?? "姓名未详")
           .join("、");
         return (
           <li
@@ -2337,12 +2362,12 @@ function EventTimeline({
             id={`graph-event-${item.id}`}
             className="relative grid gap-3 border-b px-5 py-5 last:border-b-0 md:grid-cols-[150px_minmax(0,1fr)_180px]"
           >
-            <span className="absolute top-7 -left-[5px] size-2.5 rounded-full border-2 border-white bg-[#39777a]" />
+            <span className="bg-primary absolute top-7 -left-[5px] size-2.5 rounded-full border-2 border-white" />
             <div>
-              <div className="font-mono text-sm font-semibold text-[#225f64]">
+              <div className="text-primary font-mono text-sm font-semibold">
                 {item.start_time ?? "年代待考"}
               </div>
-              <div className="mt-1 text-xs text-[#68797a]">
+              <div className="text-muted-foreground mt-1 text-xs">
                 {item.time_certainty === "exact"
                   ? "明确纪年"
                   : item.time_certainty === "approximate"
@@ -2357,29 +2382,26 @@ function EventTimeline({
                   {reviewLabels[item.review_status]}
                 </span>
               </div>
-              <p className="mt-2 text-sm leading-6 text-[#536568]">
+              <p className="text-muted-foreground mt-2 text-sm leading-6">
                 {item.summary ?? "暂无事件摘要。"}
               </p>
-              <div className="mt-2 text-xs leading-5 text-[#68797a]">
+              <div className="text-muted-foreground mt-2 text-xs leading-5">
                 {participants && <p>人物：{participants}</p>}
                 {place && <p>地点：{place.canonical_name}</p>}
-                {item.release_id && (
-                  <p className="break-all">知识版本编号：{item.release_id}</p>
-                )}
               </div>
             </div>
             <div className="text-xs">
-              <p className="font-medium text-[#536568]">
+              <p className="text-muted-foreground font-medium">
                 {item.evidence_ids.length} 条资料出处
               </p>
               <div className="mt-1 space-y-1">
                 {item.evidence_ids.map((evidenceId, index) => (
                   <a
                     key={evidenceId}
-                    href={`/api/knowledge-search/evidence/${encodeURIComponent(evidenceId)}`}
+                    href={evidenceDetailPath(evidenceId)}
                     target="_blank"
                     rel="noreferrer"
-                    className="block text-[#24676c] hover:underline"
+                    className="text-primary block hover:underline"
                   >
                     查看出处 {index + 1}
                   </a>
@@ -2388,7 +2410,7 @@ function EventTimeline({
               {place && (
                 <Link
                   href="/workspace/map"
-                  className="mt-2 inline-flex items-center gap-1 text-[#24676c] hover:underline"
+                  className="text-primary mt-2 inline-flex items-center gap-1 hover:underline"
                 >
                   <MapPinned className="size-3" /> 地图查看
                 </Link>
@@ -2425,10 +2447,13 @@ function EntitySelect({
       onChange={(event) => onChange(event.target.value)}
       className="field"
     >
-      <option value="">选择实体</option>
+      <option value="">选择人物、地点或其他对象</option>
       {entities.map((item) => (
         <option key={item.id} value={item.id}>
-          {item.canonical_name}（{item.entity_type}）
+          {item.canonical_name}（
+          {entityTypes.find((type) => type.value === item.entity_type)?.label ??
+            "其他"}
+          ）
         </option>
       ))}
     </select>
@@ -2452,14 +2477,14 @@ function AdminForm({
         event.preventDefault();
         void onSubmit();
       }}
-      className="space-y-3 border-l border-[#d8e2df] pl-4"
+      className="border-border space-y-3 border-l pl-4"
     >
       <h3 className="text-sm font-medium">{title}</h3>
       {children}
       <button
         type="submit"
         disabled={saving}
-        className="inline-flex h-9 items-center gap-1.5 rounded-md bg-[#296a6f] px-3 text-sm text-white disabled:opacity-40"
+        className="bg-primary text-primary-foreground inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-sm disabled:opacity-40"
       >
         <Plus className="size-4" />
         保存

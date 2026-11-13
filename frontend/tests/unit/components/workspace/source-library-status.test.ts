@@ -26,7 +26,7 @@ test("reviewed text remains reviewed while an independent indexing attempt has f
   );
   expect(html).toContain("已复核");
   expect(html).toContain("处理失败");
-  expect(html).toContain("索引构建失败，请重试处理");
+  expect(html).toContain("处理未完成，请重试处理");
   expect(html).not.toContain("sqlite3");
 });
 

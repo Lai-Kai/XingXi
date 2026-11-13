@@ -15,12 +15,13 @@ import {
   type User,
 } from "@/core/auth/types";
 import { useI18n } from "@/core/i18n/hooks";
+import { settingsErrorMessage } from "@/core/settings/errors";
 
 import { SettingsSection } from "./settings-section";
 
 export function AccountSettingsPage() {
   const { user, logout } = useAuth();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const isSsoUser = Boolean(user?.oauth_provider);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -60,7 +61,13 @@ export function AccountSettingsPage() {
       if (!res.ok) {
         const data = await res.json();
         const authError = parseAuthError(data);
-        setError(authError.message);
+        setError(
+          settingsErrorMessage(
+            authError.message,
+            t.settings.account.passwordChangeError,
+            locale,
+          ),
+        );
         return;
       }
 
@@ -94,7 +101,9 @@ export function AccountSettingsPage() {
             {user?.organization_name && (
               <>
                 <span className="text-muted-foreground text-sm">所属机构</span>
-                <span className="text-sm font-medium">{user.organization_name}</span>
+                <span className="text-sm font-medium">
+                  {user.organization_name}
+                </span>
               </>
             )}
             {isSsoUser && (
@@ -103,7 +112,7 @@ export function AccountSettingsPage() {
                   {t.settings.account.ssoProvider}
                 </span>
                 <span className="text-sm font-medium capitalize">
-                  {user?.oauth_provider}
+                  {locale === "zh-CN" ? "统一登录" : "Unified sign-in"}
                 </span>
               </>
             )}
@@ -207,7 +216,13 @@ function UserRoleManagement() {
         setUsers(userSchema.array().parse(payload));
       })
       .catch((reason: unknown) =>
-        setError(reason instanceof Error ? reason.message : "无法读取用户角色"),
+        setError(
+          settingsErrorMessage(
+            reason,
+            "无法读取用户角色，请稍后重试。",
+            "zh-CN",
+          ),
+        ),
       )
       .finally(() => setLoading(false));
   }, []);
@@ -234,7 +249,9 @@ function UserRoleManagement() {
         current.map((item) => (item.id === updated.id ? updated : item)),
       );
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "保存角色失败");
+      setError(
+        settingsErrorMessage(reason, "保存角色失败，请稍后重试。", "zh-CN"),
+      );
     } finally {
       setSavingId(null);
     }
@@ -243,7 +260,7 @@ function UserRoleManagement() {
   return (
     <SettingsSection
       title="用户与场景角色"
-      description="为账号分配真实业务角色和所属机构；权限由后端同步执行。"
+      description="为账号分配业务角色和所属机构，决定可使用的功能和资料范围。"
     >
       {loading ? (
         <p className="text-muted-foreground text-sm">正在读取用户...</p>
@@ -267,12 +284,15 @@ function UserRoleManagement() {
                   setUsers((current) =>
                     current.map((item) =>
                       item.id === target.id
-                        ? { ...item, business_role: event.target.value as BusinessRole }
+                        ? {
+                            ...item,
+                            business_role: event.target.value as BusinessRole,
+                          }
                         : item,
                     ),
                   )
                 }
-                className="h-9 rounded-md border bg-background px-2 text-sm"
+                className="bg-background h-9 rounded-md border px-2 text-sm"
               >
                 {BUSINESS_ROLES.map((role) => (
                   <option key={role} value={role}>

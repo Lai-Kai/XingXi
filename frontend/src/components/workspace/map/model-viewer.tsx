@@ -12,6 +12,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { type GlbAssetDescriptor } from "@/core/map/model-assets";
+import { createModelLoadWatchdog } from "@/core/map/model-load-watchdog";
 import { cn } from "@/lib/utils";
 
 const INITIAL_ORBIT = "90deg 75deg 105%";
@@ -25,6 +26,11 @@ export function ModelViewer({ asset }: { asset: GlbAssetDescriptor }) {
   const [attempt, setAttempt] = useState(0);
   const [expanded, setExpanded] = useState(false);
   const [autoRotate, setAutoRotate] = useState(false);
+  const [original, setOriginal] = useState(false);
+  const [slow, setSlow] = useState(false);
+  const [failureText, setFailureText] = useState("");
+  const modelSource =
+    !original && asset.previewSrc ? asset.previewSrc : asset.src;
   const expandedHostRef = useRef<HTMLDivElement | null>(null);
   const expandedRef = useRef(false);
 
@@ -34,25 +40,44 @@ export function ModelViewer({ asset }: { asset: GlbAssetDescriptor }) {
     setState("loading");
     setProgress(0);
     setAutoRotate(false);
-    const timeout = window.setTimeout(() => {
-      if (!disposed) setState("failed");
-    }, 120_000);
+    setSlow(false);
+    setFailureText("");
+    const watchdog = createModelLoadWatchdog({
+      onSlow: () => {
+        if (!disposed) setSlow(true);
+      },
+      onIdle: () => {
+        if (disposed) return;
+        setFailureText("长时间未收到加载进展，请重试或下载模型原件。");
+        setState("failed");
+      },
+    });
 
     const onLoad = () => {
       if (disposed) return;
-      window.clearTimeout(timeout);
+      watchdog.stop();
+      setSlow(false);
       setProgress(100);
       setState("ready");
     };
-    const onError = () => {
+    const onError = (event?: Event) => {
       if (disposed) return;
-      window.clearTimeout(timeout);
+      watchdog.stop();
+      setSlow(false);
+      const type = (event as CustomEvent<{ type?: string }> | undefined)?.detail
+        ?.type;
+      setFailureText(
+        type === "webglcontextlost"
+          ? "当前设备的三维渲染已中断，请重试或下载模型原件。"
+          : "模型文件未能加载，请重试或下载模型原件。",
+      );
       setState("failed");
     };
     const onProgress = (event: Event) => {
       const total = (event as CustomEvent<{ totalProgress: number }>).detail
         ?.totalProgress;
       if (!disposed && typeof total === "number" && Number.isFinite(total)) {
+        if (watchdog.progress(total)) setSlow(false);
         setProgress(Math.round(Math.min(1, Math.max(0, total)) * 100));
       }
     };
@@ -79,23 +104,23 @@ export function ModelViewer({ asset }: { asset: GlbAssetDescriptor }) {
         viewer.addEventListener("load", onLoad);
         viewer.addEventListener("error", onError);
         viewer.addEventListener("progress", onProgress);
-        const source = new URL(asset.src!, window.location.href);
+        const source = new URL(modelSource!, window.location.href);
         if (attempt > 0) {
           // A failed parse can stay in the viewer library cache. Retry a fresh
           // URL for the same immutable file rather than reusing that entry.
           source.searchParams.set("preview_retry", `${Date.now()}-${attempt}`);
         }
-        viewer.setAttribute("src", attempt > 0 ? source.href : asset.src!);
+        viewer.setAttribute("src", attempt > 0 ? source.href : modelSource!);
         (expandedRef.current
           ? expandedHostRef.current
           : hostRef.current
         )?.appendChild(viewer);
       })
-      .catch(onError);
+      .catch(() => onError());
 
     return () => {
       disposed = true;
-      window.clearTimeout(timeout);
+      watchdog.stop();
       if (viewer) {
         viewer.removeEventListener("load", onLoad);
         viewer.removeEventListener("error", onError);
@@ -105,7 +130,7 @@ export function ModelViewer({ asset }: { asset: GlbAssetDescriptor }) {
       }
       viewerRef.current = null;
     };
-  }, [asset.src, asset.poster, asset.title, attempt]);
+  }, [modelSource, asset.poster, asset.title, attempt]);
 
   useEffect(() => {
     expandedRef.current = expanded;
@@ -134,6 +159,11 @@ export function ModelViewer({ asset }: { asset: GlbAssetDescriptor }) {
         >
           <LoaderCircle className="size-6 animate-spin motion-reduce:animate-none" />
           <span>正在加载模型{progress > 0 ? ` · ${progress}%` : "…"}</span>
+          {slow && (
+            <span className="max-w-xs px-4 text-center text-xs">
+              加载较慢，仍在继续，请保持页面打开。
+            </span>
+          )}
         </div>
       )}
       {state === "failed" && (
@@ -141,7 +171,7 @@ export function ModelViewer({ asset }: { asset: GlbAssetDescriptor }) {
           role="alert"
           className="bg-muted text-muted-foreground absolute inset-0 flex flex-col items-center justify-center gap-3 px-4 text-center text-sm"
         >
-          <span>模型暂时无法加载，请检查网络后重试。</span>
+          <span>{failureText}</span>
           <button
             type="button"
             onClick={() => setAttempt((value) => value + 1)}
@@ -155,6 +185,37 @@ export function ModelViewer({ asset }: { asset: GlbAssetDescriptor }) {
   );
   const controls = (
     <div className="research-model-controls flex flex-wrap items-center justify-between gap-2 py-2">
+      {asset.previewSrc && (
+        <label className="inline-flex min-h-11 items-center gap-2 text-xs">
+          <span>建筑模型精度</span>
+          <select
+            aria-label="建筑模型预览精度"
+            className="bg-background min-h-11 rounded border px-2"
+            value={original ? "original" : "light"}
+            onChange={(event) => {
+              setOriginal(event.target.value === "original");
+              setAttempt(0);
+            }}
+          >
+            <option value="light">
+              流畅预览
+              {asset.previewSizeBytes
+                ? ` (${(asset.previewSizeBytes / 1024 ** 2).toFixed(1)} MiB)`
+                : ""}
+            </option>
+            <option value="original">原始精度</option>
+          </select>
+        </label>
+      )}
+      {asset.src && (
+        <a
+          className="text-primary inline-flex min-h-11 items-center text-xs underline"
+          href={asset.src}
+          download
+        >
+          下载模型原件
+        </a>
+      )}
       <span className="text-muted-foreground text-[11px]">
         拖动旋转 · 滚轮/双指缩放
       </span>

@@ -32,13 +32,7 @@ export type ScheduleValue = {
   timezone: string;
 };
 
-const PRESETS: CronPreset[] = [
-  "hourly",
-  "daily",
-  "weekly",
-  "monthly",
-  "custom",
-];
+const PRESETS: CronPreset[] = ["hourly", "daily", "weekly", "monthly"];
 
 const FALLBACK_TIMEZONES = [
   "UTC",
@@ -77,6 +71,22 @@ function timezoneOptions(): string[] {
 }
 
 const TIMEZONE_OPTIONS = timezoneOptions();
+
+function timezoneLabel(timezone: string, locale: string): string {
+  try {
+    return (
+      new Intl.DateTimeFormat(locale, {
+        timeZone: timezone,
+        timeZoneName: "longGeneric",
+      })
+        .formatToParts(new Date())
+        .find((part) => part.type === "timeZoneName")?.value ??
+      (locale.startsWith("zh") ? "当地时间" : "Local time")
+    );
+  } catch {
+    return locale.startsWith("zh") ? "当地时间" : "Local time";
+  }
+}
 
 export function ScheduledTaskScheduleInput({
   initial,
@@ -177,10 +187,21 @@ export function ScheduledTaskScheduleInput({
     });
   }
 
-  const preview = describeSchedule(
-    { scheduleType, preset, parts, runAtLocal, timezone },
-    schedLocale,
-  );
+  const preview =
+    preset === "custom" && scheduleType === "cron"
+      ? schedLocale === "zh"
+        ? "按已保存的时间安排执行"
+        : "Runs on your saved schedule"
+      : describeSchedule(
+          {
+            scheduleType,
+            preset,
+            parts,
+            runAtLocal,
+            timezone: timezoneLabel(timezone, locale),
+          },
+          schedLocale,
+        );
 
   return (
     <div className="flex flex-col gap-2" data-testid="schedule-input">
@@ -213,6 +234,11 @@ export function ScheduledTaskScheduleInput({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
+              {preset === "custom" && (
+                <SelectItem value="custom">
+                  {schedLocale === "zh" ? "已保存的时间安排" : "Saved schedule"}
+                </SelectItem>
+              )}
               {PRESETS.map((p) => (
                 <SelectItem key={p} value={p}>
                   {labels.preset[p]}
@@ -282,22 +308,11 @@ export function ScheduledTaskScheduleInput({
           )}
 
           {preset === "custom" && (
-            <div className="flex flex-col gap-1">
-              <Input
-                value={parts.raw ?? ""}
-                onChange={(e) => updateParts({ raw: e.target.value })}
-                placeholder={labels.fields.cronPlaceholder}
-                aria-label={labels.fields.cron}
-              />
-              <a
-                href="https://crontab.guru/"
-                target="_blank"
-                rel="noreferrer"
-                className="text-muted-foreground text-xs hover:underline"
-              >
-                {labels.cronHelp} ↗
-              </a>
-            </div>
+            <p className="text-muted-foreground text-sm">
+              {schedLocale === "zh"
+                ? "已保留当前时间安排；选择其他重复方式即可调整。"
+                : "Your saved schedule is preserved. Choose another repeat option to change it."}
+            </p>
           )}
         </>
       ) : (
@@ -315,8 +330,11 @@ export function ScheduledTaskScheduleInput({
         </SelectTrigger>
         <SelectContent>
           {TIMEZONE_OPTIONS.map((tzOption) => (
-            <SelectItem key={tzOption} value={tzOption}>
-              {tzOption}
+            <SelectItem
+              key={timezoneLabel(tzOption, locale)}
+              value={timezoneLabel(tzOption, locale)}
+            >
+              {timezoneLabel(tzOption, locale)}
             </SelectItem>
           ))}
         </SelectContent>

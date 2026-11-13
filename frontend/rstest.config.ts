@@ -20,9 +20,9 @@ export default defineConfig({
     },
   },
   output: {
-    // Streamdown imports KaTeX CSS as a side effect. Bundle these packages so
-    // Rsbuild processes that CSS import instead of Node trying to load it.
-    bundleDependencies: ["streamdown", "katex"],
+    // Streamdown and the map page import package CSS as a side effect. Bundle
+    // these packages so Rsbuild handles CSS instead of Node trying to load it.
+    bundleDependencies: ["streamdown", "katex", "maplibre-gl"],
   },
   include: ["tests/unit/**/*.test.ts"],
 });

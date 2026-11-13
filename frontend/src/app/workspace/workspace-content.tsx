@@ -7,6 +7,7 @@ import { CommandPalette } from "@/components/workspace/command-palette";
 import { GatewayOfflineBanner } from "@/components/workspace/gateway-offline-banner";
 import { WorkspaceSidebarProvider } from "@/components/workspace/resizable-sidebar";
 import { WorkspaceSidebar } from "@/components/workspace/workspace-sidebar";
+import "@/styles/xingxi-workspace.css";
 
 function parseSidebarOpenCookie(
   value: string | undefined,
@@ -31,7 +32,7 @@ export async function WorkspaceContent({
   return (
     <QueryClientProvider>
       <WorkspaceSidebarProvider
-        className="h-screen"
+        className="xingxi-workspace h-screen"
         defaultOpen={initialSidebarOpen}
       >
         <WorkspaceSidebar />

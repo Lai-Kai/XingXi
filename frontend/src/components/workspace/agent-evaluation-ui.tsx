@@ -1,22 +1,19 @@
 "use client";
 
 import {
-  Check,
   CheckCircle2,
   CircleDashed,
   Clock3,
-  Copy,
   LoaderCircle,
   TriangleAlert,
   XCircle,
 } from "lucide-react";
-import { useState } from "react";
 
 import { evaluationLabel } from "@/core/operations/evaluations";
 import { cn } from "@/lib/utils";
 
 export const evaluationButton =
-  "inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-[#cbd8da] bg-white px-3 py-2 text-sm transition-colors hover:bg-[#eef5f5] focus-visible:outline-2 focus-visible:outline-[#276f79] disabled:cursor-not-allowed disabled:opacity-50";
+  "inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm transition-colors hover:bg-muted/60 focus-visible:outline-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50";
 
 export function EvaluationBadge({
   value,
@@ -56,78 +53,5 @@ export function EvaluationBadge({
       />
       {evaluationLabel(value)}
     </span>
-  );
-}
-
-export function EvaluationJson({
-  label,
-  value,
-}: {
-  label: string;
-  value: unknown;
-}) {
-  const [copyState, setCopyState] = useState<"idle" | "copied" | "error">(
-    "idle",
-  );
-  const json = JSON.stringify(value, null, 2) ?? "null";
-  const tokens = json.split(
-    /("(?:\\.|[^"\\])*"\s*:|"(?:\\.|[^"\\])*"|\b(?:true|false|null)\b|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g,
-  );
-  return (
-    <details
-      className="overflow-hidden rounded-lg border border-slate-700 bg-slate-950"
-      open
-    >
-      <summary className="cursor-pointer bg-slate-900 px-3 py-2 text-xs font-medium text-slate-300">
-        {label}
-      </summary>
-      <div className="flex justify-end px-3 pt-2">
-        <button
-          type="button"
-          className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-white"
-          aria-label={`复制${label}`}
-          onClick={async () => {
-            try {
-              await navigator.clipboard.writeText(json);
-              setCopyState("copied");
-            } catch {
-              setCopyState("error");
-            }
-          }}
-        >
-          {copyState === "copied" ? (
-            <Check className="size-3" />
-          ) : (
-            <Copy className="size-3" />
-          )}
-          {copyState === "copied" ? "已复制" : "复制"}
-        </button>
-      </div>
-      {copyState === "error" && (
-        <p role="alert" className="px-3 text-xs text-amber-300">
-          复制失败，请手动选择代码。
-        </p>
-      )}
-      <pre className="max-h-72 overflow-auto p-3 text-xs leading-6 text-slate-200">
-        <code>
-          {tokens.map((token, index) => (
-            <span
-              key={index}
-              className={
-                token.startsWith('"')
-                  ? token.trimEnd().endsWith(":")
-                    ? "text-sky-300"
-                    : "text-emerald-300"
-                  : /^(true|false|null|-?\d)/.test(token)
-                    ? "text-amber-300"
-                    : undefined
-              }
-            >
-              {token}
-            </span>
-          ))}
-        </code>
-      </pre>
-    </details>
   );
 }

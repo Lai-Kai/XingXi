@@ -33,6 +33,10 @@ import {
   prepareConnectWindow,
 } from "@/core/channels/open-connect-url";
 import {
+  channelName,
+  channelUnavailableMessage,
+} from "@/core/channels/presentation";
+import {
   providerCanConnect,
   providerCanEditRuntimeConfig,
   providerNeedsRuntimeConfig,
@@ -59,7 +63,7 @@ function getConnectionLabel(connection: ChannelConnection): string | null {
   if (account && workspace) {
     return `${account} · ${workspace}`;
   }
-  return account ?? workspace ?? connection.external_account_id ?? null;
+  return account ?? workspace ?? null;
 }
 
 function getStatusLabel(
@@ -92,9 +96,10 @@ function getStatusLabel(
 function getProviderUnavailableReason(
   provider: ChannelProvider,
   t: ReturnType<typeof useI18n>["t"],
+  locale: ReturnType<typeof useI18n>["locale"],
 ): string | undefined {
   if (provider.unavailable_reason) {
-    return provider.unavailable_reason;
+    return channelUnavailableMessage(provider.unavailable_reason, locale);
   }
   if (!provider.enabled) {
     return t.channels.disabled;
@@ -112,7 +117,7 @@ function ChannelProviderItem({
   provider: ChannelProvider;
   connection?: ChannelConnection;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const connectMutation = useConnectChannelProvider();
   const configureMutation = useConfigureChannelProvider();
   const disconnectProviderMutation = useDisconnectChannelProvider();
@@ -136,7 +141,12 @@ function ChannelProviderItem({
     disconnectProviderMutation.variables === provider.provider;
   const connectionLabel = connection ? getConnectionLabel(connection) : null;
   const statusLabel = getStatusLabel(provider, connection, t);
-  const unavailableReason = getProviderUnavailableReason(provider, t);
+  const unavailableReason = getProviderUnavailableReason(provider, t, locale);
+  const displayName = channelName(
+    provider.provider,
+    provider.display_name,
+    locale,
+  );
 
   const startConnect = (
     connectProvider: ChannelProvider,
@@ -156,12 +166,14 @@ function ChannelProviderItem({
           return;
         }
         closeConnectWindow(connectWindow);
-        toast.success(result.instruction);
+        toast.success(t.channels.bindingInstruction(displayName, result.code));
       })
       .catch((error) => {
         closeConnectWindow(connectWindow);
         toast.error(
-          error instanceof Error ? error.message : t.channels.unavailable,
+          error instanceof Error
+            ? channelUnavailableMessage(error.message, locale)
+            : t.channels.unavailable,
         );
       });
   };
@@ -177,7 +189,7 @@ function ChannelProviderItem({
         </ItemMedia>
         <ItemContent className="min-w-0">
           <ItemTitle className="w-full">
-            <span className="truncate">{provider.display_name}</span>
+            <span className="truncate">{displayName}</span>
             <Badge
               variant={isConnected ? "default" : "outline"}
               className={cn(!isConnected && "text-muted-foreground")}
@@ -192,7 +204,7 @@ function ChannelProviderItem({
               ? ` ${t.channels.connectedAs(connectionLabel)}`
               : ""}
             {!isConnected && provider.unavailable_reason
-              ? ` ${provider.unavailable_reason}`
+              ? ` ${unavailableReason}`
               : ""}
           </ItemDescription>
         </ItemContent>
@@ -229,7 +241,7 @@ function ChannelProviderItem({
                     .catch((error) => {
                       toast.error(
                         error instanceof Error
-                          ? error.message
+                          ? channelUnavailableMessage(error.message, locale)
                           : t.channels.unavailable,
                       );
                     });
@@ -312,7 +324,9 @@ function ChannelProviderItem({
             .catch((error) => {
               closeConnectWindow(connectWindow);
               toast.error(
-                error instanceof Error ? error.message : t.channels.unavailable,
+                error instanceof Error
+                  ? channelUnavailableMessage(error.message, locale)
+                  : t.channels.unavailable,
               );
             });
         }}

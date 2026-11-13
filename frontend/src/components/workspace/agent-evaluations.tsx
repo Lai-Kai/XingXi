@@ -24,6 +24,7 @@ import {
   filterObservations,
   scenarioLabels,
 } from "@/core/operations/evaluation-dashboard";
+import { evaluationModeLabel } from "@/core/operations/evaluation-presentation";
 import {
   cancelAgentEvaluation,
   downloadAgentReport,
@@ -36,6 +37,7 @@ import {
   startAgentEvaluation,
   type AgentEvaluation,
 } from "@/core/operations/evaluations";
+import { publicErrorMessage } from "@/core/ui/presentation";
 import { cn } from "@/lib/utils";
 
 import { AgentEvaluationCases } from "./agent-evaluation-cases";
@@ -44,15 +46,11 @@ import {
   EvaluationHistoryChart,
 } from "./agent-evaluation-charts";
 import { AgentEvaluationDetail } from "./agent-evaluation-detail";
-import {
-  EvaluationBadge,
-  evaluationButton,
-  EvaluationJson,
-} from "./agent-evaluation-ui";
+import { EvaluationBadge, evaluationButton } from "./agent-evaluation-ui";
 import { BusinessEmptyState, BusinessLoadingState } from "./business-page";
 
 const selectStyle =
-  "min-h-10 min-w-0 rounded-lg border border-[#d5dfe1] bg-white px-3 py-2 text-sm outline-[#276f79]";
+  "min-h-10 min-w-0 rounded-lg border border-border bg-card px-3 py-2 text-sm outline-ring";
 
 export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
   const queryClient = useQueryClient();
@@ -190,18 +188,17 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
           setCaseManagerOpen(false);
         }}
       />
-      <section className="space-y-5" aria-label="Agent 自动评测">
-        <div className="rounded-xl border border-[#d4e2e4] bg-[#edf5f5] p-5">
+      <section className="space-y-5" aria-label="问答评测">
+        <div className="border-border bg-muted/60 rounded-xl border p-5">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="max-w-2xl">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-[#bad1d5] bg-white px-2.5 py-1 text-xs font-medium text-[#276f79]">
+              <span className="border-border bg-card text-primary inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium">
                 <FlaskConical className="size-3.5" />
-                固定模型回放 · 运行流程验证
+                自动流程测试
               </span>
               <h2 className="mt-3 text-lg font-semibold">自动化测试监控大盘</h2>
-              <p className="mt-2 text-sm leading-6 text-[#61777c]">
-                通过真实 Gateway 和星羲 Graph
-                执行测试，核对工具、引用与取消流程。合成资料只进入隔离环境；回放通过率不代表真实模型质量或线上回答准确率。
+              <p className="text-muted-foreground mt-2 text-sm leading-6">
+                核对资料查阅、引用与取消流程。流程测试使用预设资料与回答，通过率不代表实际回答质量或线上回答准确率。
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -228,7 +225,7 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
                     type="button"
                     className={cn(
                       evaluationButton,
-                      "border-[#276f79] bg-[#276f79] text-white hover:bg-[#205f68]",
+                      "border-primary bg-primary text-primary-foreground hover:bg-primary/90",
                     )}
                     disabled={
                       busy || !catalog.data?.available || coreCount === 0
@@ -257,28 +254,28 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
             </div>
           </div>
           {!canExecute && (
-            <p className="mt-3 text-xs text-[#61777c]">
+            <p className="text-muted-foreground mt-3 text-xs">
               可查看和导出记录；启动、取消、重跑与人工复核需要管理员权限。
             </p>
           )}
           {catalog.data && !catalog.data.available && (
             <p className="mt-3 text-sm text-amber-800">
-              自动评测服务当前不可用，请检查 Gateway 与数据库状态。
+              自动评测暂不可用，请稍后重试或联系管理员。
             </p>
           )}
-          <details className="mt-3 text-xs text-[#61777c]">
+          <details className="text-muted-foreground mt-3 text-xs">
             <summary className="cursor-pointer">
               查看用例集与覆盖范围（{catalog.data?.cases.length ?? 0} 项）
             </summary>
             <p className="mt-2">
               当前启用 {totalCount} 项测试。内置方法为 10 类场景 × 3 种模式，
               可在“测试问题与方法”中查看完整题目和规则；管理员可新增、删除或恢复问题。
-              真实模型评分、Token 和费用尚未采集。单批最多运行 100 项。
+              测试结果仅反映流程检查。单批最多运行 100 项。
             </p>
             <ul className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {catalog.data?.cases.map((item) => (
                 <li key={item.id}>
-                  {item.title} · {item.mode} · v{item.version}
+                  {item.title} · {evaluationModeLabel(item.mode)}
                 </li>
               ))}
             </ul>
@@ -290,7 +287,14 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
             role="alert"
             className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800"
           >
-            <span>{error?.message ?? exportError}</span>
+            <span>
+              {error
+                ? publicErrorMessage(
+                    error,
+                    "暂时无法读取或更新评测记录，请重试。",
+                  )
+                : exportError}
+            </span>
             <button type="button" className="underline" onClick={refresh}>
               重试读取
             </button>
@@ -302,13 +306,13 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
           <BusinessEmptyState
             icon={FlaskConical}
             title="暂无自动评测记录"
-            description="管理员运行启用的测试问题后，这里会显示实际批次、指标与执行轨迹。"
+            description="管理员运行启用的测试问题后，这里会显示实际批次、指标与测试详情。"
           />
         ) : null}
 
         {(hasRecords || offset > 0) && (
           <>
-            <div className="flex flex-wrap items-end gap-3 rounded-xl border border-[#dce5e6] bg-white p-4 shadow-sm">
+            <div className="xingxi-panel border-border bg-card flex flex-wrap items-end gap-3 rounded-xl border p-4 shadow-sm">
               <label className="flex min-w-0 flex-1 flex-col gap-2 text-xs font-medium text-slate-500">
                 评测批次
                 <select
@@ -323,7 +327,7 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
                   {selectedId &&
                     !history.some((item) => item.id === selectedId) && (
                       <option value={selectedId}>
-                        {selectedId} ·{" "}
+                        所选批次 ·{" "}
                         {batch ? evaluationLabel(batch.status) : "读取中"}
                       </option>
                     )}
@@ -331,7 +335,7 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
                     <option key={item.id} value={item.id}>
                       {new Date(item.created_at).toLocaleString()} ·{" "}
                       {evaluationLabel(item.status)} · {item.passed}/
-                      {item.total} · {item.id}
+                      {item.total}
                     </option>
                   ))}
                 </select>
@@ -408,7 +412,7 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
                     ? "未采集"
                     : `${(metrics.averageMs / 1000).toFixed(2)}s`
                 }
-                description={`回放执行耗时 · ${metrics.durationSamples} 个有效样本`}
+                description={`测试耗时 · ${metrics.durationSamples} 个有效样本`}
                 icon={Clock3}
                 tone="teal"
               />
@@ -417,7 +421,7 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
                 value={
                   metrics.errors == null ? "未采集" : String(metrics.errors)
                 }
-                description="执行器错误与规则失败分别统计"
+                description="处理异常与规则未通过分别统计"
                 icon={TriangleAlert}
                 tone="rose"
               />
@@ -447,13 +451,10 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
             )}
             {batch && (
               <>
-                <div className="rounded-xl border border-[#dce5e6] bg-white p-5 shadow-sm">
+                <div className="xingxi-panel border-border bg-card rounded-xl border p-5 shadow-sm">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <h3 className="font-semibold">{batchLabel}</h3>
-                      <p className="mt-1 font-mono text-xs break-all text-slate-500">
-                        {batch.id}
-                      </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {canExecute &&
@@ -481,37 +482,36 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
                             重跑未通过项
                           </button>
                         )}
-                      {(["markdown", "csv", "json", "html"] as const).map(
-                        (format) => (
-                          <button
-                            type="button"
-                            key={format}
-                            className={evaluationButton}
-                            onClick={() => {
-                              setExportError(null);
-                              void downloadAgentReport(batch.id, format).catch(
-                                (reason: unknown) =>
-                                  setExportError(
-                                    reason instanceof Error
-                                      ? reason.message
-                                      : "报告导出失败",
+                      {(["markdown", "csv"] as const).map((format) => (
+                        <button
+                          type="button"
+                          key={format}
+                          className={evaluationButton}
+                          onClick={() => {
+                            setExportError(null);
+                            void downloadAgentReport(batch.id, format).catch(
+                              (reason: unknown) =>
+                                setExportError(
+                                  publicErrorMessage(
+                                    reason,
+                                    "报告导出失败，请重试。",
                                   ),
-                              );
-                            }}
-                          >
-                            <Download className="size-3.5" />
-                            {format === "markdown"
-                              ? "MD"
-                              : format.toUpperCase()}
-                          </button>
-                        ),
-                      )}
+                                ),
+                            );
+                          }}
+                        >
+                          <Download className="size-3.5" />
+                          {format === "markdown"
+                            ? "下载文字报告"
+                            : "下载表格报告"}
+                        </button>
+                      ))}
                     </div>
                   </div>
                   {batch.parent_id && (
                     <button
                       type="button"
-                      className="mt-3 text-sm text-[#205f68] underline"
+                      className="text-primary mt-3 text-sm underline"
                       onClick={() => choose(batch.parent_id!)}
                     >
                       查看原批次及失败记录
@@ -522,27 +522,19 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
                       role="alert"
                       className="mt-3 rounded-lg bg-rose-50 p-3 text-sm text-rose-800"
                     >
-                      {batch.error_message}
+                      {publicErrorMessage(
+                        batch.error_message,
+                        "本批测试未能完成，请重试。",
+                      )}
                     </p>
                   )}
-                  <details className="mt-4 text-xs">
-                    <summary className="cursor-pointer text-slate-500">
-                      执行环境与版本
-                    </summary>
-                    <div className="mt-3">
-                      <EvaluationJson
-                        label="执行环境"
-                        value={batch.environment}
-                      />
-                    </div>
-                  </details>
                 </div>
 
                 <section
-                  className="overflow-hidden rounded-xl border border-[#dce5e6] bg-white shadow-sm"
+                  className="xingxi-panel border-border bg-card overflow-hidden rounded-xl border shadow-sm"
                   aria-label="测试记录"
                 >
-                  <div className="border-b border-[#dce5e6] p-5">
+                  <div className="border-border border-b p-5">
                     <div className="flex items-center justify-between gap-3">
                       <h3 className="font-semibold">测试记录</h3>
                       <span className="text-xs text-slate-500">
@@ -570,7 +562,7 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
                         <option value="all">全部场景</option>
                         {scenarioOptions.map((item) => (
                           <option key={item} value={item}>
-                            {scenarioLabels[item] ?? item}
+                            {scenarioLabels[item] ?? "其他场景"}
                           </option>
                         ))}
                       </select>
@@ -581,9 +573,9 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
                         onChange={(event) => setMode(event.target.value)}
                       >
                         <option value="all">全部模式</option>
-                        <option value="flash">flash</option>
-                        <option value="pro">pro</option>
-                        <option value="ultra">ultra</option>
+                        <option value="flash">快速</option>
+                        <option value="pro">标准</option>
+                        <option value="ultra">深入</option>
                       </select>
                       <select
                         aria-label="结果筛选"
@@ -615,10 +607,9 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
                       <thead className="bg-slate-50 text-xs text-slate-500">
                         <tr>
                           {[
-                            "Case ID",
                             "输入场景",
-                            "模式 / 版本",
-                            "工具调用",
+                            "测试方式",
+                            "资料查阅",
                             "执行状态",
                             "规则判定",
                             "耗时",
@@ -638,11 +629,8 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
                         {visible.map((item) => (
                           <tr
                             key={item.attempt_id}
-                            className="transition-colors hover:bg-[#f5f9fa]"
+                            className="hover:bg-muted/60 transition-colors"
                           >
-                            <td className="px-4 py-4 font-mono text-xs text-slate-500">
-                              {item.case_id}
-                            </td>
                             <td className="max-w-72 px-4 py-4">
                               <p className="font-medium">{item.case.title}</p>
                               <p
@@ -653,15 +641,15 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
                               </p>
                               {item.error && (
                                 <p className="mt-1 text-xs text-rose-700">
-                                  {item.error}
+                                  {publicErrorMessage(
+                                    item.error,
+                                    "本题未能完成，请重试或人工复核。",
+                                  )}
                                 </p>
                               )}
                             </td>
                             <td className="px-4 py-4 whitespace-nowrap">
-                              {item.case.mode}
-                              <span className="ml-2 text-xs text-slate-400">
-                                v{item.case.version}
-                              </span>
+                              {evaluationModeLabel(item.case.mode)}
                             </td>
                             <td className="px-4 py-4 font-mono text-xs">
                               {item.events.length
@@ -686,8 +674,8 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
                             <td className="px-4 py-4">
                               <button
                                 type="button"
-                                className="inline-flex items-center gap-1 text-xs font-medium whitespace-nowrap text-[#276f79] hover:underline"
-                                aria-label={`${item.case.title} · 查看轨迹`}
+                                className="text-primary inline-flex items-center gap-1 text-xs font-medium whitespace-nowrap hover:underline"
+                                aria-label={`${item.case.title} · 查看详情`}
                                 onClick={() =>
                                   setTrajectory({
                                     batchId: batch.id,
@@ -695,7 +683,7 @@ export function AgentEvaluations({ canExecute }: { canExecute: boolean }) {
                                   })
                                 }
                               >
-                                查看轨迹
+                                查看详情
                                 <ArrowRight className="size-3" />
                               </button>
                             </td>
@@ -743,13 +731,13 @@ function MetricCard({
 }) {
   const tones = {
     emerald: "bg-emerald-50 text-emerald-700",
-    teal: "bg-[#edf5f5] text-[#276f79]",
+    teal: "bg-muted/60 text-primary",
     rose: "bg-rose-50 text-rose-700",
     amber: "bg-amber-50 text-amber-700",
   };
   return (
     <section
-      className="rounded-xl border border-[#dce5e6] bg-white p-5 shadow-sm"
+      className="xingxi-panel border-border bg-card rounded-xl border p-5 shadow-sm"
       aria-label={title}
     >
       <div className="flex items-center justify-between gap-2">

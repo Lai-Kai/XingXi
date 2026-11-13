@@ -1,0 +1,20 @@
+--- a/nginx.conf.template
++++ b/nginx.conf.template
+@@ -69,6 +69,17 @@
+         proxy_set_header Upgrade $http_upgrade;
+         proxy_set_header Connection $connection_upgrade;
+ 
++        # Imagery allows 2 GiB; imported models allow 256 MiB.
++        # Keep ordinary document upload limits independent; allow multipart overhead.
++        location = /api/reconstructions {
++            client_max_body_size 2064m;
++            proxy_pass http://gateway;
++        }
++        location = /api/map/model-assets {
++            client_max_body_size 272m;
++            proxy_pass http://gateway;
++        }
++
+         # Both forms map directly, avoiding nginx's implicit slash redirect.
+         location = /api/langgraph {
+             proxy_pass http://gateway/api;

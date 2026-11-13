@@ -1,6 +1,13 @@
 import { describe, expect, it } from "@rstest/core";
 
 import { inspectPly, parseColoredPly } from "@/core/map/ply";
+import { coloredPlyGeometry } from "@/core/map/ply";
+import { parseColoredPlyData } from "@/core/map/ply-data";
+
+import {
+  coloredPlyFixture,
+  gaussianPlyFixture,
+} from "../../../fixtures/map-ply";
 
 function ascii(
   properties = "property uchar red\nproperty uchar green\nproperty uchar blue\nproperty uchar alpha",
@@ -56,20 +63,114 @@ describe("map PLY formats and colors", () => {
   );
 
   it("routes Gaussian files to Spark even when they also carry RGB", () => {
+    const gaussian = [
+      "f_dc_0",
+      "f_dc_1",
+      "f_dc_2",
+      "opacity",
+      "scale_0",
+      "scale_1",
+      "scale_2",
+      "rot_0",
+      "rot_1",
+      "rot_2",
+      "rot_3",
+    ]
+      .map((name) => `property float ${name}`)
+      .join("\n");
+    expect(inspectPly(ascii(gaussian)).kind).toBe("gaussian");
     expect(
       inspectPly(
         ascii(
-          "property float opacity\nproperty float scale_0\nproperty float rot_0",
+          `${gaussian}\nproperty uchar red\nproperty uchar green\nproperty uchar blue`,
         ),
       ).kind,
     ).toBe("gaussian");
-    expect(
+  });
+
+  it("rejects partial Gaussian attributes even with RGB", () => {
+    expect(() =>
       inspectPly(
         ascii(
-          "property float opacity\nproperty float scale_0\nproperty float rot_0\nproperty uchar red\nproperty uchar green\nproperty uchar blue",
+          "property uchar red\nproperty uchar green\nproperty uchar blue\nproperty float opacity",
         ),
-      ).kind,
-    ).toBe("gaussian");
+      ),
+    ).toThrow(/Gaussian.*不完整/);
+    expect(inspectPly(gaussianPlyFixture().buffer).kind).toBe("gaussian");
+  });
+
+  it("samples evenly with bounded typed arrays, preserves colors, and frames the complete bounds", () => {
+    const bytes = coloredPlyFixture(100).buffer;
+    const full = parseColoredPlyData(bytes),
+      light = parseColoredPlyData(bytes, 10);
+    expect(light.count).toBe(10);
+    expect(light.totalCount).toBe(100);
+    expect(light.positions.byteLength + light.colors.byteLength).toBe(
+      10 * 7 * 4,
+    );
+    expect(light.min).toEqual(full.min);
+    expect(light.max).toEqual(full.max);
+    for (let index = 0; index < 10; index++) {
+      expect(
+        Array.from(light.positions.subarray(index * 3, index * 3 + 3)),
+      ).toEqual(
+        Array.from(full.positions.subarray(index * 30, index * 30 + 3)),
+      );
+      expect(
+        Array.from(light.colors.subarray(index * 4, index * 4 + 4)),
+      ).toEqual(Array.from(full.colors.subarray(index * 40, index * 40 + 4)));
+    }
+    const geometry = coloredPlyGeometry(light);
+    expect(geometry.getAttribute("position").array).toBe(light.positions);
+    expect(geometry.getAttribute("color").array).toBe(light.colors);
+    geometry.dispose();
+  });
+
+  it("checks unsampled rows as well as sampled rows", () => {
+    const bytes = coloredPlyFixture(100),
+      offset = bytes.length - 100 * 16;
+    new DataView(bytes.buffer).setFloat32(offset + 99 * 16, NaN, true);
+    expect(() => parseColoredPlyData(bytes.buffer, 10)).toThrow(/无效/);
+  });
+
+  it("rejects undeclared trailing records instead of silently hiding them", () => {
+    const bytes = coloredPlyFixture(2),
+      extra = new Uint8Array(bytes.length + 1);
+    extra.set(bytes);
+    expect(() => parseColoredPlyData(extra.buffer)).toThrow(/多于/);
+    expect(() =>
+      parseColoredPlyData(
+        ascii(undefined, "0 0 0 255 0 0 255\n1 1 1 0 0 0 255\n2 2 2 0 0 0 255"),
+      ),
+    ).toThrow(/多于/);
+  });
+
+  it("reads list elements before and after vertices without treating face colors as vertex colors", () => {
+    const source =
+      "ply\nformat ascii 1.0\ncomment 中文注释\nelement edge 1\nproperty list uchar int endpoints\nelement vertex 2\nproperty float x\nproperty float y\nproperty float z\nproperty uchar red\nproperty uchar green\nproperty uchar blue\nelement face 1\nproperty list uchar int vertex_indices\nend_header\n2 0 1\n0 0 0 255 0 0\n1 1 1 0 255 0\n3 0 1 0\n";
+    const parsed = parseColoredPlyData(new TextEncoder().encode(source).buffer);
+    expect(Array.from(parsed.positions)).toEqual([0, 0, 0, 1, 1, 1]);
+    expect(Array.from(parsed.colors)).toEqual([1, 0, 0, 1, 0, 1, 0, 1]);
+  });
+
+  it("rejects invalid scalar ranges, floats and coordinates not representable by WebGL", () => {
+    expect(() =>
+      parseColoredPlyData(
+        ascii(undefined, "0 0 0 256 0 0 255\n1 1 1 0 0 0 255"),
+      ),
+    ).toThrow(/范围/);
+    expect(() =>
+      parseColoredPlyData(
+        ascii(undefined, "1e39 0 0 255 0 0 255\n1 1 1 0 0 0 255"),
+      ),
+    ).toThrow(/范围/);
+    const double = new TextDecoder()
+      .decode(ascii())
+      .replace("property float x", "property double x")
+      .replace("0 0 0 255", "1e39 0 0 255");
+    expect(() =>
+      parseColoredPlyData(new TextEncoder().encode(double).buffer),
+    ).toThrow(/浏览器预览范围/);
   });
 
   it("reports malformed, colorless and truncated files instead of silently showing a blank canvas", () => {

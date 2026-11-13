@@ -26,8 +26,9 @@ export default defineConfig({
 
   use: {
     baseURL,
+    storageState: process.env.PLAYWRIGHT_STORAGE_STATE,
     locale: "en-US",
-    trace: "retain-on-failure",
+    trace: process.env.PLAYWRIGHT_STORAGE_STATE ? "off" : "retain-on-failure",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
   },

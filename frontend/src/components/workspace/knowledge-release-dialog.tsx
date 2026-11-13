@@ -26,6 +26,7 @@ import {
   type KnowledgeRelease,
   type KnowledgeReleaseState,
 } from "@/core/source-files/api";
+import { publicErrorMessage } from "@/core/ui/presentation";
 
 export type ReleaseCandidate = {
   title: string;
@@ -63,7 +64,7 @@ export function KnowledgeReleaseDialog({
     if (!open) return;
     setError("");
     void reload().catch((reason: unknown) =>
-      setError(reason instanceof Error ? reason.message : "无法读取知识版本"),
+      setError(publicErrorMessage(reason, "无法读取知识版本")),
     );
   }, [open]);
 
@@ -81,7 +82,7 @@ export function KnowledgeReleaseDialog({
         const latest = items.at(-1);
         const candidate = candidates[index];
         if (!latest)
-          throw new Error(`${candidate?.title ?? "所选文献"} 尚无切分版本`);
+          throw new Error(`${candidate?.title ?? "所选文献"} 尚未完成资料整理`);
         return latest.id;
       });
       await publishKnowledgeRelease(
@@ -92,7 +93,7 @@ export function KnowledgeReleaseDialog({
       setNotes("");
       await reload();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "知识版本发布失败");
+      setError(publicErrorMessage(reason, "知识版本发布失败"));
     } finally {
       setBusy(false);
     }
@@ -105,12 +106,12 @@ export function KnowledgeReleaseDialog({
     try {
       await rollbackKnowledgeRelease(
         target.id,
-        `回滚到 ${target.version}：${target.release_notes}`,
+        `恢复到 ${target.version}：${target.release_notes}`,
         state.state_version,
       );
       await reload();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "知识版本回滚失败");
+      setError(publicErrorMessage(reason, "无法恢复到所选版本，请重试。"));
     } finally {
       setBusy(false);
     }
@@ -124,7 +125,7 @@ export function KnowledgeReleaseDialog({
       await retryKnowledgeRelease(target.id, state.state_version);
       await reload();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "知识版本重试失败");
+      setError(publicErrorMessage(reason, "知识版本重试失败"));
     } finally {
       setBusy(false);
     }
@@ -133,9 +134,9 @@ export function KnowledgeReleaseDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[90vh] w-[calc(100vw-1.5rem)] max-w-2xl flex-col overflow-hidden p-0">
-        <DialogHeader className="border-b border-[#dbe4e5] px-5 py-4 pr-12">
+        <DialogHeader className="border-border border-b px-5 py-4 pr-12">
           <DialogTitle className="flex items-center gap-2 text-base">
-            <PackageCheck className="size-4 text-[#2f737d]" />
+            <PackageCheck className="text-primary size-4" />
             知识版本
           </DialogTitle>
           <DialogDescription>
@@ -144,17 +145,17 @@ export function KnowledgeReleaseDialog({
         </DialogHeader>
 
         <div className="min-h-0 overflow-y-auto px-5 py-4">
-          <section className="border-b border-[#e0e7e8] pb-5">
+          <section className="border-border border-b pb-5">
             <p className="text-sm font-medium">发布所选文献</p>
-            <p className="mt-1 text-xs text-[#6b7b7f]">
-              已选 {candidates.length} 份，发布时读取各自最新切分版本
+            <p className="text-muted-foreground mt-1 text-xs">
+              已选 {candidates.length} 份，将发布各自最新整理的文本
             </p>
             <textarea
               value={notes}
               onChange={(event) => setNotes(event.target.value)}
               rows={3}
               placeholder="填写本次发布说明"
-              className="mt-3 w-full resize-y rounded-md border border-[#ccd9db] px-3 py-2 text-sm outline-none focus:border-[#5a949d]"
+              className="border-border focus:border-primary mt-3 w-full resize-y rounded-md border px-3 py-2 text-sm outline-none"
             />
             <button
               type="button"
@@ -162,7 +163,7 @@ export function KnowledgeReleaseDialog({
                 busy || candidates.length === 0 || !notes.trim() || !state
               }
               onClick={() => void publish()}
-              className="mt-3 flex h-9 items-center gap-2 rounded-md bg-[#286846] px-3 text-sm text-white disabled:opacity-40"
+              className="bg-primary text-primary-foreground mt-3 flex h-9 items-center gap-2 rounded-md px-3 text-sm disabled:opacity-40"
             >
               {busy ? (
                 <LoaderCircle className="size-4 animate-spin" />
@@ -181,9 +182,9 @@ export function KnowledgeReleaseDialog({
               版本历史
             </h3>
             {releases.length === 0 ? (
-              <p className="mt-3 text-sm text-[#748388]">尚无知识版本</p>
+              <p className="text-muted-foreground mt-3 text-sm">尚无知识版本</p>
             ) : (
-              <div className="mt-3 divide-y divide-[#e4eaeb] border-y border-[#e4eaeb]">
+              <div className="divide-border border-border mt-3 divide-y border-y">
                 {[...releases].reverse().map((release) => {
                   const active =
                     release.id === state?.active_release_id &&
@@ -203,16 +204,16 @@ export function KnowledgeReleaseDialog({
                         <p className="text-sm font-medium">
                           {release.version} · {statusLabel}
                         </p>
-                        <p className="mt-1 truncate text-xs text-[#6b7b7f]">
+                        <p className="text-muted-foreground mt-1 truncate text-xs">
                           {release.scope === "internal"
                             ? "内部工作版 · "
                             : "公开版 · "}
                           {release.release_notes} · {release.items.length}{" "}
-                          个片段
+                          段原文
                         </p>
                         {release.status === "failed" && (
                           <p className="mt-1 text-xs leading-5 text-[#963d36]">
-                            {release.failure_message ?? "索引或资产准备失败"}
+                            资料准备未完成，请重试。
                           </p>
                         )}
                       </div>
@@ -239,7 +240,7 @@ export function KnowledgeReleaseDialog({
                             className="flex h-8 items-center gap-1.5 rounded-md border border-[#c98e88] px-2.5 text-xs text-[#8f3933] disabled:opacity-40"
                           >
                             <RotateCcw className="size-3.5" />
-                            回滚
+                            恢复此版
                           </button>
                         )}
                     </div>

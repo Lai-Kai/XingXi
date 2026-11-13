@@ -1,5 +1,7 @@
 import { XIcon } from "lucide-react";
 
+import { useI18n } from "@/core/i18n/hooks";
+import { getSkillLabel } from "@/core/settings/catalog-labels";
 import { cn } from "@/lib/utils";
 
 /**
@@ -9,7 +11,7 @@ import { cn } from "@/lib/utils";
  * their Tailwind classes.
  */
 const CHIP_BASE_CLASS =
-  "border-primary/20 bg-primary/10 text-primary inline-flex h-6 shrink-0 items-center rounded-md border px-1.5 font-mono text-xs leading-none font-medium shadow-xs";
+  "border-primary/20 bg-primary/10 text-primary inline-flex h-6 shrink-0 items-center rounded-md border px-1.5 text-xs leading-none font-medium shadow-xs";
 
 export function SlashSkillChip({
   name,
@@ -23,10 +25,15 @@ export function SlashSkillChip({
   onRemove?: () => void;
   removeLabel?: string;
 }) {
+  const { locale, t } = useI18n();
+  const label = getSkillLabel(
+    { name, description: "", category: "public" },
+    locale,
+  ).name;
   if (onRemove) {
     return (
       <button
-        aria-label={removeLabel ?? `Remove /${name}`}
+        aria-label={removeLabel ?? `${t.common.delete} ${label}`}
         className={cn(
           CHIP_BASE_CLASS,
           "hover:bg-primary/20 cursor-pointer gap-1 transition-colors",
@@ -35,7 +42,7 @@ export function SlashSkillChip({
         onClick={onRemove}
         type="button"
       >
-        <span className="min-w-0 truncate">/{name}</span>
+        <span className="min-w-0 truncate">{label}</span>
         <XIcon className="text-primary/70 size-2.5 shrink-0" />
       </button>
     );
@@ -43,7 +50,7 @@ export function SlashSkillChip({
 
   return (
     <span className={cn(CHIP_BASE_CLASS, "max-w-full", className)}>
-      /{name}
+      {label}
     </span>
   );
 }

@@ -70,6 +70,13 @@ patches through the normal terminal. Offline patch tests run with
 `python3 -m unittest discover -s tests -p 'test_native*patch.py'`;
 see `docs/native-frontend-performance.md` for evidence and activation.
 
+2026-10-21 live status: the host production patch is applied and the frontend
+now runs `next start`. This host opts into `.next-production` using
+`DEERFLOW_FRONTEND_DIST_DIR`; development and deployments without that opt-in
+still use `.next`. Current evidence and rollback instructions are in
+`docs/native-frontend-performance.md`. Do not infer current runtime mode from
+older development-mode notes.
+
 ## Repository Map
 
 ```
@@ -197,3 +204,5 @@ Map integration note:
   seven real static GLBs when applying branch updates.
 - Migration `0047_merge_map_reconstruction` joins the existing evaluation and map
   histories into one head. Preserve both parent revisions when upgrading.
+
+Server map activation: `scripts/configure_map_reconstruction.py` provisions an owner-only localhost SSH/SFTP worker using a dedicated loopback-restricted key, strict host public-key verification and private `.env` settings. Reuse installed OOOSplat/FLUX engines; preserve the existing native launcher, source modifications, authentication and migration head. Host upload quotas have a versioned patch under `docs/patches/`. See `docs/map-server-reconstruction-activation.md`.

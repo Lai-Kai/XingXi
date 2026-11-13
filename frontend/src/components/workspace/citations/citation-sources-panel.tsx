@@ -19,6 +19,8 @@ import { writeTextToClipboard } from "@/core/clipboard";
 import { useI18n } from "@/core/i18n/hooks";
 import { cn } from "@/lib/utils";
 
+import { useEvidenceInspector } from "./evidence-inspector-context";
+
 export function CitationSourcesPanel({
   className,
   sources,
@@ -27,6 +29,7 @@ export function CitationSourcesPanel({
   sources: CitationSource[];
 }) {
   const { t } = useI18n();
+  const inspector = useEvidenceInspector();
 
   if (sources.length === 0) {
     return null;
@@ -35,7 +38,7 @@ export function CitationSourcesPanel({
   return (
     <details
       className={cn(
-        "not-prose border-border/60 bg-muted/20 mt-2 rounded-md border text-xs",
+        "xingxi-citation-sources not-prose border-border/60 bg-muted/20 mt-2 rounded-xl border text-xs",
         className,
       )}
     >
@@ -64,6 +67,25 @@ export function CitationSourcesPanel({
                   : "noopener noreferrer"
               }
               className="hover:bg-muted flex min-w-0 flex-1 items-center gap-2 rounded px-2 py-1 transition-colors"
+              onClick={(event) => {
+                const id = parseEvidenceHref(source.url);
+                if (
+                  id &&
+                  inspector &&
+                  !event.defaultPrevented &&
+                  event.button === 0 &&
+                  !event.ctrlKey &&
+                  !event.metaKey &&
+                  !event.shiftKey &&
+                  !event.altKey
+                ) {
+                  event.preventDefault();
+                  inspector.openEvidence(
+                    { id, title: source.title },
+                    event.currentTarget,
+                  );
+                }
+              }}
             >
               <span className="min-w-0 flex-1">
                 <span className="text-foreground block truncate font-medium">

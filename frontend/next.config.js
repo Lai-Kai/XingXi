@@ -16,6 +16,11 @@ const withNextra = nextra({});
 
 /** @type {import("next").NextConfig} */
 const config = {
+  // Isolate host production builds from a still-running development server.
+  distDir:
+    process.env.NODE_ENV === "production" && process.env.DEERFLOW_FRONTEND_DIST_DIR
+      ? process.env.DEERFLOW_FRONTEND_DIST_DIR
+      : ".next",
   output:
     process.env.NEXT_CONFIG_BUILD_OUTPUT === "standalone"
       ? "standalone"

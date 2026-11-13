@@ -1,5 +1,7 @@
 # feat/ui-redesign 地图整合
 
+> 2026-10-21：12026宿主部署已完成SSH/FLUX3启用及真实端到端联调，见[服务器部署验收](map-server-reconstruction-activation.md)。以下保留原整合历史。
+
 2026-10-18 从 `origin/feat/ui-redesign`（`2f952d5f`）提取地图功能，整合到
 现有 `main` 工作区。其余工作区页面沿用当前实现。代码尚未创建合并提交或部署。
 

@@ -27,6 +27,8 @@ export type Reconstruction = {
     point_count?: number;
   };
   artifact_url?: string;
+  rgb_artifact_url?: string;
+  resumable?: boolean;
 };
 export type ReconstructionCapabilities = {
   enabled: boolean;
@@ -38,6 +40,12 @@ export type ReconstructionCapabilities = {
 const base = () => `${getBackendBaseURL()}/api/reconstructions`;
 export const reconstructionArtifact = (job: Reconstruction) =>
   `${base()}/${encodeURIComponent(job.id)}/artifact/final.ply`;
+export const reconstructionRGBArtifact = (job: Reconstruction) =>
+  `${base()}/${encodeURIComponent(job.id)}/artifact/rgb_points.ply`;
+export const resumeReconstruction = (id: string) =>
+  fetch(`${base()}/${encodeURIComponent(id)}/resume`, { method: "POST" }).then(
+    result<Reconstruction>,
+  );
 export const isReconstructing = (job: Reconstruction) =>
   job.status === "transferring" || job.status === "running";
 
@@ -66,6 +74,10 @@ export const refreshReconstruction = (id: string, signal?: AbortSignal) =>
   fetch(`${base()}/${encodeURIComponent(id)}`, { signal }).then(
     result<Reconstruction>,
   );
+export const retryReconstructionConnection = (id: string) =>
+  fetch(`${base()}/${encodeURIComponent(id)}/retry-connection`, {
+    method: "POST",
+  }).then(result<Reconstruction>);
 export const cancelReconstruction = (id: string) =>
   fetch(`${base()}/${encodeURIComponent(id)}/cancel`, { method: "POST" }).then(
     result<Reconstruction>,

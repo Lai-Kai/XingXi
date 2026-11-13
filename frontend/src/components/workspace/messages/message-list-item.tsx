@@ -20,10 +20,6 @@ import {
   MessageContent as AIElementMessageContent,
   MessageToolbar,
 } from "@/components/ai-elements/message";
-import {
-  Reasoning,
-  ReasoningTrigger,
-} from "@/components/ai-elements/reasoning";
 import { Task, TaskTrigger } from "@/components/ai-elements/task";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -48,8 +44,8 @@ import { extractCitationSources } from "@/core/citations/sources";
 import { useI18n } from "@/core/i18n/hooks";
 import {
   extractContentFromMessage,
-  extractReasoningContentFromMessage,
   getMessageCopyData,
+  hasContent,
   parseUploadedFiles,
   stripUploadedFilesTag,
   type FileInMessage,
@@ -62,10 +58,8 @@ import {
   resolveSlashSkillDisplay,
 } from "@/core/skills";
 import { useSkills } from "@/core/skills/hooks";
-import { SafeReasoningContent } from "@/core/streamdown/components";
 import { cn } from "@/lib/utils";
 
-import { WorkspaceChangeBadge } from "../changes";
 import { CitationSourcesPanel } from "../citations/citation-sources-panel";
 import { CopyButton } from "../copy-button";
 import { ReferenceAttachmentSummary } from "../sidecar/reference-attachments";
@@ -134,14 +128,13 @@ export function FeedbackButtons({
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-1.5">
       {showPrompt && (
-        <span className="mr-1 text-xs text-[#718186]">这个回答有帮助吗？</span>
+        <span className="mr-1 text-xs text-slate-500">这个回答有帮助吗？</span>
       )}
       <button
         type="button"
         className={cn(
-          "flex size-8 items-center justify-center rounded-md border border-transparent text-[#718186] transition-colors hover:border-[#c8d9db] hover:bg-[#edf5f5] hover:text-[#276f79]",
-          feedback?.rating === 1 &&
-            "border-[#8fbcc2] bg-[#e5f1f2] text-[#1f6973]",
+          "text-muted-foreground hover:border-primary/20 hover:bg-accent hover:text-primary flex size-8 items-center justify-center rounded-lg border border-transparent transition-colors",
+          feedback?.rating === 1 && "border-blue-200 bg-blue-50 text-blue-700",
         )}
         onClick={() => void handleClick(1)}
         disabled={isSubmitting}
@@ -160,7 +153,7 @@ export function FeedbackButtons({
       <button
         type="button"
         className={cn(
-          "flex size-8 items-center justify-center rounded-md border border-transparent text-[#718186] transition-colors hover:border-[#dfb8b8] hover:bg-[#fbefef] hover:text-[#a34343]",
+          "text-muted-foreground flex size-8 items-center justify-center rounded-md border border-transparent transition-colors hover:border-[#dfb8b8] hover:bg-[#fbefef] hover:text-[#a34343]",
           feedback?.rating === -1 &&
             "border-[#d8aaaa] bg-[#f8eaea] text-[#a33d3d]",
         )}
@@ -182,7 +175,7 @@ export function FeedbackButtons({
         )}
       </button>
       {feedback && (
-        <span className="text-xs text-[#4d747a]" role="status">
+        <span className="text-xs text-blue-600" role="status">
           已记录
         </span>
       )}
@@ -192,7 +185,7 @@ export function FeedbackButtons({
         </span>
       )}
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="xingxi-chat-portal sm:max-w-md">
           <DialogHeader>
             <DialogTitle>反馈回答问题</DialogTitle>
             <DialogDescription>
@@ -206,7 +199,7 @@ export function FeedbackButtons({
               onChange={(event) =>
                 setCategory(event.target.value as FeedbackCategory)
               }
-              className="h-10 rounded-md border border-[#d2dddf] bg-white px-3"
+              className="border-border bg-card h-10 rounded-xl border px-3"
             >
               <option value="citation_error">引用错误</option>
               <option value="factual_error">事实错误</option>
@@ -223,7 +216,7 @@ export function FeedbackButtons({
               rows={4}
               maxLength={2000}
               placeholder="请说明哪一处需要核对"
-              className="resize-none rounded-md border border-[#d2dddf] px-3 py-2 outline-none focus:border-[#6ea7af]"
+              className="border-border bg-card focus:border-ring resize-none rounded-xl border px-3 py-2 outline-none"
             />
           </label>
           {submitError && <p className="text-sm text-red-700">{submitError}</p>}
@@ -249,7 +242,7 @@ export function FeedbackButtons({
                   setComment("");
                 }
               }}
-              className="h-9 rounded-md bg-[#276f79] px-4 text-sm text-white disabled:opacity-40"
+              className="home-primary h-9 rounded-xl px-4 text-sm text-white disabled:opacity-40"
             >
               {isSubmitting ? "提交中…" : "提交反馈"}
             </button>
@@ -269,7 +262,6 @@ export function MessageListItem({
   threadId,
   artifactPaths = [],
   showCopyButton = true,
-  turnStartTime,
 }: {
   className?: string;
   message: Message;
@@ -282,6 +274,8 @@ export function MessageListItem({
   turnStartTime?: number | null;
 }) {
   const isHuman = message.type === "human";
+  if (!isHuman && message.type !== "ai") return null;
+  if (!isHuman && !hasContent(message)) return null;
   return (
     <AIElementMessage
       className={cn("group/conversation-message relative w-full", className)}
@@ -295,7 +289,6 @@ export function MessageListItem({
         artifactPaths={artifactPaths}
         feedback={feedback}
         runId={runId}
-        turnStartTime={turnStartTime}
       />
       {!isLoading && showCopyButton && (
         <MessageToolbar
@@ -354,8 +347,6 @@ function MessageImage({
   );
 }
 
-const clientTurnDurations = new Map<string, number>();
-
 function HumanMessageText({ content }: { content: string }) {
   // `parseSlashSkillReference` is a pure regex gate (no data subscription), so
   // the overwhelmingly common plain-text human message never subscribes to the
@@ -400,7 +391,6 @@ function MessageContent_({
   artifactPaths,
   feedback,
   runId,
-  turnStartTime,
 }: {
   className?: string;
   message: Message;
@@ -413,49 +403,6 @@ function MessageContent_({
 }) {
   const rehypePlugins = useRehypeSplitWordsIntoSpans(isLoading);
   const isHuman = message.type === "human";
-  const rawTurnDuration = message.additional_kwargs?.turn_duration as
-    | number
-    | undefined;
-
-  const [cachedDuration, setCachedDuration] = useState<number | undefined>(
-    () =>
-      message.id
-        ? clientTurnDurations.get(`${threadId}:${message.id}`)
-        : undefined,
-  );
-  const turnDuration = rawTurnDuration ?? cachedDuration;
-
-  useEffect(() => {
-    if (rawTurnDuration !== undefined && message.id) {
-      clientTurnDurations.set(`${threadId}:${message.id}`, rawTurnDuration);
-      setCachedDuration(rawTurnDuration);
-    }
-  }, [rawTurnDuration, message.id, threadId]);
-
-  const handleDurationChange = useCallback(
-    (d: number | undefined) => {
-      if (d !== undefined && message.id) {
-        clientTurnDurations.set(`${threadId}:${message.id}`, d);
-        setCachedDuration(d);
-      }
-    },
-    [message.id, threadId],
-  );
-
-  useEffect(() => {
-    return () => {
-      for (const key of clientTurnDurations.keys()) {
-        if (key.startsWith(`${threadId}:`)) {
-          clientTurnDurations.delete(key);
-        }
-      }
-    };
-  }, [threadId]);
-
-  const [wasLoading, setWasLoading] = useState(isLoading);
-  useEffect(() => {
-    if (isLoading) setWasLoading(true);
-  }, [isLoading]);
   const components = useMemo(
     () => ({
       img: (props: ImgHTMLAttributes<HTMLImageElement>) => (
@@ -472,7 +419,6 @@ function MessageContent_({
   );
 
   const rawContent = extractContentFromMessage(message);
-  const reasoningContent = extractReasoningContentFromMessage(message);
 
   const files = useMemo(() => {
     const files = message.additional_kwargs?.files;
@@ -569,22 +515,8 @@ function MessageContent_({
     );
   }
 
-  // Reasoning-only AI message (no main response content yet)
-  if (!isHuman && reasoningContent && !rawContent) {
-    return (
-      <AIElementMessageContent className={className}>
-        <Reasoning
-          isStreaming={isLoading}
-          startTimeProp={turnStartTime}
-          duration={turnDuration}
-          onTurnDurationChange={handleDurationChange}
-        >
-          <ReasoningTrigger />
-          <SafeReasoningContent>{reasoningContent}</SafeReasoningContent>
-        </Reasoning>
-      </AIElementMessageContent>
-    );
-  }
+  if (message.type !== "human" && message.type !== "ai") return null;
+  if (!isHuman && !contentToDisplay && !filesList) return null;
 
   if (isHuman) {
     // Composer input is plain text, not authored Markdown. Parsing it as
@@ -607,7 +539,7 @@ function MessageContent_({
         )}
         {filesList}
         {contentToDisplay && (
-          <AIElementMessageContent className="w-full max-w-full">
+          <AIElementMessageContent className="xingxi-human-content w-full max-w-full">
             <HumanMessageText content={contentToDisplay} />
           </AIElementMessageContent>
         )}
@@ -618,35 +550,14 @@ function MessageContent_({
   return (
     <AIElementMessageContent className={className}>
       {filesList}
-      {!isHuman &&
-        (!!reasoningContent || wasLoading || turnDuration !== undefined) && (
-          <Reasoning
-            isStreaming={isLoading}
-            startTimeProp={turnStartTime}
-            duration={turnDuration}
-            onTurnDurationChange={handleDurationChange}
-          >
-            <ReasoningTrigger hasContent={!!reasoningContent} />
-            {reasoningContent && (
-              <SafeReasoningContent>{reasoningContent}</SafeReasoningContent>
-            )}
-          </Reasoning>
-        )}
       <MarkdownContent
         content={contentToDisplay}
         isLoading={isLoading}
         rehypePlugins={rehypePlugins}
-        className="my-3"
+        className="xingxi-answer-content my-3"
         components={components}
       />
       <CitationSourcesPanel sources={citationSources} />
-      {message.type === "ai" && (
-        <WorkspaceChangeBadge
-          threadId={threadId}
-          runId={runId}
-          disabled={isLoading}
-        />
-      )}
     </AIElementMessageContent>
   );
 }

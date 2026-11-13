@@ -295,6 +295,158 @@ describe("inline <think> tag splitting", () => {
   });
 });
 
+describe("visible content in structured assistant messages", () => {
+  test("keeps native thinking out of answer groups until real content arrives", () => {
+    const thinking = {
+      id: "ai-thinking",
+      type: "ai",
+      content: [{ type: "thinking", thinking: "private reasoning" }],
+    } as unknown as Message;
+    const originalThinking = structuredClone(thinking);
+    const messages = [
+      { id: "human-1", type: "human", content: "Explain the source" },
+      thinking,
+      {
+        id: "ai-answer",
+        type: "ai",
+        content: "The source records this event.",
+      },
+    ] as Message[];
+
+    expect(hasContent(thinking)).toBe(false);
+    expect(extractContentFromMessage(thinking)).toBe("");
+    expect(
+      getMessageGroups(messages.slice(0, -1)).map((group) => group.type),
+    ).toEqual(["human", "assistant:processing"]);
+    const groups = getMessageGroups(messages);
+    expect(groups.map((group) => group.type)).toEqual([
+      "human",
+      "assistant:processing",
+      "assistant",
+    ]);
+    expect(groups.at(-1)?.messages.map((message) => message.id)).toEqual([
+      "ai-answer",
+    ]);
+    expect(thinking).toEqual(originalThinking);
+  });
+
+  test("keeps the answer from a mixed thinking and text message", () => {
+    const message = {
+      id: "ai-mixed",
+      type: "ai",
+      content: [
+        { type: "thinking", thinking: "private reasoning" },
+        { type: "text", text: "Visible answer" },
+      ],
+    } as unknown as Message;
+
+    expect(extractContentFromMessage(message)).toBe("Visible answer");
+    expect(hasContent(message)).toBe(true);
+    expect(getMessageGroups([message]).map((group) => group.type)).toEqual([
+      "assistant",
+    ]);
+  });
+
+  test("does not create answer groups for empty or unsupported content blocks", () => {
+    const message = {
+      id: "ai-empty",
+      type: "ai",
+      content: [{ type: "text", text: " \n " }, { type: "redacted_thinking" }],
+      additional_kwargs: { files: [] },
+    } as unknown as Message;
+
+    expect(extractContentFromMessage(message)).toBe("");
+    expect(hasContent(message)).toBe(false);
+    expect(getMessageGroups([message])).toEqual([]);
+  });
+
+  test("preserves image-only answer groups and both image URL formats", () => {
+    for (const imageURL of ["/image.png", { url: "/image.png" }]) {
+      const message = {
+        id: "ai-image",
+        type: "ai",
+        content: [
+          { type: "thinking", thinking: "private reasoning" },
+          { type: "image_url", image_url: imageURL },
+        ],
+      } as unknown as Message;
+
+      expect(extractContentFromMessage(message)).toBe("![image](/image.png)");
+      expect(hasContent(message)).toBe(true);
+      expect(getMessageGroups([message]).map((group) => group.type)).toEqual([
+        "assistant",
+      ]);
+    }
+  });
+
+  test("preserves file-only answer groups without requiring answer text", () => {
+    const message = {
+      id: "ai-file",
+      type: "ai",
+      content: [],
+      additional_kwargs: {
+        files: [{ filename: "notes.txt", size: 12, path: "/notes.txt" }],
+      },
+    } as Message;
+
+    expect(extractContentFromMessage(message)).toBe("");
+    expect(hasContent(message)).toBe(true);
+    expect(getMessageGroups([message]).map((group) => group.type)).toEqual([
+      "assistant",
+    ]);
+  });
+
+  test("strips inline thinking across structured and bare-string text blocks", () => {
+    const message = {
+      id: "ai-inline",
+      type: "ai",
+      content: [
+        { type: "text", text: "<think>private reasoning" },
+        "more private reasoning</think>",
+        { type: "text", text: "Visible answer" },
+      ],
+    } as unknown as Message;
+
+    expect(extractContentFromMessage(message)).toBe("Visible answer");
+    expect(hasContent(message)).toBe(true);
+  });
+
+  test("hides a streaming inline thinking tail in array content", () => {
+    const content = [
+      { type: "text", text: "<think>private reasoning" },
+      "still thinking",
+    ];
+    const message = {
+      id: "ai-inline",
+      type: "ai",
+      content,
+    } as unknown as Message;
+    expect(extractContentFromMessage(message)).toBe("");
+    expect(hasContent(message)).toBe(false);
+    expect(getMessageGroups([message])).toEqual([]);
+
+    const withPreamble = {
+      ...message,
+      content: [{ type: "text", text: "Visible preamble" }, ...content],
+    } as unknown as Message;
+    expect(extractContentFromMessage(withPreamble)).toBe("Visible preamble");
+    expect(hasContent(withPreamble)).toBe(true);
+  });
+
+  test("preserves literal human text when it mentions thinking tags", () => {
+    const message = {
+      id: "human-literal",
+      type: "human",
+      content: [{ type: "text", text: "Explain <think>this example</think>" }],
+    } as Message;
+
+    expect(extractContentFromMessage(message)).toBe(
+      "Explain <think>this example</think>",
+    );
+    expect(hasContent(message)).toBe(true);
+  });
+});
+
 describe("human message internal context stripping", () => {
   test("strips uploaded file context from copy data", () => {
     const message = {

@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+
 import { expect, test, type Page } from "@playwright/test";
 
 import { mockLangGraphAPI } from "./utils/mock-api";
@@ -713,6 +715,108 @@ test("route mode reveals the editable study route and exports its outline", asyn
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toBe("山塘街半日研学.md");
 });
+
+for (const viewport of [
+  { width: 1440, height: 900 },
+  { width: 390, height: 844 },
+]) {
+  test(`an empty catalog offers an editable example at ${viewport.width}px`, async ({
+    page,
+  }) => {
+    const examplePoints = [
+      ["pt-yongan-bridge", "entity-bridge-yongan", "永安桥"],
+      ["pt-mingyue-temple", "entity-temple-mingyue", "明月古寺"],
+      ["pt-hongyin", "entity-garden-hongyin", "虹饮山房"],
+      ["pt-gusong-garden", "entity-garden-gusong", "古松园"],
+    ].map(([id, entity_id, name]) => ({
+      ...catalog.points[1],
+      id,
+      entity_id,
+      name,
+    }));
+    await page.setViewportSize(viewport);
+    // The real published snapshot can be empty: these are the separate,
+    // existing reference-points response, not fabricated Release contents.
+    await mockMapPage(page, {
+      ...catalog,
+      points: [],
+      events: [],
+      relations: [],
+      trajectories: [],
+      routes: [],
+    });
+    await page.route("**/api/map/reference-points?**", (route) =>
+      route.fulfill({ json: examplePoints }),
+    );
+    await page.route("**/api/map/reference-events?**", (route) =>
+      route.fulfill({ json: [] }),
+    );
+    await page.route("**/api/map/custom-points", (route) =>
+      route.fulfill({ json: [] }),
+    );
+    let catalogRequests = 0;
+    page.on("request", (request) => {
+      if (new URL(request.url()).pathname === "/api/map/catalog")
+        catalogRequests += 1;
+    });
+
+    await page.goto("/workspace/map");
+    await page.getByRole("tab", { name: "研学路线" }).click();
+    const panel = page.getByRole("region", { name: "研学路线" });
+    await expect(
+      panel.getByRole("heading", { name: "木渎古镇人文半日研学（示例）" }),
+    ).toBeVisible();
+    const stops = panel
+      .getByRole("list", { name: "路线站点" })
+      .getByRole("listitem");
+    await expect(stops).toHaveCount(4);
+    await expect(
+      panel.getByRole("button", { name: "上移永安桥" }),
+    ).toBeDisabled();
+    await expect(
+      panel.getByRole("button", { name: "下移古松园" }),
+    ).toBeDisabled();
+    const loadedRequests = catalogRequests;
+
+    await panel.getByRole("button", { name: "下移永安桥" }).click();
+    await expect(stops.nth(0)).toContainText("明月古寺");
+    await panel.getByRole("button", { name: "移除永安桥" }).click();
+    await expect(stops).toHaveCount(3);
+    await panel.getByLabel("选择添加站点").selectOption("pt-yongan-bridge");
+    await panel.getByRole("button", { name: "添加站点", exact: true }).click();
+    await expect(stops.nth(3)).toContainText("永安桥");
+
+    const downloadPromise = page.waitForEvent("download");
+    await panel.getByRole("button", { name: "导出研学提纲" }).click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toBe(
+      "木渎古镇人文半日研学（示例）.md",
+    );
+    const outline = await readFile(await download.path(), "utf8");
+    expect(outline).toContain("## 1. 明月古寺");
+    expect(outline).toContain("## 4. 永安桥");
+
+    await panel.getByRole("button", { name: "恢复示例" }).click();
+    await expect(stops.nth(0)).toContainText("永安桥");
+    for (const point of examplePoints) {
+      await panel.getByRole("button", { name: `移除${point.name}` }).click();
+    }
+    await expect(stops).toHaveCount(0);
+    await expect(
+      panel.getByText("路线还没有站点。", { exact: false }),
+    ).toBeVisible();
+    await expect(
+      panel.getByRole("button", { name: "导出研学提纲" }),
+    ).toBeDisabled();
+    await expect(
+      panel.getByRole("button", { name: "道路规划（驾车）" }),
+    ).toBeDisabled();
+    await panel.getByLabel("选择添加站点").selectOption("pt-hongyin");
+    await panel.getByRole("button", { name: "添加站点", exact: true }).click();
+    await expect(stops).toHaveCount(1);
+    expect(catalogRequests).toBe(loadedRequests);
+  });
+}
 
 test("live location remains visible while exploring and following a study route", async ({
   context,

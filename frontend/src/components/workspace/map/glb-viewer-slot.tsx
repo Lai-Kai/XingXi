@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 
 import { type GlbAssetDescriptor } from "@/core/map/model-assets";
+import { modelSourceLabel } from "@/core/map/model-presentation";
 
 export { type GlbAssetDescriptor } from "@/core/map/model-assets";
 
@@ -63,9 +64,14 @@ export function GlbViewerSlot({ asset }: { asset: GlbAssetDescriptor | null }) {
       <details className="text-muted-foreground border-t pt-2 text-xs">
         <summary className="cursor-pointer">模型来源与许可</summary>
         <div className="mt-2 space-y-1 leading-5">
-          <p>来源：{asset.generator ?? "待确认"}</p>
+          <p>来源：{modelSourceLabel(asset)}</p>
           <p>许可：{asset.license}</p>
-          <p>证据：{asset.evidenceIds.join(", ") || "待补充"}</p>
+          <p>
+            证据：
+            {asset.evidenceIds.length
+              ? `已关联 ${asset.evidenceIds.length} 条资料`
+              : "待补充"}
+          </p>
         </div>
       </details>
     </section>

@@ -24,6 +24,7 @@ def _default_code(status_code: int) -> str:
         413: "payload_too_large",
         422: "validation_error",
         429: "rate_limited",
+        507: "insufficient_storage",
     }.get(status_code, "service_unavailable" if status_code >= 500 else "request_failed")
 
 

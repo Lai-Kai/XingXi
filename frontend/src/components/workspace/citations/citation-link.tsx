@@ -1,5 +1,7 @@
-﻿import { ExternalLinkIcon } from "lucide-react";
-import type { ComponentProps } from "react";
+"use client";
+
+import { ExternalLinkIcon } from "lucide-react";
+import type { ComponentProps, MouseEvent } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import {
@@ -13,26 +15,66 @@ import {
 } from "@/core/citations/sources";
 import { recordOperationEvent } from "@/core/operations/api";
 
+import { useEvidenceInspector } from "./evidence-inspector-context";
+import { evidenceIdFromDetailPath } from "./evidence-markdown";
+
 export function CitationLink({
   href,
   children,
   onClick,
   ...props
 }: ComponentProps<"a">) {
-  const evidenceId = parseEvidenceHref(href);
-  const domain = evidenceId ? "evidence" : extractDomain(href ?? "");
+  const inspector = useEvidenceInspector();
+  const evidenceId = parseEvidenceHref(href) ?? evidenceIdFromDetailPath(href);
+  const domain = evidenceId ? "资料出处" : extractDomain(href ?? "");
 
   // Priority: children > domain
   const childrenText =
     typeof children === "string"
       ? children.replace(/^citation:\s*/i, "")
       : null;
-  const isGenericText = childrenText === "Source" || childrenText === "来源";
+  const isGenericText =
+    childrenText === "Source" ||
+    childrenText === "来源" ||
+    (evidenceId !== null &&
+      (childrenText === evidenceId ||
+        parseEvidenceHref(childrenText) !== null));
   const displayText = isGenericText ? domain : (childrenText ?? domain);
   const resolvedHref = evidenceId ? evidenceDetailPath(evidenceId) : href;
+  const handleOpen = (event: MouseEvent<HTMLAnchorElement>) => {
+    event.stopPropagation();
+    recordOperationEvent({
+      event_type: "citation_open",
+      entity_id: evidenceId ?? undefined,
+      entity_name: displayText ?? undefined,
+      metadata: { href: resolvedHref ?? "" },
+    });
+    onClick?.(event);
+    if (
+      evidenceId &&
+      inspector &&
+      !event.defaultPrevented &&
+      event.button === 0 &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.shiftKey &&
+      !event.altKey &&
+      props.target !== "_blank"
+    ) {
+      event.preventDefault();
+      inspector.openEvidence(
+        { id: evidenceId, title: displayText ?? undefined },
+        event.currentTarget,
+      );
+    }
+  };
 
   return (
-    <HoverCard closeDelay={0} openDelay={0}>
+    <HoverCard
+      closeDelay={0}
+      openDelay={0}
+      open={evidenceId && inspector?.open ? false : undefined}
+    >
       <HoverCardTrigger asChild>
         <a
           href={resolvedHref}
@@ -41,16 +83,7 @@ export function CitationLink({
           className="inline-flex items-center"
           data-evidence-id={evidenceId ?? undefined}
           data-citation-protocol={evidenceId ? "evidence" : "http"}
-          onClick={(event) => {
-            event.stopPropagation();
-            recordOperationEvent({
-              event_type: "citation_open",
-              entity_id: evidenceId ?? undefined,
-              entity_name: displayText ?? undefined,
-              metadata: { href: resolvedHref ?? "" },
-            });
-            onClick?.(event);
-          }}
+          onClick={handleOpen}
           {...props}
         >
           <Badge
@@ -61,7 +94,7 @@ export function CitationLink({
           </Badge>
         </a>
       </HoverCardTrigger>
-      <HoverCardContent className="w-72" align="start">
+      <HoverCardContent className="xingxi-chat-portal w-72" align="start">
         <div className="p-3">
           <div className="space-y-1">
             {displayText && (
@@ -70,8 +103,8 @@ export function CitationLink({
               </h4>
             )}
             {evidenceId ? (
-              <p className="text-muted-foreground truncate text-xs break-all">
-                资料出处编号：{evidenceId}
+              <p className="text-muted-foreground text-xs">
+                查看书名、卷页与引用原文
               </p>
             ) : (
               href && (
@@ -86,14 +119,7 @@ export function CitationLink({
             target={evidenceId ? undefined : "_blank"}
             rel={evidenceId ? undefined : "noopener noreferrer"}
             className="text-primary mt-2 inline-flex items-center gap-1 text-xs hover:underline"
-            onClick={() =>
-              recordOperationEvent({
-                event_type: "citation_open",
-                entity_id: evidenceId ?? undefined,
-                entity_name: displayText ?? undefined,
-                metadata: { href: resolvedHref ?? "" },
-              })
-            }
+            onClick={handleOpen}
           >
             {evidenceId ? "查看出处详情" : "访问来源"}
             <ExternalLinkIcon className="size-3" />

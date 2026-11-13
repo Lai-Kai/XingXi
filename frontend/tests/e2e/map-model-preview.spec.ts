@@ -91,6 +91,9 @@ function modelReferences() {
 
 async function setup(page: Page) {
   mockLangGraphAPI(page);
+  await page.route("**/api/map/model-assets/page?**", (route) =>
+    route.fulfill({ json: { data: [], next_cursor: null } }),
+  );
   await page.route("**/api/operations/events", (route) =>
     route.fulfill({ status: 204 }),
   );
@@ -232,7 +235,7 @@ async function ready(page: Page, index: number) {
         (element) =>
           new URL(element.getAttribute("src")!, window.location.href).pathname,
       ),
-  ).toBe(asset.src);
+  ).toBe(asset.previewSrc ?? asset.src);
   await expect
     .poll(async () =>
       page
@@ -264,19 +267,19 @@ test("all seven real GLBs render on demand and reuse one viewer for enlargement"
     const asset = MAP_MODEL_ASSETS[i]!;
     await selectPoint(page, i);
     // Clicking the marker only opens the overview: the advertised GLB stays unfetched.
-    expect(glbRequestsFor(asset.src!)).toBe(0);
+    expect(glbRequestsFor(asset.previewSrc ?? asset.src!)).toBe(0);
     const started = Date.now();
     await openModelTab(page, i);
     // The download starts only once the reader opens the model tab.
-    await expect.poll(() => glbRequestsFor(asset.src!)).toBeGreaterThan(0);
+    await expect
+      .poll(() => glbRequestsFor(asset.previewSrc ?? asset.src!))
+      .toBeGreaterThan(0);
     await ready(page, i);
     timings.push({
       id: MAP_MODEL_ASSETS[i]!.id,
       milliseconds: Date.now() - started,
     });
-    await page
-      .getByRole("region", { name: "三维模型预览" })
-      .screenshot({ path: testInfo.outputPath(`model-${i}.png`) });
+    await page.screenshot({ path: testInfo.outputPath(`model-${i}.png`) });
     await page.locator("model-viewer").evaluate((element) => {
       const model = element as ModelViewerElement;
       model.cameraOrbit = "0deg 75deg 105%";
@@ -291,9 +294,7 @@ test("all seven real GLBs render on demand and reuse one viewer for enlargement"
           ),
       )
       .toBeCloseTo(0, 3);
-    await page
-      .getByRole("region", { name: "三维模型预览" })
-      .screenshot({ path: testInfo.outputPath(`model-${i}-side.png`) });
+    await page.screenshot({ path: testInfo.outputPath(`model-${i}-side.png`) });
     await page.getByRole("button", { name: "复位", exact: true }).click();
   }
   await testInfo.attach("real-model-timings", {
@@ -382,6 +383,36 @@ test("a local colored PLY temporarily replaces the GLB and returning releases th
   await ready(page, 0);
   await expect(page.getByLabel("彩色点云三维场景")).toHaveCount(0);
   await expect(page.getByLabel("打开本地 PLY")).toHaveValue("");
+});
+
+test("building preview keeps originals explicit and can recover after an original download failure", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await setup(page);
+  const asset = MAP_MODEL_ASSETS[0]!;
+  let originals = 0;
+  await page.route(`**${asset.src}`, (route) => {
+    originals++;
+    return route.fulfill({ status: 503, body: "temporary test failure" });
+  });
+  await page.goto("/workspace/map");
+  await selectModel(page, 0);
+  await ready(page, 0);
+  expect(originals).toBe(0);
+  await expect(
+    page.getByRole("link", { name: "下载模型原件", exact: true }),
+  ).toHaveAttribute("href", asset.src!);
+  await page.getByLabel("建筑模型预览精度").selectOption("original");
+  await expect(
+    page.getByRole("button", { name: "重试加载模型" }),
+  ).toBeVisible();
+  expect(originals).toBe(1);
+  await expect(page.locator("model-viewer")).toHaveAttribute("src", asset.src!);
+  await page.getByLabel("建筑模型预览精度").selectOption("light");
+  await ready(page, 0);
+  expect(originals).toBe(1);
 });
 
 test("a failed GLB can be retried and a point without a model keeps its overview", async ({

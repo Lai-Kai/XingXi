@@ -16,38 +16,56 @@ test("uses standard chat route when thread has no agent context", () => {
   ).toBe("/workspace/chats/thread-123");
 });
 
-test("uses agent chat route when thread context has agent_name", () => {
+test("opens historical agent contexts through the public Xingxi chat route", () => {
   expect(
     pathOfThread({
       thread_id: "thread-123",
       context: { agent_name: "researcher" },
     }),
-  ).toBe("/workspace/agents/researcher/chats/thread-123");
+  ).toBe("/workspace/chats/thread-123");
 });
 
-test("uses provided context when pathOfThread is called with a thread id", () => {
+test("keeps the canonical chat route when an explicit agent context is provided", () => {
   expect(pathOfThread("thread-123", { agent_name: "ops agent" })).toBe(
-    "/workspace/agents/ops%20agent/chats/thread-123",
+    "/workspace/chats/thread-123",
   );
 });
 
-test("uses agent chat route when thread metadata has agent_name", () => {
+test("opens agent metadata through the public Xingxi chat route", () => {
   expect(
     pathOfThread({
       thread_id: "thread-456",
       metadata: { agent_name: "coder" },
     }),
-  ).toBe("/workspace/agents/coder/chats/thread-456");
+  ).toBe("/workspace/chats/thread-456");
 });
 
-test("prefers context.agent_name over metadata.agent_name", () => {
+test("agent context and metadata cannot redirect a history entry to retired pages", () => {
   expect(
     pathOfThread({
       thread_id: "thread-789",
       context: { agent_name: "from-context" },
       metadata: { agent_name: "from-metadata" },
     }),
-  ).toBe("/workspace/agents/from-context/chats/thread-789");
+  ).toBe("/workspace/chats/thread-789");
+});
+
+test("keeps Xingxi history and new-chat links on their canonical routes", () => {
+  expect(
+    pathOfThread({
+      thread_id: "xingxi-history",
+      metadata: { agent_name: "xingxi" },
+    }),
+  ).toBe("/workspace/chats/xingxi-history");
+  expect(pathOfThread("new", { agent_name: "xingxi" })).toBe(
+    "/workspace/chats/new",
+  );
+});
+
+test("encodes a thread identifier as a single route segment", () => {
+  expect(pathOfThread("thread/with?query#fragment")).toBe(
+    "/workspace/chats/thread%2Fwith%3Fquery%23fragment",
+  );
 });
 
 test("reads IM channel source metadata", () => {
