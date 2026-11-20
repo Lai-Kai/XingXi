@@ -58,6 +58,41 @@
       }
     },
     {
+      "caller": "lead_agent",
+      "conversation_hash": "259710e9d42c306653e04f61c8965348a32208365bee9d831bd1a3ccbefd2d99",
+      "input_hash": "259710e9d42c306653e04f61c8965348a32208365bee9d831bd1a3ccbefd2d99",
+      "output": {
+        "type": "ai",
+        "data": {
+          "content": "I can’t access file-system tools in this environment, so I’m unable to create or read /mnt/user-data/outputs/note.txt directly.",
+          "additional_kwargs": {},
+          "response_metadata": {
+            "finish_reason": "stop",
+            "model_name": "sre/gpt-5",
+            "model_provider": "openai"
+          },
+          "type": "ai",
+          "name": null,
+          "id": "lc_run--replay-fixture-259710e9",
+          "tool_calls": [],
+          "invalid_tool_calls": [],
+          "usage_metadata": {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0,
+            "input_token_details": {
+              "audio": 0,
+              "cache_read": 0
+            },
+            "output_token_details": {
+              "audio": 0,
+              "reasoning": 0
+            }
+          }
+        }
+      }
+    },
+    {
       "caller": "middleware:title",
       "conversation_hash": "958df7bac4e74830d46d29bc19cdea85cae2fc3ebc65ca00a9a5d308bba8ad30",
       "input_hash": "f1d96cb1f7cfbe6baf6b2c7b82d32f5561656b1c1492e2714c51631808b50b79",
